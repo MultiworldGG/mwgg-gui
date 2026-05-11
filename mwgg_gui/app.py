@@ -150,8 +150,13 @@ class MultiMDApp(MDApp):
     _logo_png: str = ""
     countdown_timer = NumericProperty(0)
 
+    # Class-level singleton used by CommonClient._can_takeover_existing_ui to
+    # detect a live frontend instance without importing Kivy directly.
+    _active_instance: "typing.ClassVar[typing.Optional[MultiMDApp]]" = None
+
     def __init__(self, ctx: context_type, **kwargs):
         super().__init__(**kwargs)
+        type(self)._active_instance = self
         # Use the existing Kivy Config singleton for Kivy settings
         self.config = MWKVConfig
         # Create app-specific config
@@ -247,8 +252,8 @@ class MultiMDApp(MDApp):
         Window.clearcolor = [0,0,0,1]
 
     def terminate_splash_screen_wrapper(self):
-        """Wrapper to call the terminate_splash_screen function from MultiWorld"""
-        from MultiWorld import terminate_splash_screen
+        """Wrapper to call the terminate_splash_screen function from mwgg_splash"""
+        from mwgg_splash import terminate_splash_screen
         terminate_splash_screen(self.ctx._splash_queue)
         Clock.schedule_once(self.set_opacity)
 
@@ -388,6 +393,8 @@ class MultiMDApp(MDApp):
     def on_stop(self):
         """Handle application shutdown properly"""
         try:
+            if type(self)._active_instance is self:
+                type(self)._active_instance = None
             # Remove console handler from logger to prevent AttributeError during shutdown
             if hasattr(self, 'console_handler') and self.console_handler:
                 try:

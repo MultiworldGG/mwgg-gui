@@ -77,6 +77,10 @@ class LauncherView(MDBoxLayout):
     slot_layout: ObjectProperty
     server_layout: ObjectProperty
     title_layout: ObjectProperty
+    fallback_status = StringProperty(
+        "Game not set, connecting using Text Client. "
+        "Switch to Universal Tracker or set your game."
+    )
 
 class LauncherAuthTextField(MDTextField):
     pass
@@ -198,6 +202,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     def on_game_selected(self, game_info: tuple[str, str]):
         """Handle game selection from the game list"""
         self.selected_game = game_info
+        self.launcher_view.fallback_status = ""
         logger.info(f"Selected game: {game_info[1]}")
         # Update the launcher view to show the selected game
         self.launcher_view.module_name = game_info[0]
@@ -997,15 +1002,16 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
         # Check if we're in initial state by checking if ctx has a 'game' attribute
         if not hasattr(current_ctx, 'game'):
-            if not self.selected_game:
-                MessageBox("No Game Selected", "Please select a game before connecting.").open()
-                return
-            
-            self.app.logo_png = GameIndex.get_game(self.selected_game[0]).get("cover_url", None)
+            game_module = self.selected_game[0] if self.selected_game else ""
+            game_label = self.selected_game[1] if self.selected_game else "Text Client"
 
-            logger.info(f"Attempting to launch module: {self.selected_game[1]}")
+            if self.selected_game:
+                self.app.logo_png = GameIndex.get_game(game_module).get("cover_url", None)
+                logger.info(f"Attempting to launch module: {game_label}")
+            else:
+                logger.info("No game selected; falling back to Text Client.")
             logger.info(f"Server: {server_address}")
-            
+
             try:
                 # Show loading screen
                 Clock.schedule_once(lambda dt: self.app.loading_layout.show_loading(display_logs=True), 0)
@@ -1013,10 +1019,16 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 # Define ready callback to hide loading layout and switch to console
                 def ready_callback(dt: float = 0):
                     Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
+                    # Slot data has resolved ctx.game by now (TextContext.on_package); refresh branding.
+                    resolved_game = getattr(self.app.ctx, "game", None)
+                    if not self.selected_game and resolved_game:
+                        cover_url = GameIndex.get_game(resolved_game).get("cover_url", None) if resolved_game else None
+                        if cover_url:
+                            self.app.logo_png = cover_url
                     # Switch to console after successful connection
                     Clock.schedule_once(lambda x: self.app.console_init())
                     Clock.schedule_once(lambda x: self.app.change_screen("console"))
-                
+
                 # Define error callback to handle connection failures
                 def error_callback(restart_callback=None):
                     Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
@@ -1024,39 +1036,41 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     if restart_callback:
                         # Prepare connection arguments for restart
                         connect_args = self._prepare_connect_args(
-                            game_module=self.selected_game[0],
+                            game_module=game_module,
                             server_address=self.server_address,
                         )
-                        MessageBox("Restart Required", 
+                        MessageBox("Restart Required",
                                    "You will need to restart the launcher to apply updates.",
-                                   error=True, 
+                                   error=True,
                                    callback=lambda x: self.restart_launcher(connect_args)).open()
                     else:
                         # Stay on launcher screen, don't switch to console
                         # Error dialog will be shown by the context's handle_connection_loss
                         pass
-                
+
                 self.app.client_console_init()
 
                 discover_and_launch_module(
-                        f"worlds.{self.selected_game[0]}", server_address=self.server_address, ready_callback=ready_callback, error_callback=error_callback
+                        game_module, server_address=self.server_address, ready_callback=ready_callback, error_callback=error_callback
                 )
-                    
+
             except Exception as e:
-                logger.error(f"Failed to launch {self.selected_game[1]} module: {e}")
+                logger.error(f"Failed to launch {game_label} module: {e}")
                 # Hide loading layout on error
                 Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
                 # Show error dialog and stay on launcher screen
-                MessageBox("Launch Error", f"Failed to launch {self.selected_game[1]}: {str(e)}", is_error=True).open()
+                MessageBox("Launch Error", f"Failed to launch {game_label}: {str(e)}", is_error=True).open()
         
         else:
             # We're in a game context, check if the selected game matches the current context
             # TODO: Use a list for tracker/_sni/_bizhawk/"" and allow for those "game"s (empty is text client)
-            if hasattr(current_ctx, 'game') and current_ctx.game and current_ctx.game != self.selected_game[1]:
+            selected_game_label = self.selected_game[1] if self.selected_game else ""
+            if (hasattr(current_ctx, 'game') and current_ctx.game
+                    and selected_game_label and current_ctx.game != selected_game_label):
                 # Game mismatch - need to rebuild to InitContext first
-                logger.info(f"Game mismatch: current={current_ctx.game}, selected={self.selected_game[1]}")
-                MessageBox("Game Mismatch", 
-                                f"Current game ({current_ctx.game}) doesn't match selected game ({self.selected_game[1]}). "
+                logger.info(f"Game mismatch: current={current_ctx.game}, selected={selected_game_label}")
+                MessageBox("Game Mismatch",
+                                f"Current game ({current_ctx.game}) doesn't match selected game ({selected_game_label}). "
                                 "Please restart the client to change games.", is_error=True).open()
                 return
             
