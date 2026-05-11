@@ -8,6 +8,12 @@ This repository contains the reusable MultiworldGG desktop UI package, including
 
 This is a private package and is not intended for upload to a public package index.
 
+## Why this is a separate package
+
+`mwgg_gui` is shipped as a standalone Python package — separately versioned from the main MultiworldGG application — specifically to enable **UI hotfixes without rebuilding or re-releasing the full frozen executable**. A new release of `mwgg_gui` can be pulled into an installed MultiworldGG without touching the rest of the application.
+
+The package is **not** intended to be importable standalone. At runtime it requires the MultiworldGG monorepo's `src/` directory to be on `sys.path`, because several modules import from monorepo top-level names (`Utils`, `NetUtils`, `BaseUtils`, `BaseClasses`, `CommonClient`, and — in `mwgg_gui.app` — also `MultiWorld` and `ModuleUpdate`). This implicit dependency is intentional and is not declared in `pyproject.toml`; the package is designed to be consumed by the MultiworldGG runtime, not by arbitrary Kivy apps.
+
 ## Requirements
 
 - Python >= 3.13
