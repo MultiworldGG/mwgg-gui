@@ -1,0 +1,24 @@
+name: Release mwgg_gui wheel
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 0.1.167). Tag will be v<version>. pyproject.toml is rewritten in the runner; the committed value is untouched."
+        required: true
+        type: string
+      dry-run:
+        description: "Build only -- skip tag, release, and asset upload."
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    uses: MultiworldGG/gen-pymod-release/.github/workflows/build-wheel.yml@v3
+    with:
+      version: ${{ inputs.version }}
+      dry-run: ${{ inputs.dry-run }}
