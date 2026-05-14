@@ -508,6 +508,25 @@ class MultiMDApp(MDApp):
         if hasattr(self, 'loading_layout') and self.loading_layout:
             self.loading_layout.hide_loading()
 
+    def show_error_dialog(self, title: str, message: str):
+        """FrontendProtocol: open an MDDialog-based MessageBox for the given
+        title/message and return it as the handle. Callers (CommonContext.gui_error)
+        treat the return value opaquely.
+        """
+        from mwgg_gui.components.dialog import MessageBox
+        box = MessageBox(title=title, message=message, is_error=True)
+        box.open()
+        return box
+
+    def dismiss_error_dialog(self, handle) -> None:
+        """FrontendProtocol: close a MessageBox previously returned by `show_error_dialog`."""
+        if handle is None:
+            return
+        try:
+            handle.dismiss()
+        except Exception:
+            pass
+
     def console_init(self):
         '''
         This function is called when the console is initialized.
