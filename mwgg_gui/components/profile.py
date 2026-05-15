@@ -25,6 +25,7 @@ __all__ = ("ProfileAvatar",
            "show_profile")
 import logging
 import os
+import threading
 from Utils import persistent_load
 from Utils import persistent_store
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -36,19 +37,31 @@ from kivy.properties import StringProperty, ObjectProperty
 from kivy.uix.behaviors import ButtonBehavior
 from kivymd.uix.behaviors import CircularRippleBehavior
 from kivy.metrics import dp
+from kivy.clock import Clock, mainthread
+from kivy.uix.filechooser import FileChooserIconView
+from kivy.uix.popup import Popup
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.button import Button
 
 from kivymd.uix.selectioncontrol import MDSwitch
 from kivymd.uix.fitimage import FitImage
 from kivymd.uix.dialog import (MDDialog,
-                               MDDialogContentContainer, 
-                               MDDialogHeadlineText, 
-                               MDDialogSupportingText, 
+                               MDDialogContentContainer,
+                               MDDialogHeadlineText,
+                               MDDialogSupportingText,
                                MDDialogButtonContainer)
 from kivymd.uix.divider import MDDivider
 from kivymd.uix.widget import Widget
 
 from kivy.lang import Builder
-import urllib.request
+
+from mwgg_gui.components.avatar_safety import (
+    AvatarUploadError,
+    mint_token,
+    safe_avatar_source,
+    upload_avatar,
+)
+from mwgg_gui.constants import AVATAR_FILE_EXTENSIONS
         
 logger = logging.getLogger("MultiWorld")
 
@@ -155,7 +168,12 @@ class AvatarImage(CircularRippleBehavior, ButtonBehavior, FitImage):
         pass
 
 class ProfileAvatar(MDBoxLayout):
-    """Profile avatar section with local file management"""
+    """Profile avatar section.
+
+    The user picks a local image file; the client uploads it to the MWGG
+    webhost and stores the server-issued trusted URL in _persistent_storage.yaml.
+    Legacy or hostile URLs are silently dropped on render via safe_avatar_source.
+    """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.app = MDApp.get_running_app()
@@ -165,55 +183,116 @@ class ProfileAvatar(MDBoxLayout):
         self.pos_hint = {"center_x": 0.5}
         self.orientation = "vertical"
         self.spacing = dp(8)
-        
+
+        stored_url = persistent_load().get('client', {}).get('avatar', '')
         # Avatar display (100x100 circular)
         self.avatar_display = AvatarImage(
             size_hint=(None, None),
             size=(dp(100), dp(100)),
             radius=[dp(50), dp(50), dp(50), dp(50)],  # Circular
-            source=persistent_load().get('client', {}).get('avatar', ''),
+            source=safe_avatar_source(stored_url),
             pos_hint={"center_x": 0.5}
         )
-        self.avatar_url_input = MDTextField(
-            MDTextFieldHintText(text="https://example.com/avatar.png"),
-            id="avatar_url_input",
-            mode="outlined",
-            size_hint_x=1,
-            text=persistent_load().get('client', {}).get('avatar', ''),
+        self.choose_button = MDButton(
+            MDButtonText(text="Choose image..."),
+            style="filled",
+            pos_hint={"center_x": 0.5},
         )
-        self.avatar_url_input.bind(on_text_validate=lambda instance: self.on_select_avatar_from_url(instance))
-        self.avatar_display.bind(on_release=lambda x: setattr(self.avatar_url_input, 'focus', True))
+        self.choose_button.bind(on_release=lambda *_: self.open_file_chooser())
+        self.status_label = MDLabel(
+            text="",
+            theme_text_color="Error",
+            halign="center",
+            size_hint_y=None,
+            height=dp(24),
+        )
+        self.avatar_display.bind(on_release=lambda *_: self.open_file_chooser())
         self.add_widget(self.avatar_display)
-        self.add_widget(self.avatar_url_input)
-      
-    def on_select_avatar_from_url(self, instance):
-        """Set avatar from URL input"""
-        url = instance.text.strip()
-        
-        if url:
-            # run a request to the url, check if response is an image
-            # additionally check image size is less than 1MB
-            try:
-                response = urllib.request.urlopen(url)
-                if response.status == 200:
-                    if response.headers['Content-Type'].startswith('image/'):
-                        if response.length < 1024 * 1024:
-                            self.avatar_display.source = url
-                            self.save_avatar(url)
-                            return
+        self.add_widget(self.choose_button)
+        self.add_widget(self.status_label)
 
-                self.avatar_url_input.error = True
-                self.avatar_url_input.add_widget(MDTextFieldHelperText(
-                    text="""Invalid image URL. Please ensure
-that the image is no larger than 1MB.
-and the image must be a valid image format."""))
-                self.avatar_display.source = ""
-                self.save_avatar("")
-            except Exception as e:
-                self.avatar_display.source = ""
-                self.save_avatar("")
-        return
-    
+    def open_file_chooser(self):
+        if getattr(self, "_uploading", False):
+            return
+        chooser = FileChooserIconView(
+            filters=[lambda folder, name: name.lower().endswith(AVATAR_FILE_EXTENSIONS)],
+        )
+        layout = BoxLayout(orientation="vertical", spacing=dp(4), padding=dp(8))
+        layout.add_widget(chooser)
+        button_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(48), spacing=dp(8))
+        cancel_btn = Button(text="Cancel")
+        ok_btn = Button(text="Upload")
+        button_row.add_widget(cancel_btn)
+        button_row.add_widget(ok_btn)
+        layout.add_widget(button_row)
+        popup = Popup(title="Choose avatar image", content=layout, size_hint=(0.9, 0.9))
+
+        def _on_cancel(*_):
+            popup.dismiss()
+
+        def _on_submit(*_):
+            if not chooser.selection:
+                return
+            path = chooser.selection[0]
+            popup.dismiss()
+            self._begin_upload(path)
+
+        cancel_btn.bind(on_release=_on_cancel)
+        ok_btn.bind(on_release=_on_submit)
+        chooser.bind(on_submit=lambda inst, sel, touch: _on_submit())
+        popup.open()
+
+    def _begin_upload(self, path: str):
+        self._uploading = True
+        self.choose_button.disabled = True
+        self.status_label.theme_text_color = "Secondary"
+        self.status_label.text = "Uploading..."
+        threading.Thread(
+            target=self._upload_worker, args=(path,), daemon=True
+        ).start()
+
+    def _upload_worker(self, path: str):
+        try:
+            token = persistent_load().get('client', {}).get('avatar_token', '')
+            if not token:
+                token = mint_token()
+                persistent_store('client', 'avatar_token', token)
+            try:
+                url = upload_avatar(path, token)
+            except AvatarUploadError as exc:
+                # Token may have been revoked; mint a fresh one and retry once.
+                msg = str(exc)
+                if "401" in msg or "Token" in msg:
+                    token = mint_token()
+                    persistent_store('client', 'avatar_token', token)
+                    url = upload_avatar(path, token)
+                else:
+                    raise
+            self._finish_upload_success(url)
+        except AvatarUploadError as exc:
+            logger.warning("Avatar upload failed: %s", exc)
+            self._finish_upload_failure(str(exc))
+        except Exception as exc:
+            logger.exception("Unexpected error during avatar upload")
+            self._finish_upload_failure(f"Upload failed: {exc}")
+
+    @mainthread
+    def _finish_upload_success(self, url: str):
+        self._uploading = False
+        self.choose_button.disabled = False
+        self.status_label.theme_text_color = "Secondary"
+        self.status_label.text = "Avatar updated."
+        self.avatar_display.source = url
+        self.save_avatar(url)
+        Clock.schedule_once(lambda *_: setattr(self.status_label, "text", ""), 4)
+
+    @mainthread
+    def _finish_upload_failure(self, message: str):
+        self._uploading = False
+        self.choose_button.disabled = False
+        self.status_label.theme_text_color = "Error"
+        self.status_label.text = message[:120]
+
     def save_avatar(self, avatar_path: str):
         """Save avatar path to config"""
         persistent_store('client', 'avatar', avatar_path)

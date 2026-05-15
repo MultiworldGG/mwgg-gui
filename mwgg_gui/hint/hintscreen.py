@@ -33,6 +33,7 @@ from mwgg_gui.overrides.expansionlist import HintListItem, IconBadge, HintListIt
 from mwgg_gui.components.guidataclasses import UIHint
 from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.components.mw_theme import AutoAdjustHeightBehavior, md_icons
+from mwgg_gui.components.avatar_safety import safe_avatar_source
 
 import typing
 import asynckivy
@@ -817,9 +818,9 @@ class HintListPanel(GameListPanel):
                 if hint.mwgg_hint_status & MWGGUIHintStatus.HINT_SHOP:
                     location_badge_text += md_icons["shop"]
 
-            hint_item = {"player_name": slot_data.slot_name, 
-                         "player_avatar": slot_data.avatar, 
-                         "location_name": hint.location, 
+            hint_item = {"player_name": slot_data.slot_name,
+                         "player_avatar": safe_avatar_source(slot_data.avatar or ""),
+                         "location_name": hint.location,
                          "item_name": hint.item, 
                          "entrance_name": hint.entrance if hint.entrance else "Vanilla",
                          "game_status": slot_data.game_status, 
