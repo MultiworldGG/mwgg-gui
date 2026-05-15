@@ -11,9 +11,22 @@
     id: launcher_view
     server_layout: server_layout
     title_layout: title_layout
+    fallback_status_label: fallback_status_label
     module_name: ""
-    orientation: 'horizontal'
-    padding: dp(50)
+    orientation: 'vertical'
+    padding: dp(50), dp(10), dp(50), dp(50)
+    MDLabel:
+        id: fallback_status_label
+        text: root.fallback_status
+        size_hint_y: None
+        height: dp(40) if self.text else 0
+        opacity: 1 if self.text else 0
+        halign: 'center'
+        theme_font_style: "Custom"
+        font_style: "Body"
+        role: "medium"
+        theme_text_color: "Custom"
+        text_color: app.theme_cls.errorColor
     MDBoxLayout:
         orientation: 'vertical'
         spacing: 30
@@ -22,18 +35,6 @@
         md_bg_color: app.theme_cls.surfaceVariantColor
         MDBoxLayout: # Inner padded layout
             orientation: 'vertical'
-            MDLabel:
-                id: fallback_status_label
-                text: root.fallback_status
-                size_hint_y: None
-                height: dp(40) if self.text else 0
-                opacity: 1 if self.text else 0
-                halign: 'center'
-                theme_font_style: "Custom"
-                font_style: "Body"
-                role: "medium"
-                theme_text_color: "Custom"
-                text_color: app.theme_cls.errorColor
             MDBoxLayout: # Title & Favorites
                 id: title_layout
                 orientation: 'vertical'

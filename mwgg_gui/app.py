@@ -743,59 +743,61 @@ class MultiMDApp(MDApp):
             self.top_appbar_layout.top_appbar.timer.start_running_timer()
 
     def update_hints(self):
-        hints = self.ctx.stored_data.get(f"_read_hints_{self.ctx.team}_{self.ctx.slot}", [])
-        mwgg_hints = self.ctx.stored_data.get(f"hints_{self.ctx.team}_{self.ctx.slot}_mwgg", {})
-        if hints:
-            self.refresh_hints(hints, mwgg_hints)
+        hints_key = f"_read_hints_{self.ctx.team}_{self.ctx.slot}"
+        # Skip the early on_connect call (stored_data not yet populated by
+        # the server's Retrieved response). CommonClient re-fires update_hints
+        # from Retrieved, and that single call drives the screen init —
+        # avoiding a race between two concurrent set_slots_list/set_hints_list
+        # coroutines that would otherwise interleave clear/add and duplicate.
+        if hints_key not in self.ctx.stored_data:
+            return
+        hints = self.ctx.stored_data.get(hints_key, []) or []
+        mwgg_hints = self.ctx.stored_data.get(f"hints_{self.ctx.team}_{self.ctx.slot}_mwgg", {}) or {}
+        self.refresh_hints(hints, mwgg_hints)
 
 
     def refresh_hints(self, hints, mwgg_hints):
-        hints_key = f"_read_hints_{self.ctx.team}_{self.ctx.slot}"
-        mwgg_hints_key = f"hints_{self.ctx.team}_{self.ctx.slot}_mwgg"
-
-        # Ensure mwgg_hints is a dict, not None
         if mwgg_hints is None:
             mwgg_hints = {}
 
-        if hints_key not in self.ctx.stored_data:
-            return
-        if not self.ctx.location_names or not self.ctx.item_names:
-            return
+        # Per-hint processing requires the data package; skip silently if it's
+        # not loaded yet, but still fall through to the screen-init below so
+        # the slots sidebar and hint screen come up on a fresh connect.
+        if hints and self.ctx.location_names and self.ctx.item_names:
+            for hint in hints:
+                key = f"{hint['finding_player']}_{hint['location']}"
+                mwgg_status = MWGGUIHintStatus(mwgg_hints.get(key, 0b000))
 
-        for hint in hints:
-            # Only look up MWGG status if we have stored data for this hint
-            key = f"{hint['finding_player']}_{hint['location']}"
-            mwgg_status = MWGGUIHintStatus(mwgg_hints.get(key, 0b000))
+                if self.ctx.slot_concerns_self(hint["receiving_player"]):
+                    bucket = self.ui_hint_data.setdefault(hint["finding_player"], {})
+                    existing_hint = bucket.get(hint["location"])
+                    if existing_hint is None:
+                        bucket[hint["location"]] = \
+                            UIHint(hint=hint, my_item=True, location_names=self.ctx.location_names, item_names=self.ctx.item_names, hint_status=hint.get("status"), mwgg_hint_status=mwgg_status)
+                    else:
+                        existing_hint.set_status(hint.get("status"))
+                        existing_hint.set_status_from_mwgg(mwgg_status)
+                elif self.ctx.slot_concerns_self(hint["finding_player"]):
+                    bucket = self.ui_hint_data.setdefault(hint["receiving_player"], {})
+                    existing_hint = bucket.get(hint["location"])
+                    if existing_hint is None:
+                        bucket[hint["location"]] = \
+                            UIHint(hint=hint, my_item=False, location_names=self.ctx.location_names, item_names=self.ctx.item_names, hint_status=hint.get("status"), mwgg_hint_status=mwgg_status)
+                    else:
+                        existing_hint.set_status(hint.get("status"))
+                        existing_hint.set_status_from_mwgg(mwgg_status)
 
-            if self.ctx.slot_concerns_self(hint["receiving_player"]):
-                if not self.ui_hint_data[hint["finding_player"]]:
-                    self.ui_hint_data[hint["finding_player"]] = {}
-                if hint["location"] not in self.ui_hint_data[hint["finding_player"]]:
-                    self.ui_hint_data[hint["finding_player"]][hint["location"]] = \
-                        UIHint(hint=hint, my_item=True, location_names=self.ctx.location_names, item_names=self.ctx.item_names, hint_status=hint.get("status"), mwgg_hint_status=mwgg_status)
-                else:
-                    self.ui_hint_data[hint["finding_player"]][hint["location"]].set_status(hint.get("status"))
-                    self.ui_hint_data[hint["finding_player"]][hint["location"]].set_status_from_mwgg(mwgg_status)
-            elif self.ctx.slot_concerns_self(hint["finding_player"]):
-                if not self.ui_hint_data[hint["receiving_player"]]:
-                    self.ui_hint_data[hint["receiving_player"]] = {}
-                if hint["location"] not in self.ui_hint_data[hint["receiving_player"]]:
-                    self.ui_hint_data[hint["receiving_player"]][hint["location"]] = \
-                        UIHint(hint=hint, my_item=False, location_names=self.ctx.location_names, item_names=self.ctx.item_names, hint_status=hint.get("status"), mwgg_hint_status=mwgg_status)
-                else:
-                    self.ui_hint_data[hint["receiving_player"]][hint["location"]].set_status(hint.get("status"))
-                    self.ui_hint_data[hint["receiving_player"]][hint["location"]].set_status_from_mwgg(mwgg_status)
+            self.update_mwgg_hints(mwgg_hints)
 
-        self.update_mwgg_hints(mwgg_hints)
-
-        # Update ui_player_data hints to match ui_hint_data
+        # Mirror ui_hint_data into ui_player_data and refresh the screens
+        # unconditionally, so a connect with no pre-existing hints still
+        # initializes the slots sidebar and the hint screen.
         for slot in self.ui_player_data:
             if slot in self.ui_hint_data:
                 self.ui_player_data[slot].hints = self.ui_hint_data[slot]
 
         self.update_player_data()
 
-        # Update hints lists if it exists
         if "console" in self.screen_manager.screen_names:
             self.console_screen.update_slots_list()
         else:

@@ -56,16 +56,39 @@ from mwgg_gui.launcher.launcher_favorite_bar import FavoritesScroll, Favorite
 from mwgg_gui.launcher.launcher_yaml import YamlDialog
 from mwgg_gui.components.dialog import MessageBox
 
-from Utils import (discover_and_launch_module, 
-                   get_available_worlds, 
+from Utils import (discover_and_launch_module,
+                   get_available_worlds,
                    user_path,
                    local_path,
                    is_frozen,
                    is_windows)
+from frontend_protocol import verify_slot, SlotVerifyResult
 
 from FileUtils import FileUtils
 
 logger = logging.getLogger("Client")
+
+# Modules that handle multiple games or no game (game-agnostic clients).
+# These skip the pre-flight Connect verification because the server's game
+# name won't match a single canonical client identity.
+_SKIP_GAME_VALIDATION_MODULES = {"_bizhawk", "_sni", "_tracker"}
+
+
+def _needs_game_validation(game_module: str, game_label: str) -> bool:
+    """True if the launcher should pre-flight a Connect handshake against the
+    server before flipping into the per-game client.
+
+    Game-agnostic modules (text client fallback when nothing is selected, plus
+    `_bizhawk` / `_sni` / `_tracker`) skip verification — they're designed to
+    connect to whatever the server has at that slot.
+    """
+    if not game_module:  # No selection → text-client fallback
+        return False
+    if game_module in _SKIP_GAME_VALIDATION_MODULES:
+        return False
+    if not game_label:
+        return False
+    return True
 
 with open(os.path.join(os.path.dirname(__file__), "launcher.kv"), encoding="utf-8") as kv_file:
     Builder.load_string(kv_file.read())
@@ -175,12 +198,20 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         
         self.available_games = get_available_worlds()
         self.load_favorite_games()
+        self.launcher_view.bind(fallback_status=self.on_fallback_status_changed)
         # Update button text based on initial context
         Clock.schedule_once(lambda dt: self.update_connect_button_text(), 0.2)
         #Clock.schedule_once(lambda dt: self.update_selected_game(), 0.2)
         Clock.schedule_once(lambda dt: self.populate_favorites(), 0.2)
         # Start game list population after available_games is populated
         asynckivy.start(self.set_game_list())
+
+    def on_fallback_status_changed(self, instance, value):
+        """Update the padding of the launcher view based on the fallback status"""
+        if value:
+            self.launcher_view.padding = dp(50), dp(10), dp(50), dp(50)
+        else:
+            self.launcher_view.padding = dp(50)
 
     async def set_game_list(self):
         """Set the game list based on the game tag filter"""
@@ -989,10 +1020,173 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         colon_text = ":" if slot_name_text else ""
         return f"{slot_name_text}{colon_text}{slot_password_text}@{server_text}:{port_text}" if server_text and port_text else None
 
+    def _raw_connect_inputs(self) -> tuple[str, str, str]:
+        """Return (server_host_port, slot_name, raw_password) read directly from
+        the launcher fields. Used by the pre-flight verifier so it doesn't have
+        to unparse the masked `self.server_address` URL.
+        """
+        ids = self.launcher_view.ids
+        server_text = ids.server.text or ids.server.hint_text or ""
+        port_text = ids.port.text or ids.port.hint_text or ""
+        slot_name = ids.slot_name.text or ids.slot_name.hint_text or ""
+        password = ids.slot_password.text or ""
+        host_port = f"{server_text}:{port_text}" if server_text and port_text else server_text
+        return host_port, slot_name, password
+
+    def _launch_module(self, game_module: str, game_label: str) -> None:
+        """Show loading, set up ready/error callbacks, and dispatch into the
+        per-game client. The pre-flight verify path and the skip path both
+        funnel through here.
+        """
+        try:
+            Clock.schedule_once(lambda dt: self.app.loading_layout.show_loading(display_logs=True), 0)
+
+            def ready_callback(dt: float = 0):
+                Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
+                # Slot data has resolved ctx.game by now (TextContext.on_package); refresh branding.
+                resolved_game = getattr(self.app.ctx, "game", None)
+                if not self.selected_game and resolved_game:
+                    cover_url = GameIndex.get_game(resolved_game).get("cover_url", None) if resolved_game else None
+                    if cover_url:
+                        self.app.logo_png = cover_url
+                Clock.schedule_once(lambda x: self.app.console_init())
+                Clock.schedule_once(lambda x: self.app.change_screen("console"))
+
+            def error_callback(restart_callback=None):
+                Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
+                if restart_callback:
+                    connect_args = self._prepare_connect_args(
+                        game_module=game_module,
+                        server_address=self.server_address,
+                    )
+                    MessageBox("Restart Required",
+                               "You will need to restart the launcher to apply updates.",
+                               error=True,
+                               callback=lambda x: self.restart_launcher(connect_args)).open()
+                # else: stay on launcher; handle_connection_loss surfaces the error
+
+            self.app.client_console_init()
+
+            discover_and_launch_module(
+                game_module, server_address=self.server_address,
+                ready_callback=ready_callback, error_callback=error_callback,
+            )
+        except Exception as e:
+            logger.error(f"Failed to launch {game_label} module: {e}")
+            Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
+            MessageBox("Launch Error", f"Failed to launch {game_label}: {str(e)}", is_error=True).open()
+
+    def _verify_then_launch(self, game_module: str, game_label: str) -> None:
+        """Pre-flight a Connect handshake against the server to confirm it
+        expects `game_label` for the entered slot. On success, hand off to
+        `_launch_module`. On failure, show a modal error and stay on the
+        launcher — the user can correct their selection without losing the
+        launcher entirely.
+
+        The websocket handshake runs on a worker thread (its own asyncio loop)
+        so the Kivy main thread stays responsive. The result is delivered
+        back to the main thread via `Clock.schedule_once`.
+        """
+        host_port, slot_name, password = self._raw_connect_inputs()
+
+        if not host_port:
+            MessageBox("Connection Error",
+                       "Please enter a valid server address and port.",
+                       is_error=True).open()
+            return
+        if not slot_name:
+            MessageBox("Connection Error",
+                       "Please enter a slot name.",
+                       is_error=True).open()
+            return
+
+        logger.info(f"Verifying slot {slot_name!r} expects game {game_label!r} on {host_port}")
+        Clock.schedule_once(lambda dt: self.app.loading_layout.show_loading(display_logs=False), 0)
+
+        def _worker():
+            import asyncio
+            try:
+                result = asyncio.run(
+                    verify_slot(host_port, slot_name, password or None, game_label)
+                )
+            except Exception as exc:
+                logger.exception("verify_slot worker crashed")
+                result = SlotVerifyResult(ok=False, transport_error=f"Verifier crashed: {exc}")
+            Clock.schedule_once(
+                lambda dt: self._handle_verify_result(
+                    result, game_module, game_label, host_port, slot_name,
+                ),
+                0,
+            )
+
+        threading.Thread(target=_worker, name="mwgg-verify-slot", daemon=True).start()
+
+    def _handle_verify_result(
+        self,
+        result: SlotVerifyResult,
+        game_module: str,
+        game_label: str,
+        host_port: str,
+        slot_name: str,
+    ) -> None:
+        """Kivy-main-thread handler for the pre-flight verifier's verdict."""
+        self.app.loading_layout.hide_loading()
+
+        if result.ok:
+            logger.info(f"Slot verification passed for {slot_name!r} / {game_label!r}")
+            self._launch_module(game_module, game_label)
+            return
+
+        if "InvalidGame" in result.errors:
+            MessageBox(
+                "Wrong Game Selected",
+                f"The server was not expecting {game_label} for {slot_name}, "
+                f"please check to ensure you've selected the right game by "
+                f"re-selecting it.",
+                is_error=True,
+            ).open()
+            return
+        if "InvalidSlot" in result.errors:
+            MessageBox(
+                "Unknown Slot",
+                f"Server has no slot named '{slot_name}'.",
+                is_error=True,
+            ).open()
+            return
+        if "InvalidPassword" in result.errors:
+            MessageBox(
+                "Wrong Password",
+                f"Wrong password for slot '{slot_name}'.",
+                is_error=True,
+            ).open()
+            return
+        if "IncompatibleVersion" in result.errors:
+            MessageBox(
+                "Incompatible Version",
+                "Your client is incompatible with this server's required version.",
+                is_error=True,
+            ).open()
+            return
+
+        if result.transport_error:
+            MessageBox(
+                "Connection Failed",
+                f"Could not reach {host_port}: {result.transport_error}",
+                is_error=True,
+            ).open()
+            return
+
+        error_summary = ", ".join(result.errors) if result.errors else "unknown error"
+        MessageBox(
+            "Connection Refused",
+            f"The server refused the connection: {error_summary}",
+            is_error=True,
+        ).open()
+
     def connect(self):
         """Connect to server and launch the selected game module"""
         logger.info("Connect method called!")
-        
+
         # Get the current app context
         current_ctx = self.app.ctx
 
@@ -1012,54 +1206,14 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 logger.info("No game selected; falling back to Text Client.")
             logger.info(f"Server: {server_address}")
 
-            try:
-                # Show loading screen
-                Clock.schedule_once(lambda dt: self.app.loading_layout.show_loading(display_logs=True), 0)
-
-                # Define ready callback to hide loading layout and switch to console
-                def ready_callback(dt: float = 0):
-                    Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
-                    # Slot data has resolved ctx.game by now (TextContext.on_package); refresh branding.
-                    resolved_game = getattr(self.app.ctx, "game", None)
-                    if not self.selected_game and resolved_game:
-                        cover_url = GameIndex.get_game(resolved_game).get("cover_url", None) if resolved_game else None
-                        if cover_url:
-                            self.app.logo_png = cover_url
-                    # Switch to console after successful connection
-                    Clock.schedule_once(lambda x: self.app.console_init())
-                    Clock.schedule_once(lambda x: self.app.change_screen("console"))
-
-                # Define error callback to handle connection failures
-                def error_callback(restart_callback=None):
-                    Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
-                    # If restart_callback is provided, it means we need to restart due to module updates
-                    if restart_callback:
-                        # Prepare connection arguments for restart
-                        connect_args = self._prepare_connect_args(
-                            game_module=game_module,
-                            server_address=self.server_address,
-                        )
-                        MessageBox("Restart Required",
-                                   "You will need to restart the launcher to apply updates.",
-                                   error=True,
-                                   callback=lambda x: self.restart_launcher(connect_args)).open()
-                    else:
-                        # Stay on launcher screen, don't switch to console
-                        # Error dialog will be shown by the context's handle_connection_loss
-                        pass
-
-                self.app.client_console_init()
-
-                discover_and_launch_module(
-                        game_module, server_address=self.server_address, ready_callback=ready_callback, error_callback=error_callback
+            if _needs_game_validation(game_module, game_label):
+                self._verify_then_launch(game_module, game_label)
+            else:
+                logger.debug(
+                    "Skipping pre-flight game verification for module=%r (game-agnostic client).",
+                    game_module,
                 )
-
-            except Exception as e:
-                logger.error(f"Failed to launch {game_label} module: {e}")
-                # Hide loading layout on error
-                Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
-                # Show error dialog and stay on launcher screen
-                MessageBox("Launch Error", f"Failed to launch {game_label}: {str(e)}", is_error=True).open()
+                self._launch_module(game_module, game_label)
         
         else:
             # We're in a game context, check if the selected game matches the current context
