@@ -133,6 +133,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     game_tag_filter: StringProperty
     bottom_appbar: BottomAppBar
     selected_game: tuple[str, str] = ("", "")
+    client_type: str = "text"
     highlighted_favorite: ObjectProperty(None, allownone=True)
     app: MDApp
     result: Any
@@ -266,9 +267,13 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             connect_button._button_icon.icon = 'play-network'
         else:
             # Game context - reconnect
-            game_name = getattr(current_ctx, 'game', 'Unknown Game')
-            connect_button._button_text.text = f'Reconnect ({game_name})'
+            connect_button._button_text.text = f'Reconnect'
             connect_button._button_icon.icon = 'refresh'
+
+    def set_client_type(self, client_type: str):
+        """Set the client type"""
+        self.client_type = client_type
+        self.update_connect_button_text()
 
     def load_favorite_games(self):
         """Load favorite games from app config"""
@@ -1070,6 +1075,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             discover_and_launch_module(
                 game_module, server_address=self.server_address,
                 ready_callback=ready_callback, error_callback=error_callback,
+                client_type=self.client_type,
             )
         except Exception as e:
             logger.error(f"Failed to launch {game_label} module: {e}")

@@ -56,32 +56,92 @@
                 MDBoxLayout:
                     orientation: 'vertical'
                     spacing: dp(15)
-                    MDButton:
-                        id: connect_button
-                        pos_hint: {"center_x": 0.5}
-                        on_release: app.launcher_screen.connect()
-                        width: dp(200)
-                        radius: dp(10)
-                        MDButtonText:
-                            theme_text_color: "Custom"
-                            text_color: app.theme_cls.onSurfaceVariantColor
-                            text: 'Connect & Play'
-                            halign: 'center'
-                        MDButtonIcon:
-                            icon: "play-network"
-                    MDButton:
-                        id: game_patch_button
-                        on_release: app.launcher_screen.patch_game()
-                        pos_hint: {"center_x": 0.5}
-                        width: dp(200)
-                        radius: dp(10)
-                        MDButtonText:
-                            theme_text_color: "Custom"
-                            text_color: app.theme_cls.onSurfaceVariantColor
-                            text: 'Patch Game'
-                            halign: 'center'
-                        MDButtonIcon:
-                            icon: "file-edit"
+                    MDBoxLayout:
+                        orientation: 'horizontal'
+                        spacing: dp(10)
+                        MDButton:
+                            id: connect_button
+                            pos_hint: {"center_x": 0.5}
+                            on_release: app.launcher_screen.connect()
+                            width: dp(200)
+                            radius: dp(10)
+                            MDButtonText:
+                                theme_text_color: "Custom"
+                                text_color: app.theme_cls.onSurfaceVariantColor
+                                text: 'Connect & Play'
+                                halign: 'center'
+                            MDButtonIcon:
+                                icon: "play-network"
+                        MDButton:
+                            id: game_patch_button
+                            on_release: app.launcher_screen.patch_game()
+                            pos_hint: {"center_y": 0.5}
+                            width: dp(200)
+                            radius: dp(10)
+                            MDButtonText:
+                                theme_text_color: "Custom"
+                                text_color: app.theme_cls.onSurfaceVariantColor
+                                text: 'Patch Game'
+                                halign: 'center'
+                            MDButtonIcon:
+                                icon: "file-edit"
+                    MDBoxLayout:
+                        orientation: 'horizontal'
+                        spacing: dp(10)
+                        MDBoxLayout:
+                            spacing: dp(4)
+                            MDLabel:
+                                text: 'Text Client'
+                                halign: 'center'
+                                theme_font_style: "Custom"
+                                font_style: "Body"
+                                role: "medium"
+                                theme_text_color: "Custom"
+                                text_color: app.theme_cls.onSurfaceVariantColor
+                            MDCheckbox:
+                                pos_hint: {"center_y": 0.5}
+                                group: 'client_type'
+                                id: text_client_checkbox
+                                on_active: app.launcher_screen.set_client_type('text')
+                        MDDivider:
+                            orientation: "vertical"
+                            theme_divider_color: "Custom"
+                            color: app.theme_cls.outlineColor
+                        MDBoxLayout:
+                            spacing: dp(4)
+                            MDLabel:
+                                text: 'Universal Tracker'
+                                halign: 'center'
+                                theme_font_style: "Custom"
+                                font_style: "Body"
+                                role: "medium"
+                                theme_text_color: "Custom"
+                                text_color: app.theme_cls.onSurfaceVariantColor
+                            MDCheckbox:
+                                pos_hint: {"center_y": 0.5}
+                                group: 'client_type'
+                                id: universal_tracker_checkbox
+                                on_active: app.launcher_screen.set_client_type('universal_tracker')
+                        MDDivider:
+                            orientation: "vertical"
+                            theme_divider_color: "Custom"
+                            color: app.theme_cls.outlineColor
+                        MDBoxLayout:
+                            spacing: dp(4)
+                            MDLabel:
+                                text: 'Manual Client'
+                                halign: 'center'
+                                theme_font_style: "Custom"
+                                font_style: "Body"
+                                role: "medium"
+                                theme_text_color: "Custom"
+                                text_color: app.theme_cls.onSurfaceVariantColor
+                            MDCheckbox:
+                                pos_hint: {"center_y": 0.5}
+                                group: 'client_type'
+                                id: manual_checkbox
+                                on_active: app.launcher_screen.set_client_type('manual')
+                                
                     MDButton:
                         id: game_yaml_button
                         on_release: app.launcher_screen.create_yaml()
@@ -131,6 +191,7 @@
                         size_hint_y: .8
                         pos_hint: {"center_y": 0.5}
                         orientation: "vertical"
+                        theme_divider_color: "Custom"
                         color: app.theme_cls.outlineColor
                 MDBoxLayout:
                     id: server_layout
