@@ -1088,8 +1088,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
             self.app.client_console_init()
 
+            _, slot_name, _ = self._raw_connect_inputs()
             discover_and_launch_module(
                 game_module, server_address=self.server_address,
+                slot_name=slot_name or None,
                 ready_callback=ready_callback, error_callback=error_callback,
                 client_type=self.client_type,
             )
