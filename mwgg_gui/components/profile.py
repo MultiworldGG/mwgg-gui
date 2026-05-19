@@ -26,8 +26,7 @@ __all__ = ("ProfileAvatar",
 import logging
 import os
 import threading
-from Utils import persistent_load
-from Utils import persistent_store
+from Utils import persistent_load, persistent_store, open_filename
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.textfield import MDTextField, MDTextFieldHelperText, MDTextFieldHintText
 from kivymd.uix.label import MDLabel
@@ -38,10 +37,6 @@ from kivy.uix.behaviors import ButtonBehavior
 from kivymd.uix.behaviors import CircularRippleBehavior
 from kivy.metrics import dp
 from kivy.clock import Clock, mainthread
-from kivy.uix.filechooser import FileChooserIconView
-from kivy.uix.popup import Popup
-from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
 
 from kivymd.uix.selectioncontrol import MDSwitch
 from kivymd.uix.fitimage import FitImage
@@ -214,33 +209,12 @@ class ProfileAvatar(MDBoxLayout):
     def open_file_chooser(self):
         if getattr(self, "_uploading", False):
             return
-        chooser = FileChooserIconView(
-            filters=[lambda folder, name: name.lower().endswith(AVATAR_FILE_EXTENSIONS)],
+        path = open_filename(
+            "Choose avatar image",
+            filetypes=[("Image files", list(AVATAR_FILE_EXTENSIONS))],
         )
-        layout = BoxLayout(orientation="vertical", spacing=dp(4), padding=dp(8))
-        layout.add_widget(chooser)
-        button_row = BoxLayout(orientation="horizontal", size_hint_y=None, height=dp(48), spacing=dp(8))
-        cancel_btn = Button(text="Cancel")
-        ok_btn = Button(text="Upload")
-        button_row.add_widget(cancel_btn)
-        button_row.add_widget(ok_btn)
-        layout.add_widget(button_row)
-        popup = Popup(title="Choose avatar image", content=layout, size_hint=(0.9, 0.9))
-
-        def _on_cancel(*_):
-            popup.dismiss()
-
-        def _on_submit(*_):
-            if not chooser.selection:
-                return
-            path = chooser.selection[0]
-            popup.dismiss()
+        if path:
             self._begin_upload(path)
-
-        cancel_btn.bind(on_release=_on_cancel)
-        ok_btn.bind(on_release=_on_submit)
-        chooser.bind(on_submit=lambda inst, sel, touch: _on_submit())
-        popup.open()
 
     def _begin_upload(self, path: str):
         self._uploading = True

@@ -11,8 +11,8 @@ from collections import deque
 # Check if we're in a test environment
 
 # Allow Kivy to be imported during testing
-if "pytest" not in sys.modules and "unittest" not in sys.modules and "test" not in sys.argv[0]:
-    assert "kivy" not in sys.modules, "gui needs instansiation first"
+# if "pytest" not in sys.modules and "unittest" not in sys.modules and "test" not in sys.argv[0]:
+#     assert "kivy" not in sys.modules, "gui needs instansiation first"
 
 if sys.platform == "win32":
     import ctypes

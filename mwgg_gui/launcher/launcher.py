@@ -1025,6 +1025,22 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         colon_text = ":" if slot_name_text else ""
         return f"{slot_name_text}{colon_text}{slot_password_text}@{server_text}:{port_text}" if server_text and port_text else None
 
+    def _validate_port_input(self) -> str | None:
+        """Return an error message if the port field is non-empty and not a
+        valid 1-65535 integer, else None. An empty field is allowed (caller
+        falls back to the hint-text default).
+        """
+        port_text = (self.launcher_view.ids.port.text or "").strip()
+        if not port_text:
+            return None
+        try:
+            port_value = int(port_text)
+        except ValueError:
+            return "Port must be a number."
+        if not (1 <= port_value <= 65535):
+            return "Port must be between 1 and 65535."
+        return None
+
     def _raw_connect_inputs(self) -> tuple[str, str, str]:
         """Return (server_host_port, slot_name, raw_password) read directly from
         the launcher fields. Used by the pre-flight verifier so it doesn't have
@@ -1192,6 +1208,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     def connect(self):
         """Connect to server and launch the selected game module"""
         logger.info("Connect method called!")
+
+        port_error = self._validate_port_input()
+        if port_error:
+            MessageBox("Invalid Port", port_error, is_error=True).open()
+            return
 
         # Get the current app context
         current_ctx = self.app.ctx
