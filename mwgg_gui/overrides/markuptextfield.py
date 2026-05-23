@@ -696,10 +696,16 @@ class MarkupTextField(TextInput, ThemableBehavior):
                         # Use cached width calculation
                         offset = self._get_text_width(text=(markup_text, plain_text), tab_width=self.tab_width, _label_cached=self._label_cached)
                 return offset
+        except IndexError:
+            # We expect quite a lot of index errors because we're testing if it fits. Ignore them.
+            pass
+        except AttributeError:
+            # We also expect quite a lot of attribute errors due to 'None' objects. Ignore them.
+            pass
         except Exception as e:
             logger.debug(f"Error calculating cursor offset - {str(e)}")
-        finally:
-            return offset
+    
+        return offset
         
     def cursor_index(self, cursor=None):
         '''Return the cursor index in the text value.

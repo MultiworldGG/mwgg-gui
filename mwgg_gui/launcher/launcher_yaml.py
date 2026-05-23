@@ -365,7 +365,7 @@ class ListBasedOption(MDBoxLayout):
     def get_item_names(self):
         """Get available item names from AutoWorld"""
         try:
-            from gui.mwgg_gui.launcher.launcher import get_current_game
+            from mwgg_gui.launcher.launcher import get_current_game
             current_game = get_current_game()
             if not current_game:
                 return []
@@ -953,7 +953,7 @@ def get_option_groups_data(game_name: str, is_complex: bool = False) -> Dict[str
     """
     try:
         # Load the specific world first
-        games_to_load = [game_name]
+        games_to_load = game_name
         set_game_names(games_to_load)
         
         # Import AutoWorldRegister after setting game names

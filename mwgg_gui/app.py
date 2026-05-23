@@ -11,8 +11,8 @@ from collections import deque
 # Check if we're in a test environment
 
 # Allow Kivy to be imported during testing
-if "pytest" not in sys.modules and "unittest" not in sys.modules and "test" not in sys.argv[0]:
-    assert "kivy" not in sys.modules, "gui needs instansiation first"
+# if "pytest" not in sys.modules and "unittest" not in sys.modules and "test" not in sys.argv[0]:
+#     assert "kivy" not in sys.modules, "gui needs instansiation first"
 
 if sys.platform == "win32":
     import ctypes
@@ -156,7 +156,11 @@ class MultiMDApp(MDApp):
 
     def __init__(self, ctx: context_type, **kwargs):
         super().__init__(**kwargs)
-        type(self)._active_instance = self
+        # Only claim the singleton slot if no live instance owns it. Phantom
+        # subclass instances built post-takeover (so per-game build() side
+        # effects like add_client_tab can run) must not clobber the launcher.
+        if type(self)._active_instance is None:
+            type(self)._active_instance = self
         # Use the existing Kivy Config singleton for Kivy settings
         self.config = MWKVConfig
         # Create app-specific config
@@ -300,6 +304,14 @@ class MultiMDApp(MDApp):
         This is the base app infrastructure for the
         gui. It sets up the theme, layouts, and screens.
         '''
+        live = type(self)._active_instance
+        if live is not None and live is not self:
+            # Phantom subclass instance constructed after takeover purely to
+            # invoke per-game build() side effects (add_client_tab, kv binds).
+            # Skip the destructive layout construction and let the subclass
+            # mutate the live app's screen_manager via add_client_tab.
+            self.screen_manager = live.screen_manager
+            return live.root_layout
 
         # Themeing
         self.theme_cls.theme_style = self.theme_mw.theme_style
@@ -494,10 +506,63 @@ class MultiMDApp(MDApp):
         else:
             self.create_custom_screen(item)
 
-    def create_custom_screen(self, item: str):
-        # Check if screen already exists before creating
-        screen = MDScreen(name=item)
-        self.screen_manager.add_widget(screen)
+    def _resolve_live_app(self) -> "MultiMDApp":
+        """Return the live launcher app instance whose screen_manager is on
+        screen. Normally `self`; on phantom per-game subclass instances built
+        post-takeover, the live instance is the launcher."""
+        live = type(self)._active_instance
+        return live if live is not None else self
+
+    def add_client_tab(self, title: str, content=None, index: int = -1):
+        """Per-world hook (kvui.GameManager API): add a tab whose screen
+        contains `content`. Returns the nav-bar button handle."""
+        return self.create_custom_screen(title, content, index)
+
+    def remove_client_tab(self, tab) -> None:
+        """Per-world hook (kvui.GameManager API): remove a tab previously
+        returned by `add_client_tab`."""
+        self.remove_custom_screen(tab)
+
+    def create_custom_screen(self, title: str, content=None, index: int = -1):
+        """Two call shapes coexist here:
+
+        * ``create_custom_screen(name)`` — internal launcher use, makes a
+          blank named MDScreen and adds it to the screen manager.
+        * ``create_custom_screen(title, content, index)`` — per-world use
+          (kvui.GameManager API), wraps ``content`` in a CustomScreen with
+          a bottom-appbar nav button and adds it to the screen manager.
+
+        Either way, the screen lands on the *live* launcher app's
+        screen_manager, so a phantom subclass instance constructed after
+        takeover still mutates the visible window.
+        """
+        live = self._resolve_live_app()
+
+        if content is None:
+            screen = MDScreen(name=title)
+            live.screen_manager.add_widget(screen)
+            return screen
+
+        if title in live.screen_manager.screen_names:
+            return None
+
+        from mwgg_gui.overrides.screen import CustomScreen
+        from kivymd.uix.appbar import MDFabBottomAppBarButton
+
+        button = MDFabBottomAppBarButton(text=title)
+        button.content = content
+        screen = CustomScreen(name=title)
+        screen.custom_layout.add_widget(content)
+        screen.bottom_appbar.add_widget(button)
+        button.bind(on_release=lambda *_: setattr(live.screen_manager, "current", title))
+        live.screen_manager.add_widget(screen, index=index)
+        return button
+
+    def remove_custom_screen(self, handle) -> None:
+        live = self._resolve_live_app()
+        name = getattr(handle, "text", None) or getattr(handle, "name", None)
+        if name and name in live.screen_manager.screen_names:
+            live.screen_manager.remove_widget(live.screen_manager.get_screen(name))
 
     def is_on_console_screen(self) -> bool:
         """FrontendProtocol: true iff the console screen is the active screen."""
@@ -743,59 +808,61 @@ class MultiMDApp(MDApp):
             self.top_appbar_layout.top_appbar.timer.start_running_timer()
 
     def update_hints(self):
-        hints = self.ctx.stored_data.get(f"_read_hints_{self.ctx.team}_{self.ctx.slot}", [])
-        mwgg_hints = self.ctx.stored_data.get(f"hints_{self.ctx.team}_{self.ctx.slot}_mwgg", {})
-        if hints:
-            self.refresh_hints(hints, mwgg_hints)
+        hints_key = f"_read_hints_{self.ctx.team}_{self.ctx.slot}"
+        # Skip the early on_connect call (stored_data not yet populated by
+        # the server's Retrieved response). CommonClient re-fires update_hints
+        # from Retrieved, and that single call drives the screen init —
+        # avoiding a race between two concurrent set_slots_list/set_hints_list
+        # coroutines that would otherwise interleave clear/add and duplicate.
+        if hints_key not in self.ctx.stored_data:
+            return
+        hints = self.ctx.stored_data.get(hints_key, []) or []
+        mwgg_hints = self.ctx.stored_data.get(f"hints_{self.ctx.team}_{self.ctx.slot}_mwgg", {}) or {}
+        self.refresh_hints(hints, mwgg_hints)
 
 
     def refresh_hints(self, hints, mwgg_hints):
-        hints_key = f"_read_hints_{self.ctx.team}_{self.ctx.slot}"
-        mwgg_hints_key = f"hints_{self.ctx.team}_{self.ctx.slot}_mwgg"
-
-        # Ensure mwgg_hints is a dict, not None
         if mwgg_hints is None:
             mwgg_hints = {}
 
-        if hints_key not in self.ctx.stored_data:
-            return
-        if not self.ctx.location_names or not self.ctx.item_names:
-            return
+        # Per-hint processing requires the data package; skip silently if it's
+        # not loaded yet, but still fall through to the screen-init below so
+        # the slots sidebar and hint screen come up on a fresh connect.
+        if hints and self.ctx.location_names and self.ctx.item_names:
+            for hint in hints:
+                key = f"{hint['finding_player']}_{hint['location']}"
+                mwgg_status = MWGGUIHintStatus(mwgg_hints.get(key, 0b000))
 
-        for hint in hints:
-            # Only look up MWGG status if we have stored data for this hint
-            key = f"{hint['finding_player']}_{hint['location']}"
-            mwgg_status = MWGGUIHintStatus(mwgg_hints.get(key, 0b000))
+                if self.ctx.slot_concerns_self(hint["receiving_player"]):
+                    bucket = self.ui_hint_data.setdefault(hint["finding_player"], {})
+                    existing_hint = bucket.get(hint["location"])
+                    if existing_hint is None:
+                        bucket[hint["location"]] = \
+                            UIHint(hint=hint, my_item=True, location_names=self.ctx.location_names, item_names=self.ctx.item_names, hint_status=hint.get("status"), mwgg_hint_status=mwgg_status)
+                    else:
+                        existing_hint.set_status(hint.get("status"))
+                        existing_hint.set_status_from_mwgg(mwgg_status)
+                elif self.ctx.slot_concerns_self(hint["finding_player"]):
+                    bucket = self.ui_hint_data.setdefault(hint["receiving_player"], {})
+                    existing_hint = bucket.get(hint["location"])
+                    if existing_hint is None:
+                        bucket[hint["location"]] = \
+                            UIHint(hint=hint, my_item=False, location_names=self.ctx.location_names, item_names=self.ctx.item_names, hint_status=hint.get("status"), mwgg_hint_status=mwgg_status)
+                    else:
+                        existing_hint.set_status(hint.get("status"))
+                        existing_hint.set_status_from_mwgg(mwgg_status)
 
-            if self.ctx.slot_concerns_self(hint["receiving_player"]):
-                if not self.ui_hint_data[hint["finding_player"]]:
-                    self.ui_hint_data[hint["finding_player"]] = {}
-                if hint["location"] not in self.ui_hint_data[hint["finding_player"]]:
-                    self.ui_hint_data[hint["finding_player"]][hint["location"]] = \
-                        UIHint(hint=hint, my_item=True, location_names=self.ctx.location_names, item_names=self.ctx.item_names, hint_status=hint.get("status"), mwgg_hint_status=mwgg_status)
-                else:
-                    self.ui_hint_data[hint["finding_player"]][hint["location"]].set_status(hint.get("status"))
-                    self.ui_hint_data[hint["finding_player"]][hint["location"]].set_status_from_mwgg(mwgg_status)
-            elif self.ctx.slot_concerns_self(hint["finding_player"]):
-                if not self.ui_hint_data[hint["receiving_player"]]:
-                    self.ui_hint_data[hint["receiving_player"]] = {}
-                if hint["location"] not in self.ui_hint_data[hint["receiving_player"]]:
-                    self.ui_hint_data[hint["receiving_player"]][hint["location"]] = \
-                        UIHint(hint=hint, my_item=False, location_names=self.ctx.location_names, item_names=self.ctx.item_names, hint_status=hint.get("status"), mwgg_hint_status=mwgg_status)
-                else:
-                    self.ui_hint_data[hint["receiving_player"]][hint["location"]].set_status(hint.get("status"))
-                    self.ui_hint_data[hint["receiving_player"]][hint["location"]].set_status_from_mwgg(mwgg_status)
+            self.update_mwgg_hints(mwgg_hints)
 
-        self.update_mwgg_hints(mwgg_hints)
-
-        # Update ui_player_data hints to match ui_hint_data
+        # Mirror ui_hint_data into ui_player_data and refresh the screens
+        # unconditionally, so a connect with no pre-existing hints still
+        # initializes the slots sidebar and the hint screen.
         for slot in self.ui_player_data:
             if slot in self.ui_hint_data:
                 self.ui_player_data[slot].hints = self.ui_hint_data[slot]
 
         self.update_player_data()
 
-        # Update hints lists if it exists
         if "console" in self.screen_manager.screen_names:
             self.console_screen.update_slots_list()
         else:

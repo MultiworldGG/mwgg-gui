@@ -21,7 +21,7 @@ from kivy.config import Config as MWKVConfig
 
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDButton, MDIconButton
+from kivymd.uix.button import MDButton, MDButtonText, MDIconButton
 from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.label import MDLabel
 from kivymd.uix.scrollview import MDScrollView
@@ -32,6 +32,7 @@ from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
 from mwgg_gui.components.mw_theme import THEME_OPTIONS, DEFAULT_TEXT_COLORS, RegisterFonts
 from mwgg_gui.overrides.colorpicker import MWColorPicker
 from mwgg_gui.components.dialog import MessageBox
+from mwgg_gui.components.profile import show_profile
 
 from dataclasses import fields
 import logging
@@ -456,15 +457,15 @@ class ConnectionSettings(SettingsScrollBox):
         # Profile section
         profile_section = SettingsSection(name="profile_settings", title="Profile")
 
-        # Avatar link
-        # TODO: needs proper upload functionality here
+        # Avatar — uploaded via the profile dialog's file chooser.
         avatar_box = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(55), padding=dp(4), spacing=dp(4))
-        avatar_box.add_widget(MDLabel(text="Avatar URL", theme_text_color="Primary", size_hint_x=0.7))
-        self.avatar_input = MDTextField(
-            text=self.app.app_config.get('client', 'avatar', fallback=''),
-            on_text_validate=self.save_avatar
+        avatar_box.add_widget(MDLabel(text="Avatar", theme_text_color="Primary", size_hint_x=0.7))
+        avatar_button = MDButton(
+            MDButtonText(text="Change avatar..."),
+            style="filled",
         )
-        avatar_box.add_widget(self.avatar_input)
+        avatar_button.bind(on_release=lambda *_: show_profile())
+        avatar_box.add_widget(avatar_button)
         profile_section.add_widget(avatar_box)
         
         # Alias
@@ -603,18 +604,6 @@ class ConnectionSettings(SettingsScrollBox):
                 self.app.local_player_data.bk_mode = value
         except Exception as e:
             logger.error(f"Error in toggle_in_bk: {e}", exc_info=True)
-
-    def save_avatar(self, instance):
-        try:
-            self.app.app_config.set('client', 'avatar', instance.text)
-            self.app.app_config.write()
-            if hasattr(self.app, 'local_player_data') and self.app.local_player_data:
-                self.app.local_player_data.avatar = instance.text
-            logger.info(f"Avatar saved: {instance.text}")
-            self.show_feedback(f"Avatar saved: {instance.text}")
-        except Exception as e:
-            logger.error(f"Error saving avatar: {e}", exc_info=True)
-            self.show_feedback("Error saving avatar", is_error=True)
 
     def save_alias(self, instance):
         try:
