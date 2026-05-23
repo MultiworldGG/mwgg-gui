@@ -156,7 +156,11 @@ class MultiMDApp(MDApp):
 
     def __init__(self, ctx: context_type, **kwargs):
         super().__init__(**kwargs)
-        type(self)._active_instance = self
+        # Only claim the singleton slot if no live instance owns it. Phantom
+        # subclass instances built post-takeover (so per-game build() side
+        # effects like add_client_tab can run) must not clobber the launcher.
+        if type(self)._active_instance is None:
+            type(self)._active_instance = self
         # Use the existing Kivy Config singleton for Kivy settings
         self.config = MWKVConfig
         # Create app-specific config
@@ -300,6 +304,14 @@ class MultiMDApp(MDApp):
         This is the base app infrastructure for the
         gui. It sets up the theme, layouts, and screens.
         '''
+        live = type(self)._active_instance
+        if live is not None and live is not self:
+            # Phantom subclass instance constructed after takeover purely to
+            # invoke per-game build() side effects (add_client_tab, kv binds).
+            # Skip the destructive layout construction and let the subclass
+            # mutate the live app's screen_manager via add_client_tab.
+            self.screen_manager = live.screen_manager
+            return live.root_layout
 
         # Themeing
         self.theme_cls.theme_style = self.theme_mw.theme_style
@@ -494,10 +506,63 @@ class MultiMDApp(MDApp):
         else:
             self.create_custom_screen(item)
 
-    def create_custom_screen(self, item: str):
-        # Check if screen already exists before creating
-        screen = MDScreen(name=item)
-        self.screen_manager.add_widget(screen)
+    def _resolve_live_app(self) -> "MultiMDApp":
+        """Return the live launcher app instance whose screen_manager is on
+        screen. Normally `self`; on phantom per-game subclass instances built
+        post-takeover, the live instance is the launcher."""
+        live = type(self)._active_instance
+        return live if live is not None else self
+
+    def add_client_tab(self, title: str, content=None, index: int = -1):
+        """Per-world hook (kvui.GameManager API): add a tab whose screen
+        contains `content`. Returns the nav-bar button handle."""
+        return self.create_custom_screen(title, content, index)
+
+    def remove_client_tab(self, tab) -> None:
+        """Per-world hook (kvui.GameManager API): remove a tab previously
+        returned by `add_client_tab`."""
+        self.remove_custom_screen(tab)
+
+    def create_custom_screen(self, title: str, content=None, index: int = -1):
+        """Two call shapes coexist here:
+
+        * ``create_custom_screen(name)`` — internal launcher use, makes a
+          blank named MDScreen and adds it to the screen manager.
+        * ``create_custom_screen(title, content, index)`` — per-world use
+          (kvui.GameManager API), wraps ``content`` in a CustomScreen with
+          a bottom-appbar nav button and adds it to the screen manager.
+
+        Either way, the screen lands on the *live* launcher app's
+        screen_manager, so a phantom subclass instance constructed after
+        takeover still mutates the visible window.
+        """
+        live = self._resolve_live_app()
+
+        if content is None:
+            screen = MDScreen(name=title)
+            live.screen_manager.add_widget(screen)
+            return screen
+
+        if title in live.screen_manager.screen_names:
+            return None
+
+        from mwgg_gui.overrides.screen import CustomScreen
+        from kivymd.uix.appbar import MDFabBottomAppBarButton
+
+        button = MDFabBottomAppBarButton(text=title)
+        button.content = content
+        screen = CustomScreen(name=title)
+        screen.custom_layout.add_widget(content)
+        screen.bottom_appbar.add_widget(button)
+        button.bind(on_release=lambda *_: setattr(live.screen_manager, "current", title))
+        live.screen_manager.add_widget(screen, index=index)
+        return button
+
+    def remove_custom_screen(self, handle) -> None:
+        live = self._resolve_live_app()
+        name = getattr(handle, "text", None) or getattr(handle, "name", None)
+        if name and name in live.screen_manager.screen_names:
+            live.screen_manager.remove_widget(live.screen_manager.get_screen(name))
 
     def is_on_console_screen(self) -> bool:
         """FrontendProtocol: true iff the console screen is the active screen."""
