@@ -748,7 +748,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         
         self._host_result = {
             'port': port if port else None,
-            'server-password': admin_password if admin_password else None
+            'admin-password': admin_password if admin_password else None
         }
         
         dialog.dismiss()
@@ -775,8 +775,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         if options.get('port'):
             cmd.extend(["--port", str(options['port'])])
             
-        if options.get('server-password'):
-            cmd.extend(["--server-password", options['server-password']])
+        if options.get('admin-password'):
+            cmd.extend(["--admin-password", options['admin-password']])
         
         logger.info(f"Starting detached server with command: {' '.join(cmd)}")
         
