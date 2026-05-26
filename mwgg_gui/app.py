@@ -208,6 +208,15 @@ class MultiMDApp(MDApp):
 
         self._show_all_hints = False
 
+    def __getattr__(self, name: str):
+        legacy_manager = self.__dict__.get("_legacy_kvui_manager")
+        if legacy_manager is not None and legacy_manager is not self:
+            try:
+                return getattr(legacy_manager, name)
+            except AttributeError:
+                pass
+        raise AttributeError(name)
+
     def get_application_config(self):
         """Get the path to the configuration file"""
         return os.path.join(os.environ["KIVY_HOME"], "client.ini")
@@ -512,6 +521,22 @@ class MultiMDApp(MDApp):
         post-takeover, the live instance is the launcher."""
         live = type(self)._active_instance
         return live if live is not None else self
+
+    def build_legacy_kvui(self, ctx, manager_cls):
+        """Run an old kvui/GameManager build against the live frontend.
+
+        The builder owns when this compatibility phase happens; the app owns
+        how legacy widget mutations land on the visible screen manager.
+        """
+        live = self._resolve_live_app()
+        build_for_live_app = getattr(manager_cls, "build_for_live_app", None)
+        if build_for_live_app is not None:
+            return build_for_live_app(ctx, live)
+
+        manager = manager_cls(ctx)
+        manager.build()
+        live._legacy_kvui_manager = manager
+        return manager
 
     def add_client_tab(self, title: str, content=None, index: int = -1):
         """Per-world hook (kvui.GameManager API): add a tab whose screen

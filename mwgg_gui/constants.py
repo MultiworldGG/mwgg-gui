@@ -22,7 +22,7 @@ MWGG_WEBHOST_BASE = "https://mw.prismativerse.com"
 # Hosts whose avatar URLs the client is willing to render. URLs that fail this
 # check (legacy YAML entries, manually-edited persistent storage, or hostile
 # Set values from other clients) collapse to the default avatar.
-TRUSTED_AVATAR_HOSTS = ("multiworld.gg", "mw.prismativerse.com")
+TRUSTED_AVATAR_HOSTS = ("multiworld.gg", "prismativerse.com")
 
 AVATAR_TOKEN_MINT_URL = f"{MWGG_WEBHOST_BASE}/api/avatar/token"
 AVATAR_UPLOAD_URL = f"{MWGG_WEBHOST_BASE}/api/avatar/upload"

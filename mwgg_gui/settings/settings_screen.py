@@ -7,7 +7,7 @@ when the user clicks the settings button in the
 top right corner of the screen.
 """
 
-__all__ = ("SettingsScreen",)
+__all__ = ("SettingsScreen", "register_settings_section")
 from kivy.lang import Builder
 from kivy.properties import ObjectProperty, StringProperty
 from kivy.clock import Clock
@@ -48,6 +48,49 @@ settings_dict = {
         {"name": "Layout", "icon": "page-layout-sidebar-left"}
     ],
 }
+
+# External (world-contributed) sections registered via
+# register_settings_section(). Keys are lowercased section names; values are
+# {"title": str, "factory": Callable[[], MDBoxLayout], "items": [{"name": ..., "icon": ...}]}.
+_dynamic_sections: dict = {}
+
+
+def register_settings_section(name: str, title: str, factory, items: list | None = None) -> None:
+    """Contribute a section to the global SettingsScreen.
+
+    Intended for world clients (Universal Tracker, etc.) that want their own
+    settings panel inside the launcher's Settings screen instead of bolting
+    something onto their own tab.
+
+    :param name: Single lowercase identifier; doubles as the screen_manager name
+                 the nav-drawer items route to.
+    :param title: Display label for the section header in the drawer.
+    :param factory: Zero-arg callable returning the section's content widget.
+                    Typically a ``SettingsScrollBox`` subclass instance.
+    :param items: Optional nav-drawer items list (``[{"name": ..., "icon": ...}, ...]``).
+                  Defaults to a single entry whose label is ``title`` and icon ``"tune"``.
+    """
+    key = name.lower()
+    _dynamic_sections[key] = {
+        "title": title,
+        "factory": factory,
+        "items": items or [{"name": title, "icon": "tune"}],
+    }
+    # If a SettingsScreen is already live, splice the section in now so the
+    # user doesn't have to relaunch.
+    try:
+        from kivy.app import App
+        app = App.get_running_app()
+    except Exception:
+        return
+    if app is None:
+        return
+    screen = getattr(app, "settings_screen", None)
+    if screen is None or not hasattr(screen, "add_dynamic_section"):
+        return
+    if key in screen.settings_screen_manager.screen_names:
+        return
+    screen.add_dynamic_section(key)
 
 # Define custom widgets in kv language
 KV = '''
@@ -176,18 +219,22 @@ class SettingsScreenSection(MDScreen):
         
         # Create the appropriate settings component based on the section name
         try:
-            logger.debug(f"Creating settings component for section: {name.lower()}")
-            if name.lower() == "connection":
+            key = name.lower()
+            logger.debug(f"Creating settings component for section: {key}")
+            if key == "connection":
                 logger.debug("Creating ConnectionSettings component")
                 self.add_widget(ConnectionSettings())
-            elif name.lower() == "theming":
+            elif key == "theming":
                 logger.debug("Creating ThemingSettings component")
                 self.add_widget(ThemingSettings())
-            elif name.lower() == "interface":
+            elif key == "interface":
                 logger.debug("Creating InterfaceSettings component")
                 self.add_widget(InterfaceSettings())
+            elif key in _dynamic_sections:
+                logger.debug(f"Creating dynamic settings component: {key}")
+                self.add_widget(_dynamic_sections[key]["factory"]())
             else:
-                logger.warning(f"Unknown section name: {name.lower()}. Expected one of: connection, theming, interface")
+                logger.warning(f"Unknown section name: {key}. Expected one of: connection, theming, interface, or a registered dynamic section.")
                 # Add a placeholder widget with a warning message
                 warning_box = MDBoxLayout(orientation="vertical", padding=dp(16))
                 warning_box.add_widget(MDLabel(
@@ -244,23 +291,43 @@ class SettingsScreen(MDScreen):
             section_name = section.lower()
             logger.debug(f"Section name (lowercase): {section_name}")
             self.settings_screen_manager.add_widget(SettingsScreenSection(name=section_name, title=section, nav_drawer=self.settings_nav_drawer))
+        # World-contributed sections (e.g. Universal Tracker) registered before
+        # the screen was built.
+        for key, info in _dynamic_sections.items():
+            if key in self.settings_screen_manager.screen_names:
+                continue
+            logger.debug(f"Adding dynamic section: {key} ({info['title']})")
+            self.settings_screen_manager.add_widget(SettingsScreenSection(
+                name=key, title=info["title"], nav_drawer=self.settings_nav_drawer,
+            ))
         self.settings_screen_manager.current = "interface"
         logger.debug("Finished setting up sections")
-    
+
     def setup_navigation_menu(self, *args):
         """Set up the navigation menu with all its items."""
         logger.debug("Setting up navigation menu")
         self.nav_menu = self.nav_layout.settings_nav_menu
         self.nav_menu.on_start()
-        
+
         for screen_name in self.settings_screen_manager.screen_names:
             logger.debug(f"Adding menu item for screen: {screen_name}")
-            # Add section
-            self.nav_menu.add_widget(NavDrawerLabel(
-                text=screen_name.capitalize()    
-            ))
+            # Resolve which menu-items list applies: built-in via settings_dict,
+            # otherwise the dynamic registration.
+            if screen_name.capitalize() in settings_dict:
+                title = screen_name.capitalize()
+                items = settings_dict[title]
+            else:
+                info = _dynamic_sections.get(screen_name)
+                if info is None:
+                    logger.warning(f"No menu items found for screen {screen_name}; skipping")
+                    continue
+                title = info["title"]
+                items = info["items"]
 
-            for item in settings_dict[screen_name.capitalize()]:
+            # Add section header
+            self.nav_menu.add_widget(NavDrawerLabel(text=title))
+
+            for item in items:
                 logger.debug(f"Adding menu item: {item['name']}")
                 self.nav_menu.add_widget(NavDrawerItem(
                     manager=self.settings_screen_manager,
@@ -268,8 +335,34 @@ class SettingsScreen(MDScreen):
                     text=item["name"],
                     screen=screen_name
                 ))
-            
-            # Add divider
-            if screen_name != "interface":
-                self.nav_menu.add_widget(MDNavigationDrawerDivider())
+
+            # Divider between sections (skip after the last one to avoid a
+            # stray separator at the bottom).
+            self.nav_menu.add_widget(MDNavigationDrawerDivider())
         logger.debug("Finished setting up navigation menu")
+
+    def add_dynamic_section(self, name: str) -> None:
+        """Splice a section registered AFTER this screen was built into the
+        live nav menu. Called by ``register_settings_section`` when it detects
+        an active SettingsScreen on the app."""
+        key = name.lower()
+        info = _dynamic_sections.get(key)
+        if info is None:
+            return
+        if key in self.settings_screen_manager.screen_names:
+            return
+        section = SettingsScreenSection(
+            name=key, title=info["title"], nav_drawer=self.settings_nav_drawer,
+        )
+        self.settings_screen_manager.add_widget(section)
+        if getattr(self, "nav_menu", None) is None:
+            return
+        self.nav_menu.add_widget(NavDrawerLabel(text=info["title"]))
+        for item in info["items"]:
+            self.nav_menu.add_widget(NavDrawerItem(
+                manager=self.settings_screen_manager,
+                icon=item["icon"],
+                text=item["name"],
+                screen=key,
+            ))
+        self.nav_menu.add_widget(MDNavigationDrawerDivider())

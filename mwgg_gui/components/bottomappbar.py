@@ -219,8 +219,12 @@ class BottomAppBar(MDBottomAppBar):
     def __init__(self, screen_name: str, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.screen_name = screen_name  # Store screen_name for later use
+        # Per-world tabs (Tracker, Manual, ...) come through CustomScreen with
+        # arbitrary screen names. Default to no fab actions for those so we
+        # don't trip an UnboundLocalError on the for-loop below.
+        actions = []
         if screen_name == "console" or screen_name == "hint":
-            actions = CONSOLE_ACTIONS   
+            actions = CONSOLE_ACTIONS
         elif screen_name == "launcher":
             actions = LAUNCHER_ACTIONS
         action_items = []
