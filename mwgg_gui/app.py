@@ -209,6 +209,17 @@ class MultiMDApp(MDApp):
         self._show_all_hints = False
 
     def __getattr__(self, name: str):
+        # If this is a phantom subclass instance (post-takeover, build()
+        # short-circuited), forward attribute lookups to the live launcher
+        # instance so that methods like on_connect(), update_hints(), etc.
+        # can reach top_appbar_layout, screen_manager, and other live-app
+        # attributes without crashing.
+        live = type(self)._active_instance
+        if live is not None and live is not self:
+            try:
+                return getattr(live, name)
+            except AttributeError:
+                pass
         legacy_manager = self.__dict__.get("_legacy_kvui_manager")
         if legacy_manager is not None and legacy_manager is not self:
             try:
