@@ -55,9 +55,22 @@ MWKVConfig.set("graphics", "focus", "False")
 MWKVConfig.write()
 
 from kivy.core.window import Window
-Window.opacity = 0
-Window.clearcolor = [0,0,0,0]
-Window.borderless = True
+# Windows-only: hide the window during the splash sequence so the splash
+# process owns the visible UI until Kivy finishes loading (see MultiWorld.py
+# for the splash gate). Borderless is also Windows-only because the custom
+# titlebar Kivy uses to replace the system one only works on Windows — on
+# Mac/Linux it silently fails ("Window: Window.custom_titlebar not set to
+# True… can't set custom titlebar"), leaving a borderless window with no
+# titlebar at all (no drag, no close button). Additionally on WSLg/llvmpipe
+# the opacity=0 + transparent clearcolor combo causes EffectWidget FBO
+# creation to fail at first layout (GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT),
+# which kills the Kivy main loop right after "Added nav_layout to screen".
+if sys.platform == "win32":
+    Window.opacity = 0
+    Window.clearcolor = [0, 0, 0, 0]
+    Window.borderless = True
+else:
+    Window.clearcolor = [0, 0, 0, 1]
 Window.set_title("MultiWorldGG")
 
 from kivy.clock import Clock
