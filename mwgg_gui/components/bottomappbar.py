@@ -35,6 +35,7 @@ Builder.load_string('''
                     
 <BottomBarTextInput>:
     id: text_input
+    -height: dp(56)
     hint_text: "Enter text"
     write_tab: False
     leading_icon: leading_icon

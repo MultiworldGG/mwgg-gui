@@ -53,7 +53,6 @@ from mwgg_gui.overrides.expansionlist import *
 from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar
 from mwgg_gui.launcher.launcher_favorite_bar import FavoritesScroll, Favorite
-from mwgg_gui.launcher.launcher_yaml import YamlDialog
 from mwgg_gui.components.dialog import MessageBox
 
 from Utils import (discover_and_launch_module,
@@ -139,7 +138,6 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     result: Any
     favorite_games: ListProperty = ListProperty([])
     saved_games: ListProperty = ListProperty([])
-    yaml_dialog_layout: ObjectProperty = ObjectProperty(None)
     _password_as_text: bool = False # True to show password as text, False to show password as asterisks
 
     def __init__(self,**kwargs):
@@ -240,6 +238,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.launcher_view.module_name = game_info[0]
         # Update button text based on context
         self.update_connect_button_text()
+
+        # Selecting a game gates the YAML creator button.
+        yaml_button = self.launcher_view.ids.get("game_yaml_button")
+        if yaml_button is not None:
+            yaml_button.disabled = False
 
         if not self.is_favorite(game_info[0]):
             self.add_to_favorite_bar(game_info[0])
@@ -987,30 +990,41 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         thread.start()
     
     def create_yaml(self):
-        """Create YAML file for the selected game"""
+        """Open the YAML creator screen for the selected game.
+
+        The screen is lazy-created the first time the button is pressed
+        (see MultiMDApp._create_screen), then re-entered on subsequent
+        presses. It's torn down again in `on_connect` once a session is
+        live, so each pre-connect session gets a fresh screen for the
+        currently selected game.
+        """
         if not self.selected_game:
             MessageBox("No Game Selected", "Please select a game before creating YAML.").open()
             return
 
         try:
-            self.yaml_dialog_layout = YamlDialog(
-                selected_game=self.selected_game
-            )
-            self.yaml_dialog_layout.bind(on_dismiss=self.on_yaml_dialog_dismiss)
+            # If a yaml screen exists from a different game, drop it so
+            # the new one is built for the current selection.
+            existing = getattr(self.app, "yaml_screen", None)
+            if existing is not None and getattr(existing, "selected_game", None) != self.selected_game:
+                self.app.screen_manager.remove_widget(existing)
+                self.app.yaml_screen = None
 
-            self.app.root.add_widget(self.yaml_dialog_layout)
-            
-
-            
+            if "yaml" not in self.app.screen_manager.screen_names:
+                self.app._create_screen("yaml")
+            self.app.screen_manager.current = "yaml"
         except Exception as e:
-            logger.error(f"Failed to create YAML for {self.selected_game[1]}: {e}", exc_info=True, stack_info=True)
-            MessageBox("YAML Creation Error", f"Failed to create YAML for {self.selected_game[1]}: {str(e)}", is_error=True).open()
+            logger.error(f"Failed to open YAML screen for {self.selected_game[1]}: {e}", exc_info=True, stack_info=True)
+            MessageBox(
+                "YAML Creation Error",
+                f"Failed to open YAML editor for {self.selected_game[1]}: {str(e)}",
+                is_error=True,
+            ).open()
 
-    def on_yaml_dialog_dismiss(self, *args):
-        """Handle dismissal of the YAML dialog"""
-        if hasattr(self, 'yaml_dialog_layout') and self.yaml_dialog_layout:
-            self.app.root.remove_widget(self.yaml_dialog_layout)
-            self.yaml_dialog_layout = None
+    def get_current_game(self) -> tuple[str, str] | None:
+        """Return the currently selected (module_name, display_name) tuple,
+        or None if nothing is selected. Used by the YAML creator package."""
+        return self.selected_game or None
 
     @property
     def server_address(self) -> str:

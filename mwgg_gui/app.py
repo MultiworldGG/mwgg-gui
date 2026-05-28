@@ -523,6 +523,20 @@ class MultiMDApp(MDApp):
             self.launcher_screen = LauncherScreen()
             self.screen_manager.add_widget(self.launcher_screen)
             self.launcher_text_input = self.launcher_screen.bottom_appbar.text_input
+        elif item == "yaml":
+            # Lazy-created on demand by the launcher's Create YAML button.
+            # Torn down again in on_connect once a game session is live.
+            from mwgg_gui.yaml_creator import YamlScreen
+            selected_game = getattr(
+                getattr(self, "launcher_screen", None), "selected_game", None
+            )
+            if not selected_game:
+                logging.getLogger("Client").warning(
+                    "Cannot create YAML screen: no game selected"
+                )
+                return
+            self.yaml_screen = YamlScreen(selected_game=selected_game)
+            self.screen_manager.add_widget(self.yaml_screen)
         else:
             self.create_custom_screen(item)
 
@@ -774,6 +788,19 @@ class MultiMDApp(MDApp):
         self.top_appbar_layout.top_appbar.ui_built()
         if not "hint" in self.screen_manager.screen_names:
             self._create_screen("hint")
+
+        # YAML creator is for pre-game prep only — drop it once connected.
+        if "yaml" in self.screen_manager.screen_names:
+            try:
+                self.screen_manager.remove_widget(
+                    self.screen_manager.get_screen("yaml")
+                )
+            except Exception as e:
+                logging.getLogger("Client").warning(
+                    "Failed to remove yaml screen on connect: %s", e
+                )
+            if hasattr(self, "yaml_screen"):
+                self.yaml_screen = None
 
 
     def print_json(self, data: typing.List[JSONMessagePart]):

@@ -40,6 +40,7 @@ Builder.load_string('''
         padding: dp(10), dp(0), dp(10), dp(0)
                     
 <LauncherTextField>:
+    -height: dp(56)
     theme_font_name: "Custom"
     theme_font_style: "Custom"
     font_name: app.theme_cls.font_styles[self.font_style][self.role]["font-name"]

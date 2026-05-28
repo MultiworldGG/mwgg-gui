@@ -50,28 +50,17 @@ DEFAULT_TEXT_COLORS = {
 ''' Default markup text colors
 [Light Mode, Dark Mode]
 '''
-# Overwriting or adding to default styles.kv
-Builder.load_string('''
-<Selector>:
-    color: app.theme_cls.inversePrimaryColor
 
-<MDTextField>:
-    theme_font_name: "Custom"
-    theme_font_style: "Custom"
-    font_name: app.theme_cls.font_styles[self.font_style][self.role]["font-name"]
-    font_size: app.theme_cls.font_styles[self.font_style][self.role]["font-size"]
-
-<MDTextFieldLeadingIcon>:
-    theme_icon_color: "Custom"
-    icon_color_focus: app.theme_cls.primaryColor
-    icon_color_normal: app.theme_cls.onPrimaryColor
-
-<MDTextFieldHintText>:
-    theme_font_name: "Custom"
-    theme_font_style: "Custom"
-    font_name: app.theme_cls.font_styles[self.font_style][self.role]["font-name"]
-    font_size: app.theme_cls.font_styles[self.font_style][self.role]["font-size"]
-''')
+# Load mw_theme.kv — overrides for default kivymd widget styles
+# (MDTextField height, font defaults, etc.). Kivy only auto-loads a
+# kv file named after the App class (`multimd.kv` here), so theme
+# overrides need an explicit Builder.load. Same pattern as
+# overrides/expansionlist.py:53-54.
+with open(
+    os.path.join(os.path.dirname(__file__), "mw_theme.kv"),
+    encoding="utf-8",
+) as kv_file:
+    Builder.load_string(kv_file.read())
 # The names of these colors are from Material Design
 # and will be the input for primary_palette
 # The colors in hex are actual color for the theme
