@@ -47,7 +47,11 @@ MWKVConfig.set("kivy", "default_font", ['Inter',
                                     os.path.join("data","fonts","Inter-BoldItalic.ttf")])
 MWKVConfig.set("graphics", "width", "1099")
 MWKVConfig.set("graphics", "height", "699")
-MWKVConfig.set("graphics", "custom_titlebar", "1")
+# custom_titlebar is Windows-only: Kivy's set_custom_titlebar() only succeeds
+# there, and we explicitly write "0" on other platforms to overwrite any value
+# persisted by a previous Windows-only run (MWKVConfig.write() persists to
+# KIVY_HOME, so a one-time misconfig sticks across runs otherwise).
+MWKVConfig.set("graphics", "custom_titlebar", "1" if sys.platform == "win32" else "0")
 MWKVConfig.set("graphics", "window_icon", os.path.join("data", "icon.png"))
 MWKVConfig.set("graphics", "minimum_height", "700")
 MWKVConfig.set("graphics", "minimum_width", "600")
@@ -310,9 +314,12 @@ class MultiMDApp(MDApp):
     def on_start(self):
         """Set up additional build necessities that
         cannot be done in the constructor"""
-        # titlebar bindings
-        Window.bind(on_restore=self.title_bar.tb_onres)
-        Window.bind(on_maximize=self.title_bar.tb_onmax)
+        # Custom titlebar restore/maximize bindings are Windows-only; on other
+        # platforms the system window manager handles those events itself and
+        # the Titlebar widget isn't rendered (see build()).
+        if sys.platform == "win32":
+            Window.bind(on_restore=self.title_bar.tb_onres)
+            Window.bind(on_maximize=self.title_bar.tb_onmax)
         Window.bind(on_close=lambda x: self.stop())
         # add binding for countdown timer
         self.bind(countdown_timer=self.on_countdown_timer)
@@ -367,8 +374,15 @@ class MultiMDApp(MDApp):
         self.main_layout.anchor_x='left'
         self.main_layout.anchor_y='top'
 
+        # Always construct the Titlebar so anything else referencing
+        # self.title_bar (typing annotations, future code) doesn't crash. We
+        # only register it as the window's custom titlebar (and add it to the
+        # layout below) on Windows — on Mac/Linux the system window manager
+        # provides the real titlebar, and rendering our own on top of it would
+        # be a visible duplicate.
         self.title_bar = Titlebar()
-        Window.set_custom_titlebar(self.title_bar)
+        if sys.platform == "win32":
+            Window.set_custom_titlebar(self.title_bar)
         self.bind(base_title=self.set_base_title)
 
         # Navigation layout (bottom sheet)
@@ -388,7 +402,9 @@ class MultiMDApp(MDApp):
         # Add user interface elements to main layout
         self.main_layout.add_widget(self.navigation_layout)
         self.main_layout.add_widget(self.top_appbar_layout)
-        self.main_layout.add_widget(self.title_bar)
+        # Windows-only: see comment in `build()` above on the titlebar gate.
+        if sys.platform == "win32":
+            self.main_layout.add_widget(self.title_bar)
 
         # Add the main layout directly to root layout when no effects are active
         # This prevents matrix transformation interference with StencilView
