@@ -374,15 +374,19 @@ class MultiMDApp(MDApp):
         self.main_layout.anchor_x='left'
         self.main_layout.anchor_y='top'
 
-        # Always construct the Titlebar so anything else referencing
-        # self.title_bar (typing annotations, future code) doesn't crash. We
-        # only register it as the window's custom titlebar (and add it to the
-        # layout below) on Windows — on Mac/Linux the system window manager
-        # provides the real titlebar, and rendering our own on top of it would
-        # be a visible duplicate.
-        self.title_bar = Titlebar()
+        # The Titlebar widget tree contains TitleBlur (an EffectWidget) — and
+        # constructing an EffectWidget triggers FBO creation at first layout,
+        # which fails on llvmpipe (WSLg's software GL) with
+        # GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT 36054 and kills the Kivy main
+        # loop. So we skip the Titlebar entirely on non-Windows platforms;
+        # the system window manager already provides the titlebar there, and
+        # all other self.title_bar accesses are gated to sys.platform=="win32"
+        # to match.
         if sys.platform == "win32":
+            self.title_bar = Titlebar()
             Window.set_custom_titlebar(self.title_bar)
+        else:
+            self.title_bar = None
         self.bind(base_title=self.set_base_title)
 
         # Navigation layout (bottom sheet)
