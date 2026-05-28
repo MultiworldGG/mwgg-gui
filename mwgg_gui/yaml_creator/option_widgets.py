@@ -26,6 +26,7 @@ References:
 from __future__ import annotations
 
 import logging
+from textwrap import wrap as textwrap_wrap
 from typing import Optional
 
 from kivy.clock import Clock
@@ -58,7 +59,7 @@ from kivymd.uix.selectioncontrol import MDSwitch
 from kivymd.uix.slider import MDSlider, MDSliderHandle, MDSliderValueLabel
 from kivymd.uix.stacklayout import MDStackLayout
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
-from kivymd.uix.tooltip import MDTooltip
+from kivymd.uix.tooltip import MDTooltip, MDTooltipPlain
 
 logger = logging.getLogger("Client")
 
@@ -112,6 +113,19 @@ Builder.load_string(
     pos_hint: {"center_y": 0.5}
     icon_size: dp(18)
     md_bg_color: 0, 0, 0, 0
+    # kivymd's MDTooltip.add_widget (tooltip.py:521-528) intercepts an
+    # MDTooltipPlain child and stashes it as the tooltip body. The
+    # text must be pre-wrapped in Python (same approach as the
+    # `list_tooltip` helper in overrides/expansionlist.py:209-229) —
+    # MDLabel's `text_size`/`do_wrap` knobs don't behave reliably
+    # inside a tooltip widget that ScaleBehavior is also animating.
+    MDTooltipPlain:
+        text: root.tooltip_text
+        adaptive_height: True
+        theme_text_color: "Custom"
+        theme_bg_color: "Custom"
+        md_bg_color: app.theme_cls.secondaryContainerColor
+        text_color: app.theme_cls.onSecondaryContainerColor
     """
 )
 
@@ -119,8 +133,48 @@ Builder.load_string(
 # ----- Title / tooltip -----------------------------------------------------
 
 
-class HelpIcon(MDIconButton, MDTooltip):
-    """(?) icon with the option docstring shown on hover."""
+# Max chars per wrapped tooltip line. Matches the `list_tooltip` helper
+# in overrides/expansionlist.py:209-229 (40 chars there); option
+# docstrings are full sentences so we let them run a bit longer.
+TOOLTIP_WRAP_WIDTH = 60
+
+
+def _wrap_tooltip(text: str) -> str:
+    """Pre-wrap a tooltip docstring. MDLabel's `text_size` / `do_wrap`
+    don't behave reliably inside the tooltip widget (ScaleBehavior on
+    MDTooltipPlain animates the bbox), so we mirror the
+    `list_tooltip` approach: wrap in Python first, render multi-line.
+
+    Preserves the docstring's own paragraph breaks (\\n\\n) by wrapping
+    each paragraph independently. Single newlines inside a paragraph
+    get folded into the wrap.
+    """
+    if not text:
+        return ""
+    out_paragraphs = []
+    for paragraph in text.split("\n\n"):
+        flat = " ".join(paragraph.split())
+        if not flat:
+            continue
+        wrapped = textwrap_wrap(
+            flat, width=TOOLTIP_WRAP_WIDTH, break_on_hyphens=False
+        )
+        out_paragraphs.append("\n".join(wrapped))
+    return "\n\n".join(out_paragraphs)
+
+
+class HelpIcon(MDTooltip, MDIconButton):
+    """(?) icon with the option docstring shown on hover.
+
+    `MDTooltip` MUST come first in the bases — `MDIconButton`'s chain
+    pulls in `MDLabel` → `StateLayerBehavior`, whose `on_enter` (defined
+    at `kivymd/uix/behaviors/state_layer_behavior.py:345`) does NOT
+    call `super().on_enter()`. If `MDIconButton` is first in the MRO,
+    `StateLayerBehavior.on_enter` wins and `MDTooltip.on_enter` is
+    never invoked, so the tooltip never displays. Same ordering rule
+    as `HintListItemLabel(ListItemTooltip, MDLabel)` and
+    `ServerLabel(MDTooltip, MDTopAppBarTitle)`.
+    """
     tooltip_text = StringProperty("")
 
 
@@ -169,7 +223,10 @@ class OptionRow(MDBoxLayout):
         self.display_name = descriptor.get("display_name", self.option_name)
         self.docstring = descriptor.get("docstring", "")
         self.add_widget(
-            OptionTitle(text=self.display_name, tooltip_text=self.docstring)
+            OptionTitle(
+                text=self.display_name,
+                tooltip_text=_wrap_tooltip(self.docstring),
+            )
         )
         Clock.schedule_once(self._apply_default_safely, 0)
 

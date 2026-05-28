@@ -276,9 +276,13 @@ class MultiMDApp(MDApp):
         Window.clearcolor = [0,0,0,1]
 
     def terminate_splash_screen_wrapper(self):
-        """Wrapper to call the terminate_splash_screen function from mwgg_splash"""
-        from mwgg_splash import terminate_splash_screen
-        terminate_splash_screen(self.ctx._splash_queue)
+        """Wrapper to call the terminate_splash_screen function from mwgg_splash.
+
+        The splash process is Windows-only (see MultiWorld.py); on Mac/Linux
+        `_splash_queue` is None and we skip the import/terminate entirely."""
+        if self.ctx._splash_queue is not None:
+            from mwgg_splash import terminate_splash_screen
+            terminate_splash_screen(self.ctx._splash_queue)
         Clock.schedule_once(self.set_opacity)
 
     @staticmethod
