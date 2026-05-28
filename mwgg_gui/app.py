@@ -52,7 +52,8 @@ MWKVConfig.set("graphics", "height", "699")
 # persisted by a previous Windows-only run (MWKVConfig.write() persists to
 # KIVY_HOME, so a one-time misconfig sticks across runs otherwise).
 MWKVConfig.set("graphics", "custom_titlebar", "1" if sys.platform == "win32" else "0")
-MWKVConfig.set("graphics", "window_icon", os.path.join("data", "icon.png"))
+# NOTE: window_icon previously set here was using a CWD-relative path and was
+# overridden anyway by App.icon at run() time — see MultiMDApp.icon below.
 MWKVConfig.set("graphics", "minimum_height", "700")
 MWKVConfig.set("graphics", "minimum_width", "600")
 MWKVConfig.set("graphics", "focus", "False")
@@ -75,7 +76,8 @@ if sys.platform == "win32":
     Window.borderless = True
 else:
     Window.clearcolor = [0, 0, 0, 1]
-Window.set_title("MultiWorldGG")
+# Window title is set via MultiMDApp.title — Kivy's App.run() applies that
+# after the window exists, clobbering any earlier Window.set_title() call.
 
 from kivy.clock import Clock
 from kivy.properties import ObjectProperty, BooleanProperty, NumericProperty, StringProperty
@@ -129,7 +131,18 @@ class MainScreenMgr(MDScreenManager):
 
 class MultiMDApp(MDApp):
 
-    base_title = StringProperty("MultiWorldGG")
+    # Kivy's App class derives the window title from the class name minus
+    # "App" if `title` isn't set — that gave us "MultiMD" in the titlebar.
+    # Setting it here also overrides the earlier `Window.set_title(...)`
+    # call (which runs before the window exists and gets clobbered when
+    # App.run() applies `self.title`).
+    title = "MultiworldGG"
+    # Same story for the icon: without `icon` set Kivy uses its own default
+    # logo. Resolve to an absolute path via local_path so it works from any
+    # CWD (frozen install dir, repo root during dev, etc.).
+    icon = local_path("data", "icon.png")
+
+    base_title = StringProperty("MultiworldGG")
 
     title_bar: Titlebar
     main_layout: MainLayout
