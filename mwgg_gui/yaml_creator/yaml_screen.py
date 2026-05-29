@@ -285,7 +285,7 @@ class YamlScreen(InnerMDScreen):
             except WorldDataError as e:
                 logger.warning("yaml worker failed: %s", e, exc_info=False)
                 if e.trace:
-                    logger.debug("yaml worker trace:\n%s", e.trace)
+                    logger.warning("yaml worker trace:\n%s", e.trace)
                 msg = str(e)
                 Clock.schedule_once(
                     lambda dt: self._on_world_data_error(visibility, msg), 0
