@@ -22,7 +22,7 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from BaseUtils import local_path
+from BaseUtils import local_path, is_frozen, mwgg_venv_python
 
 logger = logging.getLogger("Client")
 
@@ -68,7 +68,13 @@ def load_world_data(game_name: str, visibility: str = "simple") -> dict:
     # Suppress Kivy's own argument parser, mirroring Generate.py spawning.
     env["KIVY_NO_ARGS"] = "1"
 
-    cmd = [sys.executable, str(_WORKER_PATH)]
+    # In frozen builds, sys.executable is the cx_Freeze MultiWorldGG launcher,
+    # not a Python interpreter — passing a `.py` script to it hits
+    # MultiWorld.py's argparse and dies with "unrecognized arguments". Use the
+    # mwgg_venv's real Python instead (the same interpreter ModuleUpdate uses
+    # for `pip list --python …`). Dev runs keep using sys.executable.
+    python_exe = mwgg_venv_python() if is_frozen() else sys.executable
+    cmd = [python_exe, str(_WORKER_PATH)]
     logger.debug("yaml-worker spawn: %s (cwd=%s)", cmd, mwgg_root)
 
     try:
