@@ -64,13 +64,33 @@ def load_world_data(game_name: str, visibility: str = "simple") -> dict:
     # `import Utils, Options, worlds` etc. Use `local_path()` to find
     # it the same way the rest of the app does.
     mwgg_root = local_path()
+    # In frozen (cx_Freeze) builds, top-level modules like Utils/BaseUtils/
+    # Options live inside lib/library.zip (zip_include_packages="*"), and
+    # extracted packages like worlds/mwgg_gui live under lib/. The cx_Freeze
+    # launcher wires both onto its own sys.path automatically, but a separately
+    # spawned venv Python has no idea — without these entries it fails with
+    # `ModuleNotFoundError: No module named 'Utils'`.
+    path_entries = [mwgg_root]
+    if is_frozen():
+        path_entries.extend([
+            os.path.join(mwgg_root, "lib", "library.zip"),
+            os.path.join(mwgg_root, "lib"),
+        ])
     env = os.environ.copy()
-    # Prepend mwgg_root to PYTHONPATH (don't overwrite — leave the
+    # Prepend our entries to PYTHONPATH (don't overwrite — leave the
     # user's pre-existing entries intact).
     existing = env.get("PYTHONPATH", "")
+    new_pythonpath = os.pathsep.join(path_entries)
     env["PYTHONPATH"] = (
-        f"{mwgg_root}{os.pathsep}{existing}" if existing else mwgg_root
+        f"{new_pythonpath}{os.pathsep}{existing}" if existing else new_pythonpath
     )
+    # The worker is run by mwgg_venv's vanilla Python, so it has no `sys.frozen`
+    # and `BaseUtils.local_path()` mis-resolves (it falls through to
+    # `__main__.__file__`, landing in <root>/data instead of <root>). Pass the
+    # bundle root so the worker can prime sys.frozen + sys.argv[0] before any
+    # BaseUtils import triggers cached_path setup.
+    if is_frozen():
+        env["MWGG_FROZEN_BUNDLE_ROOT"] = mwgg_root
     # Suppress Kivy's own argument parser, mirroring Generate.py spawning.
     env["KIVY_NO_ARGS"] = "1"
 
