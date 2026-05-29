@@ -1,21 +1,20 @@
 """
-Client for the out-of-process worker that extracts option metadata for
-a world.
+Client for extracting a world's option metadata out-of-process.
 
-The GUI must not import worlds itself (`AutoWorldRegister` is a global
-that pulls in lots of state), so all option introspection happens in
-the subprocess defined in `worker.py`. This module spawns that
-subprocess, feeds it a JSON request over stdin, and parses the JSON
-response from stdout.
+The GUI must not import worlds into its own interpreter (`AutoWorldRegister`
+pulls in a lot of global state), so option introspection runs in a separate
+process. We invoke MultiworldGG's `Generate` entry point with `--yaml-options`:
+in frozen builds that's the bundled `MultiWorldGGGenerate` executable, which
+runs in the full frozen environment (so worlds' C-extension base deps like
+bsdiff4 import correctly); in dev it's `python Generate.py`.
 
-The worker never installs anything: if the world isn't already
-importable, the worker exits with code `_EXIT_NEEDS_INSTALL` and a
-`needs_install` payload, and we install via `Utils.set_game_names`
-here in the GUI process before relaunching the worker once.
+Generate installs the world if needed, loads it, and writes a single JSON
+object to stdout. All of its own logging/noise is diverted to stderr in this
+mode, so stdout carries only the payload.
 
 Public API:
     load_world_data(game_name, visibility="simple") -> dict
-    WorldDataError — raised on worker failure or unparseable response
+    WorldDataError — raised on subprocess failure or unparseable response
 """
 from __future__ import annotations
 
@@ -27,34 +26,22 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from BaseUtils import local_path, is_frozen, mwgg_venv_python
+from BaseUtils import local_path, is_frozen, is_windows
 
 logger = logging.getLogger("Client")
 
 __all__ = ("WorldDataError", "load_world_data")
 
-# The worker script lives in MultiworldGG's `data/` dir, not next to this
-# file. That sidesteps the cx_Freeze packaging headaches around bundling a
-# subprocess-only .py: data/ is shipped wholesale via setup.py's
-# `include_files`, so the file is automatically present in every install
-# shape (dev tree, tarball, AppImage). Same place data/mods/multiworld.py
-# and data/lua/*.lua live for the same reason.
-_WORKER_PATH = Path(local_path("data", "yaml_worker.py"))
-
-# Worker timeout. The worker no longer installs anything, so 60s is plenty
-# even with slow disks.
-_TIMEOUT_SECONDS = 60
-
-# Exit code the worker uses to signal "world isn't installed; please install
-# and relaunch me". Mirrored in data/yaml_worker.py.
-_EXIT_NEEDS_INSTALL = 2
+# Generous: the first call for a missing world includes a uv install, which can
+# be slow on a cold cache / slow connection.
+_TIMEOUT_SECONDS = 300
 
 
 class WorldDataError(Exception):
-    """Worker failed, timed out, or returned an unparseable response.
+    """Subprocess failed, timed out, or returned an unparseable response.
 
-    `message` is safe to show in the UI; `trace` (if present) is the
-    worker-side Python traceback for the log.
+    `message` is safe to show in the UI; `trace` (if present) is diagnostic
+    output for the log.
     """
 
     def __init__(self, message: str, trace: Optional[str] = None):
@@ -62,65 +49,36 @@ class WorldDataError(Exception):
         self.trace = trace
 
 
-def _run_worker(game_name: str, visibility: str) -> subprocess.CompletedProcess:
-    """Spawn the yaml worker once and return the CompletedProcess.
+def _generate_command() -> list[str]:
+    """Build the argv prefix that runs MultiworldGG's Generate entry point."""
+    if is_frozen():
+        # The Generate executable is a sibling of the running launcher.
+        exe_name = "MultiWorldGGGenerate.exe" if is_windows else "MultiWorldGGGenerate"
+        exe = Path(sys.executable).parent / exe_name
+        return [str(exe)]
+    # Dev: run the script with the current interpreter. local_path() resolves to
+    # the MultiworldGG repo root, where Generate.py lives.
+    return [sys.executable, str(Path(local_path("Generate.py")))]
 
-    Raises WorldDataError on timeout / spawn failure; otherwise returns the
-    process result so the caller can inspect returncode + stdout payload.
+
+def load_world_data(game_name: str, visibility: str = "simple") -> dict:
+    """Run Generate --yaml-options for `game_name` and return the parsed JSON.
+
+    Raises `WorldDataError` if the subprocess fails or its output can't be
+    parsed.
     """
-    request = json.dumps({"game_name": game_name, "visibility": visibility})
-
-    # The worker needs the MultiworldGG repo on its path so it can
-    # `import Utils, Options, worlds` etc. Use `local_path()` to find
-    # it the same way the rest of the app does.
-    mwgg_root = local_path()
-    # In frozen (cx_Freeze) builds, top-level modules like Utils/BaseUtils/
-    # Options live inside lib/library.zip (zip_include_packages="*"), and
-    # extracted packages like worlds/mwgg_gui live under lib/. The cx_Freeze
-    # launcher wires both onto its own sys.path automatically, but a separately
-    # spawned venv Python has no idea — without these entries it fails with
-    # `ModuleNotFoundError: No module named 'Utils'`.
-    path_entries = [mwgg_root]
-    if is_frozen():
-        path_entries.extend([
-            os.path.join(mwgg_root, "lib", "library.zip"),
-            os.path.join(mwgg_root, "lib"),
-        ])
-    env = os.environ.copy()
-    # Prepend our entries to PYTHONPATH (don't overwrite — leave the
-    # user's pre-existing entries intact).
-    existing = env.get("PYTHONPATH", "")
-    new_pythonpath = os.pathsep.join(path_entries)
-    env["PYTHONPATH"] = (
-        f"{new_pythonpath}{os.pathsep}{existing}" if existing else new_pythonpath
-    )
-    # The worker is run by mwgg_venv's vanilla Python, so it has no `sys.frozen`
-    # and `BaseUtils.local_path()` mis-resolves (it falls through to
-    # `__main__.__file__`, landing in <root>/data instead of <root>). Pass the
-    # bundle root so the worker can prime sys.frozen + sys.argv[0] before any
-    # BaseUtils import triggers cached_path setup.
-    if is_frozen():
-        env["MWGG_FROZEN_BUNDLE_ROOT"] = mwgg_root
-    # Suppress Kivy's own argument parser, mirroring Generate.py spawning.
-    env["KIVY_NO_ARGS"] = "1"
-
-    # In frozen builds, sys.executable is the cx_Freeze MultiWorldGG launcher,
-    # not a Python interpreter — passing a `.py` script to it hits
-    # MultiWorld.py's argparse and dies with "unrecognized arguments". Use the
-    # mwgg_venv's real Python instead (the same interpreter ModuleUpdate uses
-    # for `pip list --python …`). Dev runs keep using sys.executable.
-    python_exe = mwgg_venv_python() if is_frozen() else sys.executable
-    cmd = [python_exe, str(_WORKER_PATH)]
-    logger.debug("yaml-worker spawn: %s (cwd=%s)", cmd, mwgg_root)
+    cmd = _generate_command() + [
+        "--yaml-options",
+        "--game", game_name,
+        "--visibility", visibility,
+    ]
+    logger.debug("yaml-options spawn: %s", cmd)
 
     try:
-        return subprocess.run(
+        result = subprocess.run(
             cmd,
-            input=request,
             capture_output=True,
             text=True,
-            env=env,
-            cwd=mwgg_root,
             timeout=_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired:
@@ -128,86 +86,35 @@ def _run_worker(game_name: str, visibility: str) -> subprocess.CompletedProcess:
             f"Timed out after {_TIMEOUT_SECONDS}s loading options for {game_name}."
         )
     except OSError as e:
-        raise WorldDataError(f"Could not spawn yaml worker: {e}")
+        raise WorldDataError(f"Could not run Generate for option metadata: {e}")
 
+    if result.returncode != 0:
+        raise WorldDataError(
+            f"Generate exited with code {result.returncode}: {result.stderr.strip()[:400]}",
+            trace=result.stderr,
+        )
 
-def _parse_payload(result: subprocess.CompletedProcess) -> dict:
-    """Parse the worker's stdout JSON, or raise WorldDataError on garbage."""
     stdout = result.stdout.strip()
     if not stdout:
-        raise WorldDataError("Worker returned no output.", trace=result.stderr)
+        raise WorldDataError("Generate returned no output.", trace=result.stderr)
+
     try:
-        return json.loads(stdout)
+        payload = json.loads(stdout)
     except json.JSONDecodeError as e:
-        # The worker might have crashed mid-write or printed extra
-        # noise. Try to recover the last JSON line.
+        # Recover the last JSON line in case anything still leaked onto stdout.
         last_line = stdout.splitlines()[-1] if stdout.splitlines() else ""
         try:
-            return json.loads(last_line)
+            payload = json.loads(last_line)
         except json.JSONDecodeError:
             raise WorldDataError(
-                f"Could not parse worker response: {e}",
-                trace=stdout[-2000:],
+                f"Could not parse option metadata: {e}",
+                trace=(stdout[-2000:] + "\n--- stderr ---\n" + (result.stderr or "")),
             )
 
+    if not payload.get("ok"):
+        raise WorldDataError(
+            payload.get("error", "Generate reported failure"),
+            trace=payload.get("trace") or (result.stderr or None),
+        )
 
-def _install_world(slug: str) -> None:
-    """Install a missing world by slug via ModuleUpdate.install_worlds.
-
-    Calling install_worlds directly (rather than Utils.set_game_names) keeps
-    `import worlds` out of the GUI process — the re-spawned worker stays the
-    sole AutoWorldRegister consumer. install_worlds resolves the wheel URL
-    from mwgg_igdb and pip-installs via uv; the worker re-probes on relaunch.
-    """
-    logger.info("Installing world '%s' via ModuleUpdate.install_worlds", slug)
-    import ModuleUpdate
-    ModuleUpdate.install_worlds([slug])
-
-
-def load_world_data(game_name: str, visibility: str = "simple") -> dict:
-    """Invoke the worker and return the parsed JSON response.
-
-    If the worker reports the world isn't installed, install it via
-    Utils.set_game_names and relaunch the worker once. Raises WorldDataError
-    on any other failure or if the install retry still can't find the world.
-    """
-    install_attempted = False
-    while True:
-        result = _run_worker(game_name, visibility)
-
-        if result.returncode == _EXIT_NEEDS_INSTALL:
-            payload = _parse_payload(result)
-            slug = payload.get("needs_install")
-            if not slug:
-                raise WorldDataError(
-                    f"Worker signalled needs_install with no slug: {payload!r}",
-                    trace=result.stderr,
-                )
-            if install_attempted:
-                raise WorldDataError(
-                    f"Install of '{game_name}' did not produce an importable "
-                    f"world. Check the parent app's log for the install output.",
-                    trace=result.stderr,
-                )
-            _install_world(slug)
-            install_attempted = True
-            continue
-
-        if result.returncode != 0:
-            raise WorldDataError(
-                f"Worker exited with code {result.returncode}: {result.stderr.strip()[:400]}",
-                trace=result.stderr,
-            )
-
-        payload = _parse_payload(result)
-        if not payload.get("ok"):
-            # Fall back to the captured stderr if the worker didn't include a
-            # trace of its own — the underlying logging.warning from
-            # WorldSource.load ends up there and is usually what we want to
-            # see in the GUI log.
-            raise WorldDataError(
-                payload.get("error", "Worker reported failure"),
-                trace=payload.get("trace") or (result.stderr or None),
-            )
-
-        return payload
+    return payload
