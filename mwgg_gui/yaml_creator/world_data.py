@@ -28,7 +28,13 @@ logger = logging.getLogger("Client")
 
 __all__ = ("WorldDataError", "load_world_data")
 
-_WORKER_PATH = Path(__file__).with_name("worker.py")
+# The worker script lives in MultiworldGG's `data/` dir, not next to this
+# file. That sidesteps the cx_Freeze packaging headaches around bundling a
+# subprocess-only .py: data/ is shipped wholesale via setup.py's
+# `include_files`, so the file is automatically present in every install
+# shape (dev tree, tarball, AppImage). Same place data/mods/multiworld.py
+# and data/lua/*.lua live for the same reason.
+_WORKER_PATH = Path(local_path("data", "yaml_worker.py"))
 
 # How long to give the worker. First call for a missing world includes
 # a pip install which can take a while on slow connections.
