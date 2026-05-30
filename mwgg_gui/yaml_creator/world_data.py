@@ -36,6 +36,12 @@ __all__ = ("WorldDataError", "load_world_data")
 # be slow on a cold cache / slow connection.
 _TIMEOUT_SECONDS = 300
 
+# Generate exits with this code after installing a previously-missing world: the
+# world can't be loaded in the same process that just installed it, so we re-run
+# Generate once and the fresh process loads it cleanly. Mirrors
+# Generate.EXIT_NEEDS_RELOAD / the project-wide "needs reload" convention.
+_EXIT_NEEDS_RELOAD = 10
+
 
 class WorldDataError(Exception):
     """Subprocess failed, timed out, or returned an unparseable response.
@@ -61,21 +67,18 @@ def _generate_command() -> list[str]:
     return [sys.executable, str(Path(local_path("Generate.py")))]
 
 
-def load_world_data(game_name: str, visibility: str = "simple") -> dict:
-    """Run Generate --yaml-options for `game_name` and return the parsed JSON.
-
-    Raises `WorldDataError` if the subprocess fails or its output can't be
-    parsed.
-    """
+def _run_generate(game_name: str, visibility: str) -> subprocess.CompletedProcess:
+    """Spawn Generate --yaml-options once. Raises WorldDataError on timeout /
+    spawn failure; otherwise returns the CompletedProcess for the caller to
+    inspect (returncode + stdout)."""
     cmd = _generate_command() + [
         "--yaml-options",
         "--game", game_name,
         "--visibility", visibility,
     ]
     logger.debug("yaml-options spawn: %s", cmd)
-
     try:
-        result = subprocess.run(
+        return subprocess.run(
             cmd,
             capture_output=True,
             text=True,
@@ -87,6 +90,20 @@ def load_world_data(game_name: str, visibility: str = "simple") -> dict:
         )
     except OSError as e:
         raise WorldDataError(f"Could not run Generate for option metadata: {e}")
+
+
+def load_world_data(game_name: str, visibility: str = "simple") -> dict:
+    """Run Generate --yaml-options for `game_name` and return the parsed JSON.
+
+    If Generate had to install the world it exits `_EXIT_NEEDS_RELOAD`; we
+    re-run it once so the freshly-installed world loads in a clean process.
+    Raises `WorldDataError` if the subprocess fails or its output can't be
+    parsed.
+    """
+    result = _run_generate(game_name, visibility)
+    if result.returncode == _EXIT_NEEDS_RELOAD:
+        logger.info("Generate installed '%s'; re-running to load it.", game_name)
+        result = _run_generate(game_name, visibility)
 
     if result.returncode != 0:
         raise WorldDataError(
