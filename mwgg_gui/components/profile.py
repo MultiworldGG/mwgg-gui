@@ -76,7 +76,7 @@ KV = """
         size_hint_x: 0.3
     MDTextField:
         id: profile_input
-        on_text_validate: root.save_profile_field(self.text)
+        on_text_validate: root.save_profile_field(self)
         MDTextFieldLeadingIcon:
             id: profile_input_icon
         MDTextFieldHelperText:
@@ -118,14 +118,23 @@ class ProfileField(MDBoxLayout):
         self.profile_input = self.ids.profile_input
         self.profile_input_icon = self.ids.profile_input_icon
         self.icon = self.ids.profile_input_icon.icon
+        Clock.schedule_once(self._load_persistent, 0)
+
+    def _load_persistent(self, dt):
+        if not self.settings_name:
+            return
         self.profile_input.text = persistent_load().get('client', {}).get(self.settings_name, '')
 
     def save_profile_field(self, instance):
         """Save profile field to config"""
+        if not self.settings_name:
+            return
         if isinstance(instance, MDTextField):
             text = instance.text
         elif isinstance(instance, MDSwitch):
             text = instance.active
+        else:
+            return
         persistent_store('client', self.settings_name, text)
         setattr(self.local_player_data, self.settings_name, text)
 
@@ -148,9 +157,18 @@ class ProfileSwitch(MDBoxLayout):
         self.app = MDApp.get_running_app()
         self.local_player_data = self.app.local_player_data
         self.profile_switch = self.ids.profile_switch
+        Clock.schedule_once(self._load_persistent, 0)
+
+    def _load_persistent(self, dt):
+        if not self.settings_name:
+            return
+        self.profile_switch.active = bool(persistent_load().get('client', {}).get(self.settings_name, False))
 
     def save_profile_switch(self, value: bool):
         """Save profile switch value"""
+        if not self.settings_name:
+            return
+        persistent_store('client', self.settings_name, value)
         setattr(self.local_player_data, self.settings_name, value)
 
 class AvatarImage(CircularRippleBehavior, ButtonBehavior, FitImage):
