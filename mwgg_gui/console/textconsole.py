@@ -73,7 +73,7 @@ class TextConsole(MarkupTextField, ThemableBehavior):
         Clock.schedule_interval(self.add_text_from_buffer, 0)
 
     def set_all_players_chat(self, dt):
-        self.app.ctx.all_players_chat = self.app.app_config.get('client', 'all_players_chat', fallback=True)
+        self.app.ctx.all_players_chat = self.app.app_config.getboolean('client', 'all_players_chat', fallback=True)
 
     def add_text_from_buffer(self, dt):
         chunk_size = 50  # Process up to 50 items per frame
