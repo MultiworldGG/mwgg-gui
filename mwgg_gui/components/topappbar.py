@@ -533,6 +533,8 @@ class TopAppBar(MDTopAppBar):
 
     def toggle_timer(self):
         """Toggle timer on/off (pause/resume)"""
+        if self.timer.ctx is None:
+            return  # No game session hooked up (launcher/yaml/settings) — no-op
         if self.timer.is_running:
             self.timer.stop()  # Pause
         else:
