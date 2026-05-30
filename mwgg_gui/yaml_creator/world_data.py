@@ -67,7 +67,7 @@ def _generate_command() -> list[str]:
     return [sys.executable, str(Path(local_path("Generate.py")))]
 
 
-def _run_generate(game_name: str, visibility: str) -> subprocess.CompletedProcess:
+def _run_generate(game_name: str, visibility: str, module: str = "") -> subprocess.CompletedProcess:
     """Spawn Generate --yaml-options once. Raises WorldDataError on timeout /
     spawn failure; otherwise returns the CompletedProcess for the caller to
     inspect (returncode + stdout)."""
@@ -76,6 +76,10 @@ def _run_generate(game_name: str, visibility: str) -> subprocess.CompletedProces
         "--game", game_name,
         "--visibility", visibility,
     ]
+    # Pass the module slug so a custom (non-pip) world loads without a game-index
+    # lookup — the index in a fresh Generate process only knows pip/index worlds.
+    if module:
+        cmd += ["--module", module]
     logger.debug("yaml-options spawn: %s", cmd)
     try:
         return subprocess.run(
@@ -92,18 +96,19 @@ def _run_generate(game_name: str, visibility: str) -> subprocess.CompletedProces
         raise WorldDataError(f"Could not run Generate for option metadata: {e}")
 
 
-def load_world_data(game_name: str, visibility: str = "simple") -> dict:
+def load_world_data(game_name: str, visibility: str = "simple", module: str = "") -> dict:
     """Run Generate --yaml-options for `game_name` and return the parsed JSON.
 
-    If Generate had to install the world it exits `_EXIT_NEEDS_RELOAD`; we
-    re-run it once so the freshly-installed world loads in a clean process.
-    Raises `WorldDataError` if the subprocess fails or its output can't be
-    parsed.
+    `module` is the world's module slug; passing it lets custom (non-pip) worlds
+    load without a game-index lookup. If Generate had to install the world it
+    exits `_EXIT_NEEDS_RELOAD`; we re-run it once so the freshly-installed world
+    loads in a clean process. Raises `WorldDataError` if the subprocess fails or
+    its output can't be parsed.
     """
-    result = _run_generate(game_name, visibility)
+    result = _run_generate(game_name, visibility, module)
     if result.returncode == _EXIT_NEEDS_RELOAD:
         logger.info("Generate installed '%s'; re-running to load it.", game_name)
-        result = _run_generate(game_name, visibility)
+        result = _run_generate(game_name, visibility, module)
 
     if result.returncode != 0:
         raise WorldDataError(

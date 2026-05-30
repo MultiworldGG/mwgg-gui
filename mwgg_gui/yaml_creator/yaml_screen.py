@@ -275,10 +275,11 @@ class YamlScreen(InnerMDScreen):
         marshalled back onto the Kivy main thread via Clock so we don't
         touch widgets from a non-UI thread."""
         game_name = self.game_name
+        module_name = self.module_name
 
         def _run():
             try:
-                data = load_world_data(game_name, visibility=visibility)
+                data = load_world_data(game_name, visibility=visibility, module=module_name)
                 Clock.schedule_once(
                     lambda dt: self._on_world_data_loaded(visibility, data), 0
                 )
