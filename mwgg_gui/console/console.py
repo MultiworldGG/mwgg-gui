@@ -125,11 +125,17 @@ class ConsoleSliverAppbar(MDSliverAppbar):
         self.app.ctx.ui.set_deafen()
 
     def toggle_view(self):
-        '''Swap between the Players (hint slots) and Logic (tracker locations) screens.'''
+        '''Swap between the Players (hint slots) and Logic (tracker locations) screens.
+
+        Switching to the logic view triggers a refresh so it populates
+        immediately instead of sitting empty until the refresh button is hit.
+        '''
         if not self.tracker_mode:
             return
         self.current_view = "logic" if self.current_view == "players" else "players"
         self.screen_manager.current = self.current_view
+        if self.current_view == "logic":
+            self.refresh_current_view()
 
     def handle_title_touch(self, title_widget, touch):
         '''Make the appbar title click-to-toggle when in Universal Tracker mode.'''
