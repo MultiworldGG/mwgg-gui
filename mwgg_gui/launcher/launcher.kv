@@ -61,7 +61,7 @@
                         spacing: dp(10)
                         MDButton:
                             id: connect_button
-                            pos_hint: {"center_x": 0.5}
+                            pos_hint: {"center_x": 0.5, "center_y": 0.5}
                             on_release: app.launcher_screen.connect()
                             width: dp(200)
                             radius: dp(10)
@@ -75,7 +75,7 @@
                         MDButton:
                             id: game_patch_button
                             on_release: app.launcher_screen.patch_game()
-                            pos_hint: {"center_y": 0.5}
+                            pos_hint: {"center_x": 0.5, "center_y": 0.5}
                             width: dp(200)
                             radius: dp(10)
                             MDButtonText:

@@ -11,7 +11,7 @@ from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.card.card import MDRelativeLayout
 from .textconsole import ConsoleView
-from .tracker_view import TrackerLocationRecycleView
+from .tracker_view import TrackerRegionList
 
 from kivy.clock import Clock
 from kivy.lang import Builder
@@ -143,12 +143,9 @@ class ConsoleSliverAppbar(MDSliverAppbar):
     def _on_current_screen(self, manager, screen):
         '''Resize the screen_manager to match whichever screen just became active.
 
-        - Players screen: sizes to its child content (slots_mdlist.minimum_height),
-          so the sliver appbar's outer ScrollView handles scrolling and the
-          header still collapses on scroll.
-        - Logic screen: fixed to the viewport height so the inner RecycleView
-          paginates instead of growing — important when a slot has thousands
-          of locations.
+        Both screens size to their MDList content (minimum_height-driven),
+        so the sliver appbar's outer ScrollView handles overflow and the
+        header still collapses on scroll.
         '''
         if screen is None:
             return
@@ -157,33 +154,26 @@ class ConsoleSliverAppbar(MDSliverAppbar):
             screen.bind(height=lambda inst, h: self._sync_screen_height(inst))
             screen._height_bound = True
 
-    def _logic_viewport_height(self) -> float:
-        '''Visible content area inside the sliver appbar, used as the locked
-        height for the logic screen so the RecycleView recycles widgets.
-
-        Matches the consolegrid's effective height (Window.height - 185, the
-        existing chrome budget for title bar + bottom appbar) minus the sliver
-        appbar's own header collapse area.
-        '''
-        return max(Window.height - dp(280), dp(200))
-
     def _sync_screen_height(self, screen):
         if self.screen_manager.current_screen is not screen:
             return
-        if screen.name == "logic":
-            viewport = self._logic_viewport_height()
-            # Locking screen.height triggers our own bind, but the guard above
-            # plus this equality check prevent a feedback loop.
-            if abs(screen.height - viewport) > 1:
-                screen.height = viewport
-            self.screen_manager.height = viewport
-        else:
-            self.screen_manager.height = max(screen.height, dp(48))
+        self.screen_manager.height = max(screen.height, dp(48))
 
     def refresh_current_view(self):
-        '''Refresh button: hints for players view, tracker locations for logic view.'''
+        '''Refresh button: hints for players view, tracker locations for logic view.
+
+        For the logic view we go through the overlay's tracker_overlay_refresh
+        hook (installed by worlds/tracker/wrap.py:start_overlay_ui_refresh) so
+        the same full pipeline as the periodic tick runs -- updateTracker(),
+        page labels, and the location list repaint. Falls back to a UI-only
+        repaint if the overlay hasn't installed the hook yet.
+        '''
         if self.current_view == "logic" and self.tracker_mode:
-            self.app.console_screen.update_tracker_locations()
+            refresh = getattr(self.app.ctx, "tracker_overlay_refresh", None)
+            if callable(refresh):
+                refresh()
+            else:
+                self.app.console_screen.update_tracker_locations()
         else:
             self.app.ctx.ui.update_hints()
 
@@ -210,7 +200,7 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         self.pos_hint = {"center_x": 0.5, "center_y": 0.5}
         super().__init__(**kwargs)
         self.slots_mdlist = MDList(width=260)
-        self.tracker_recycleview = TrackerLocationRecycleView()
+        self.tracker_regions_mdlist = TrackerRegionList(width=260)
 
         self.bottom_appbar = BottomAppBar(screen_name="console")
 
@@ -223,8 +213,8 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         asynckivy.start(self.set_slots_list())
 
     def update_tracker_locations(self):
-        """Repopulate the tracker recycleview from the current ctx.tracker_core state."""
-        self.tracker_recycleview.populate_from_ctx(self.app.ctx)
+        """Repopulate the tracker region list from the current ctx.tracker_core state."""
+        self.tracker_regions_mdlist.populate_from_ctx(self.app.ctx)
 
     def init_important(self):
         self.consolegrid = ConsoleLayout(width=Window.width, height=Window.height-185)
@@ -247,13 +237,17 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         players_screen.add_widget(self.slots_mdlist)
         self.slots_mdlist.bind(height=lambda inst, h: setattr(players_screen, "height", max(h, dp(48))))
 
-        # Logic screen is sized to a viewport (see _logic_viewport_height) so the
-        # RecycleView paginates instead of rendering every row eagerly.
+        # Logic screen mirrors the Players screen: sized by its MDList content
+        # (TrackerRegionList.minimum_height). Each expanded region panel
+        # contains its own inner RecycleView that virtualizes location rows,
+        # so the outer list stays cheap even for games with many regions.
+        self.tracker_regions_mdlist.size_hint_y = None
+        self.tracker_regions_mdlist.bind(
+            minimum_height=self.tracker_regions_mdlist.setter("height"))
         logic_screen = self.important_appbar.logic_screen
-        logic_screen.add_widget(self.tracker_recycleview)
-        # Re-lock the viewport on window resize so the RV viewport tracks.
-        Window.bind(height=lambda *_: self.important_appbar._sync_screen_height(
-            self.important_appbar.screen_manager.current_screen))
+        logic_screen.add_widget(self.tracker_regions_mdlist)
+        self.tracker_regions_mdlist.bind(
+            height=lambda inst, h: setattr(logic_screen, "height", max(h, dp(48))))
 
         # Kick off the initial screen-height sync now that children are wired.
         self.important_appbar._on_current_screen(
