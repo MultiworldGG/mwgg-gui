@@ -1009,6 +1009,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             if existing is not None and getattr(existing, "selected_game", None) != self.selected_game:
                 self.app.screen_manager.remove_widget(existing)
                 self.app.yaml_screen = None
+                self.app._invalidate_top_appbar_menu()
 
             if "yaml" not in self.app.screen_manager.screen_names:
                 self.app._create_screen("yaml")

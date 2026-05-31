@@ -2,77 +2,63 @@ from __future__ import annotations
 """
 TRACKER VIEW
 
-TrackerLocationRecycleView - MDRecycleView showing one expandable row per
-    region (Universal Tracker mode). Each row's expansion state lives in the
-    RecycleView data dict so it survives widget recycling.
-TrackerRegionPanel - RecycleView viewclass that renders a region header and,
-    when expanded, the list of locations under that region.
+TrackerRegionList - MDList containing one TrackerRegionPanel per top-level
+    branch region (Universal Tracker mode). Sized by its content via
+    minimum_height like the Players-side slots_mdlist.
+TrackerRegionPanel - MDExpansionPanel subclass; header is a region name +
+    count, expanded content is an inner RecycleView listing missing
+    locations as uniform-height labels.
+TrackerLocationItem - RecycleView viewclass for one location row, colored
+    by its in-logic state.
 """
-__all__ = ("TrackerLocationRecycleView", "TrackerRegionPanel")
+__all__ = ("TrackerRegionList", "TrackerRegionPanel", "TrackerLocationItem")
 
 import logging
 
 from kivy.clock import Clock
+from kivy.core.window import Window
 from kivy.lang import Builder
 from kivy.metrics import dp
-from kivy.properties import (
-    BooleanProperty,
-    ListProperty,
-    NumericProperty,
-    ObjectProperty,
-    StringProperty,
-)
-from kivy.uix.recycleboxlayout import RecycleBoxLayout  # noqa: F401 -- registers for kv
-from kivy.uix.recycleview import RecycleView
+from kivy.properties import BooleanProperty, NumericProperty, StringProperty
+from kivy.uix.recycleboxlayout import RecycleBoxLayout  # noqa: F401 -- registered for kv
+from kivy.uix.recycleview import RecycleView  # noqa: F401 -- registered for kv
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
 from kivymd.app import MDApp
-from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.label import MDLabel
+from kivymd.uix.list import MDList
+
+from mwgg_gui.overrides.expansionlist import GameListPanel
 
 logger = logging.getLogger("Client")
 
 _HEADER_HEIGHT = dp(48)
-_LOCATION_ROW_HEIGHT = dp(36)
+_LOCATION_ITEM_HEIGHT = dp(36)
+_CONTENT_SPACING = dp(1)
+_CONTENT_PADDING_V = dp(4)
+
 
 Builder.load_string('''
-<TrackerLocationRecycleView>:
-    # size_hint = (1, 1) defaults so the RV fills its parent (logic_screen,
-    # which is sized to the sliver appbar viewport). Inner RecycleBoxLayout
-    # grows past that and the RV recycles widgets as the user scrolls.
-    viewclass: "TrackerRegionPanel"
-    bar_width: dp(6)
-    RecycleBoxLayout:
-        id: rbl
-        default_size: None, dp(48)
-        default_size_hint: 1, None
-        size_hint_y: None
-        height: self.minimum_height
-        orientation: "vertical"
-        spacing: dp(2)
-        padding: dp(4), dp(4), dp(4), dp(4)
-
-<TrackerRegionPanel>:
+<-TrackerRegionPanel>:
     orientation: "vertical"
     size_hint_y: None
-    height: root.row_height
-    theme_bg_color: "Custom"
+    height: self.minimum_height
+    padding: dp(4), dp(2), dp(4), dp(2)
     md_bg_color: app.theme_cls.surfaceContainerColor
+    theme_bg_color: "Custom"
     radius: [dp(8), dp(8), dp(8), dp(8)]
-    MDBoxLayout:
-        id: header
-        orientation: "horizontal"
+    MDExpansionPanelHeader:
+        id: panel_header
         size_hint_y: None
-        height: dp(48)
-        padding: dp(8), dp(4), dp(8), dp(4)
+        height: root.panel_header_height
+        padding: dp(8), 0, dp(8), 0
         spacing: dp(4)
         MDIcon:
             id: chevron
-            icon: "chevron-down" if root.expanded else "chevron-right"
+            icon: "chevron-down" if root.is_open else "chevron-right"
             size_hint_x: None
             width: dp(24)
             pos_hint: {"center_y": 0.5}
         MDLabel:
-            id: region_label
             text: root.region_name
             theme_text_color: "Custom"
             text_color: app.theme_cls.onSurfaceColor
@@ -82,7 +68,6 @@ Builder.load_string('''
             shorten_from: "right"
             pos_hint: {"center_y": 0.5}
         MDLabel:
-            id: count_label
             text: root.count_label_text
             size_hint_x: None
             width: dp(48)
@@ -92,165 +77,252 @@ Builder.load_string('''
             font_style: "Body"
             role: "small"
             pos_hint: {"center_y": 0.5}
-    MDBoxLayout:
-        id: content
+    MDExpansionPanelContent:
+        id: panel_content
         orientation: "vertical"
         size_hint_y: None
-        height: 0
-        padding: dp(28), 0, dp(8), dp(4)
-        spacing: dp(1)
+        height: root.content_height
+        # Left/right gutters give the user a clickable strip outside the
+        # inner RecycleView so dragging there scrolls the outer MDList
+        # instead of the inner RV (which otherwise captures all touches).
+        padding: dp(16), 0, dp(16), 0
+        RecycleView:
+            id: rv
+            viewclass: "TrackerLocationItem"
+            bar_width: dp(4)
+            # When the location list fits inside the panel viewport there's
+            # nothing to scroll — disable scrolling and overscroll bounce
+            # so a drag falls through to the outer MDList instead.
+            do_scroll_y: rl.minimum_height > self.height
+            always_overscroll: False
+            RecycleBoxLayout:
+                id: rl
+                orientation: "vertical"
+                default_size: None, root.item_height
+                default_size_hint: 1, None
+                size_hint_y: None
+                height: self.minimum_height
+                padding: dp(12), dp(4), 0, dp(4)
+                spacing: 1
+
+<TrackerLocationItem>:
+    size_hint_y: None
+    height: dp(36)
+    theme_text_color: "Custom"
+    font_style: "Body"
+    role: "small"
+    shorten: True
+    shorten_from: "right"
+    valign: "center"
 ''')
 
 
-class TrackerLocationRecycleView(RecycleView):
-    """RecycleView that lists a player's missing locations grouped by region."""
+# Maps the overlay_features CATEGORY_* strings to MarkupTagsTheme attrs.
+_CATEGORY_TO_THEME_ATTR = {
+    "default": "tracker_in_logic",
+    "hinted": "tracker_hinted",
+    "excluded": "tracker_excluded",
+    "glitched": "tracker_glitched",
+    "hinted_glitched": "tracker_hinted_glitched",
+    "excluded_glitched": "tracker_excluded_glitched",
+}
+
+
+def _make_category_color_lookup(app):
+    """Return a memoised category-name → hex-string resolver pulling from
+    ``app.theme_mw.markup_tags_theme`` so the logic view tracks user-tuned
+    mw_theme colors (and theme-style switches) instead of the tracker
+    page's hardcoded Tracker.kv hexes.
+    """
+    cache: dict[str, str] = {}
+    theme_mw = getattr(app, "theme_mw", None)
+    markup = getattr(theme_mw, "markup_tags_theme", None) if theme_mw else None
+    theme_style = getattr(theme_mw, "theme_style", "Dark") if theme_mw else "Dark"
+    idx = 1 if theme_style == "Dark" else 0
+
+    def lookup(category: str) -> str:
+        if category in cache:
+            return cache[category]
+        attr_name = _CATEGORY_TO_THEME_ATTR.get(category)
+        hex_str = ""
+        if markup is not None and attr_name:
+            pair = getattr(markup, attr_name, None)
+            if isinstance(pair, (list, tuple)) and len(pair) > idx:
+                hex_str = pair[idx] or ""
+        cache[category] = hex_str
+        return hex_str
+
+    return lookup
+
+
+def _hex_to_rgba(hex_str: str, fallback) -> list[float]:
+    """Convert a 6-digit hex (e.g. 'DD00FF') to an RGBA list. Falls back
+    to ``fallback`` when the input is empty, malformed, or None."""
+    if not hex_str:
+        return fallback
+    s = hex_str.lstrip("#")
+    if len(s) != 6:
+        return fallback
+    try:
+        r = int(s[0:2], 16) / 255.0
+        g = int(s[2:4], 16) / 255.0
+        b = int(s[4:6], 16) / 255.0
+    except ValueError:
+        return fallback
+    return [r, g, b, 1.0]
+
+
+class TrackerLocationItem(RecycleDataViewBehavior, MDLabel):
+    """One location row inside an expanded TrackerRegionPanel."""
+
+    def refresh_view_attrs(self, rv, index, data):
+        self.text = data.get("name", "")
+        app = MDApp.get_running_app()
+        fallback = app.theme_cls.onSurfaceColor
+        self.text_color = _hex_to_rgba(data.get("color_hex", ""), fallback)
+        return super().refresh_view_attrs(rv, index, data)
+
+
+class TrackerRegionPanel(GameListPanel):
+    """Expansion panel for one top-level branch's missing locations.
+
+    Mirrors HintListPanel: a fixed-height header, plus an
+    MDExpansionPanelContent whose target height is computed from the
+    actual item count, not a guess.
+    """
+
+    region_name = StringProperty("")
+    count_label_text = StringProperty("")
+    panel_header_height = NumericProperty(_HEADER_HEIGHT)
+    content_height = NumericProperty(0)
+    item_height = NumericProperty(_LOCATION_ITEM_HEIGHT)
+
+    def __init__(self, region_name: str, locations: list[dict], **kwargs):
+        self._tracker_locations = locations
+        super().__init__(item_name=region_name, item_data=locations, **kwargs)
+        self.size_hint_x = 1
+        self.width = 260
+        self.pos_hint = {}
+        self.region_name = region_name
+        self.count_label_text = str(len(locations))
+        self._populated = False
+        Clock.schedule_once(lambda dt: self._populate(), 0)
+
+    def populate_game_item(self):
+        return
+
+    def populate_slot_item(self, ctx=None):
+        return
+
+    def set_self_height(self):
+        return
+
+    def _populate(self):
+        if self._populated:
+            return
+        self._populated = True
+        rv = self.ids.rv
+        rv.data = list(self._tracker_locations)
+        rv.refresh_from_data()
+        self._sync_content_height()
+
+    def _calculate_content_height(self) -> float:
+        count = len(self._tracker_locations)
+        if count == 0:
+            return dp(8)
+        item_block = (
+            count * (self.item_height + _CONTENT_SPACING)
+            + (_CONTENT_PADDING_V * 2)
+        )
+        host = self.parent
+        viewport = host.height if host else Window.height
+        max_height = max(viewport - self.panel_header_height, dp(96))
+        return min(item_block, max_height)
+
+    def _sync_content_height(self, *_args):
+        calculated = self._calculate_content_height()
+        self.content_height = calculated
+        self._original_content_height = calculated
+        if self._content is not None and not self.is_open:
+            self._content.height = 0
+
+    def _set_content_height(self, *args):
+        self._sync_content_height()
+
+    def _update_original_content_height(self, widget):
+        self._sync_content_height()
+
+    def toggle_expansion(self, instance=None):
+        if self.is_open:
+            self.close()
+        else:
+            self._sync_content_height()
+            self.open()
+
+    def on_touch_down(self, touch):
+        header = self.ids.get("panel_header") if hasattr(self, "ids") else None
+        if header is not None and header.collide_point(*touch.pos):
+            self.toggle_expansion()
+            return True
+        return super().on_touch_down(touch)
+
+
+class TrackerRegionList(MDList):
+    """MDList of TrackerRegionPanel widgets, sized by its content."""
 
     app: MDApp
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.app = MDApp.get_running_app()
-        self.data = []
+        self.size_hint_y = None
+        self._expansion_state: dict[str, bool] = {}
 
     def populate_from_ctx(self, ctx) -> None:
-        """Rebuild the data list from the running TrackerGameContext.
-
-        Pulls regions + locations from ctx.tracker_core.multiworld and filters
-        each region's locations against ctx.tracker_core.missing_locations.
-        Regions with no remaining missing locations are skipped.
-        """
+        """Rebuild the region panels from the running TrackerGameContext."""
         tracker_core = getattr(ctx, "tracker_core", None)
         if tracker_core is None:
             logger.debug("populate_from_ctx: no tracker_core on ctx")
-            self.data = []
-            self.refresh_from_data()
+            self.clear_widgets()
             return
 
         multiworld = getattr(tracker_core, "multiworld", None)
         player_id = getattr(tracker_core, "player_id", None)
         if multiworld is None or player_id is None:
             logger.debug("populate_from_ctx: tracker_core not yet initialized")
-            self.data = []
-            self.refresh_from_data()
+            self.clear_widgets()
             return
 
-        missing: set[int] = set(getattr(tracker_core, "missing_locations", set()))
-        in_logic_addrs: set[int] = set(getattr(tracker_core, "locations_available", []) or [])
-
-        # Preserve expansion state across reloads by region name.
-        prev_expanded = {row["region_name"]: row["expanded"] for row in self.data}
-
-        new_data: list[dict] = []
         try:
-            regions = multiworld.get_regions(player_id)
-        except Exception as exc:
-            logger.exception(f"populate_from_ctx: get_regions failed: {exc}")
-            self.data = []
-            self.refresh_from_data()
-            return
-
-        for region in regions:
-            locations = []
-            for loc in getattr(region, "locations", []) or []:
-                if loc.address is None:
-                    continue
-                if loc.address not in missing:
-                    continue
-                locations.append({
-                    "name": loc.name,
-                    "in_logic": loc.address in in_logic_addrs,
-                })
-            if not locations:
-                continue
-            locations.sort(key=lambda l: (not l["in_logic"], l["name"]))
-            expanded = prev_expanded.get(region.name, False)
-            new_data.append({
-                "region_name": region.name,
-                "locations": locations,
-                "expanded": expanded,
-                "row_height": _row_height(expanded, len(locations)),
-            })
-
-        new_data.sort(key=lambda r: r["region_name"])
-        self.data = new_data
-        self.refresh_from_data()
-
-
-def _row_height(expanded: bool, location_count: int) -> float:
-    if not expanded:
-        return _HEADER_HEIGHT
-    return _HEADER_HEIGHT + (_LOCATION_ROW_HEIGHT * location_count) + dp(8)
-
-
-class TrackerRegionPanel(RecycleDataViewBehavior, MDBoxLayout):
-    """One expandable region row inside the TrackerLocationRecycleView."""
-
-    region_name = StringProperty("")
-    locations = ListProperty([])
-    expanded = BooleanProperty(False)
-    row_height = NumericProperty(_HEADER_HEIGHT)
-    count_label_text = StringProperty("")
-    index = None
-    _content_box: ObjectProperty = None
-
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        Clock.schedule_once(self._bind_header, 0)
-
-    def _bind_header(self, _dt):
-        header = self.ids.get("header") if hasattr(self, "ids") else None
-        if header is not None and not getattr(header, "_tracker_bound", False):
-            header.bind(on_touch_down=self._on_header_touch)
-            header._tracker_bound = True
-
-    def _on_header_touch(self, instance, touch):
-        if instance.collide_point(*touch.pos):
-            self._toggle()
-            return True
-        return False
-
-    def refresh_view_attrs(self, rv, index, data):
-        self.index = index
-        self.region_name = data.get("region_name", "")
-        self.locations = data.get("locations", [])
-        self.expanded = data.get("expanded", False)
-        self.row_height = data.get("row_height", _HEADER_HEIGHT)
-        self.count_label_text = str(len(self.locations))
-        Clock.schedule_once(lambda dt: self._render_content(), 0)
-        return super().refresh_view_attrs(rv, index, data)
-
-    def _render_content(self):
-        content = self.ids.get("content") if hasattr(self, "ids") else None
-        if content is None:
-            return
-        content.clear_widgets()
-        if not self.expanded:
-            content.height = 0
-            return
-        app = MDApp.get_running_app()
-        in_logic_color = app.theme_cls.onSurfaceColor
-        out_logic_color = app.theme_cls.onSurfaceVariantColor
-        for loc in self.locations:
-            label = MDLabel(
-                text=loc["name"],
-                theme_text_color="Custom",
-                text_color=in_logic_color if loc["in_logic"] else out_logic_color,
-                font_style="Body",
-                role="small",
-                size_hint_y=None,
-                height=_LOCATION_ROW_HEIGHT,
-                shorten=True,
-                shorten_from="right",
+            from worlds.tracker.overlay_features import (
+                group_reachable_by_top_level_branch,
             )
-            content.add_widget(label)
-        content.height = _LOCATION_ROW_HEIGHT * len(self.locations) + dp(4)
-
-    def _toggle(self):
-        rv = self.parent.recycleview if self.parent and hasattr(self.parent, "recycleview") else None
-        if rv is None or self.index is None:
+            branches = group_reachable_by_top_level_branch(tracker_core)
+        except Exception as exc:
+            logger.exception(
+                f"populate_from_ctx: group_reachable_by_top_level_branch failed: {exc}"
+            )
+            self.clear_widgets()
             return
-        new_expanded = not self.expanded
-        new_height = _row_height(new_expanded, len(self.locations))
-        rv.data[self.index]["expanded"] = new_expanded
-        rv.data[self.index]["row_height"] = new_height
-        rv.refresh_from_data()
+
+        for child in list(self.children):
+            if isinstance(child, TrackerRegionPanel):
+                self._expansion_state[child.region_name] = bool(child.is_open)
+
+        color_for = _make_category_color_lookup(self.app)
+
+        self.clear_widgets()
+        for branch_name, locations in branches:
+            location_dicts = [
+                {"name": name, "category": category,
+                 "color_hex": color_for(category)}
+                for name, category in locations
+            ]
+            panel = TrackerRegionPanel(
+                region_name=branch_name, locations=location_dicts
+            )
+            self.add_widget(panel)
+            if self._expansion_state.get(branch_name, False):
+                Clock.schedule_once(
+                    lambda dt, p=panel: p.toggle_expansion(), 0.05
+                )
