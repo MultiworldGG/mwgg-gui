@@ -589,6 +589,8 @@ class MultiMDApp(MDApp):
             self.screen_manager.add_widget(self.yaml_screen)
         else:
             self.create_custom_screen(item)
+            return
+        self._invalidate_top_appbar_menu()
 
     def _resolve_live_app(self) -> "MultiMDApp":
         """Return the live launcher app instance whose screen_manager is on
@@ -641,6 +643,7 @@ class MultiMDApp(MDApp):
         if content is None:
             screen = MDScreen(name=title)
             live.screen_manager.add_widget(screen)
+            self._invalidate_top_appbar_menu()
             return screen
 
         if title in live.screen_manager.screen_names:
@@ -656,6 +659,7 @@ class MultiMDApp(MDApp):
         screen.bottom_appbar.add_widget(button)
         button.bind(on_release=lambda *_: setattr(live.screen_manager, "current", title))
         live.screen_manager.add_widget(screen, index=index)
+        self._invalidate_top_appbar_menu()
         return button
 
     def remove_custom_screen(self, handle) -> None:
@@ -663,6 +667,7 @@ class MultiMDApp(MDApp):
         name = getattr(handle, "text", None) or getattr(handle, "name", None)
         if name and name in live.screen_manager.screen_names:
             live.screen_manager.remove_widget(live.screen_manager.get_screen(name))
+            self._invalidate_top_appbar_menu()
 
     def is_on_console_screen(self) -> bool:
         """FrontendProtocol: true iff the console screen is the active screen."""
@@ -728,6 +733,7 @@ class MultiMDApp(MDApp):
             self.console_screen = ConsoleScreen()
             self.screen_manager.add_widget(self.console_screen)
             self.console_text_input = self.console_screen.bottom_appbar.text_input
+            self._invalidate_top_appbar_menu()
 
     def _create_menu_item(self, item):
         """Create a menu item with proper binding
@@ -743,6 +749,20 @@ class MultiMDApp(MDApp):
         self.change_screen(item.lower())
         if self.top_appbar_menu:
             self.top_appbar_menu.dismiss()
+
+    def _invalidate_top_appbar_menu(self) -> None:
+        """Drop the cached dropdown so the next open() rebuilds it from the
+        current screen_manager.screen_names. Always operates on the live
+        launcher instance: writing through `self` on a phantom subclass
+        instance would put None in the phantom's __dict__ and leave the
+        live cache intact."""
+        live = self._resolve_live_app()
+        if live.top_appbar_menu is not None:
+            try:
+                live.top_appbar_menu.dismiss()
+            except Exception:
+                pass
+            live.top_appbar_menu = None
 
     def open_top_appbar_menu(self, menu_button):
         """Open dropdown menu to change screens
@@ -851,6 +871,7 @@ class MultiMDApp(MDApp):
                 )
             if hasattr(self, "yaml_screen"):
                 self.yaml_screen = None
+            self._invalidate_top_appbar_menu()
 
 
     def print_json(self, data: typing.List[JSONMessagePart]):
