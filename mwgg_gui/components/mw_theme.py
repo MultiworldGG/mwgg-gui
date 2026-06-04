@@ -45,7 +45,15 @@ DEFAULT_TEXT_COLORS = {
     "regular_item_color":["3b3b3b", "b2b2b2"],
     "trap_item_color":["8f1515", "d75f5f"],
     "location_color":["006f10", "00c51b"],
-    "entrance_color":["2985a0", "60b7e8"]
+    "entrance_color":["2985a0", "60b7e8"],
+    # Tracker overlay logic-view categories (high-contrast, tunable
+    # independently of item/location colors).
+    "tracker_in_logic":["1d6900", "5dde2c"],
+    "tracker_hinted":["6f3a00", "ffb04a"],
+    "tracker_glitched":["5b1180", "c061eb"],
+    "tracker_hinted_glitched":["7d1f5e", "ff7adc"],
+    "tracker_excluded":["595959", "9b9b9b"],
+    "tracker_excluded_glitched":["5e5763", "8c7c93"],
 }
 ''' Default markup text colors
 [Light Mode, Dark Mode]
@@ -88,9 +96,15 @@ class MarkupTagsTheme:
     progression_deprioritized_item_color: list[str]
     useful_item_color: list[str]
     regular_item_color: list[str]
-    trap_item_color: list[str]  
+    trap_item_color: list[str]
     location_color: list[str]
     entrance_color: list[str]
+    tracker_in_logic: list[str]
+    tracker_hinted: list[str]
+    tracker_glitched: list[str]
+    tracker_hinted_glitched: list[str]
+    tracker_excluded: list[str]
+    tracker_excluded_glitched: list[str]
 
     def __init__(self, **kwargs):
         # Light, Dark
@@ -106,6 +120,12 @@ class MarkupTagsTheme:
         self.trap_item_color=DEFAULT_TEXT_COLORS["trap_item_color"]
         self.location_color=DEFAULT_TEXT_COLORS["location_color"]
         self.entrance_color=DEFAULT_TEXT_COLORS["entrance_color"]
+        self.tracker_in_logic=DEFAULT_TEXT_COLORS["tracker_in_logic"]
+        self.tracker_hinted=DEFAULT_TEXT_COLORS["tracker_hinted"]
+        self.tracker_glitched=DEFAULT_TEXT_COLORS["tracker_glitched"]
+        self.tracker_hinted_glitched=DEFAULT_TEXT_COLORS["tracker_hinted_glitched"]
+        self.tracker_excluded=DEFAULT_TEXT_COLORS["tracker_excluded"]
+        self.tracker_excluded_glitched=DEFAULT_TEXT_COLORS["tracker_excluded_glitched"]
 
     def name(self, color_attr):
         if color_attr == self.default_color: return "Default Text:"
@@ -120,6 +140,12 @@ class MarkupTagsTheme:
         if color_attr == self.trap_item_color: return "Trap Item:"
         if color_attr == self.location_color: return "Location:"
         if color_attr == self.entrance_color: return "Entrance:"
+        if color_attr == self.tracker_in_logic: return "Tracker: In Logic:"
+        if color_attr == self.tracker_hinted: return "Tracker: Hinted:"
+        if color_attr == self.tracker_glitched: return "Tracker: Glitched:"
+        if color_attr == self.tracker_hinted_glitched: return "Tracker: Hinted (Glitched):"
+        if color_attr == self.tracker_excluded: return "Tracker: Excluded:"
+        if color_attr == self.tracker_excluded_glitched: return "Tracker: Excluded (Glitched):"
 
     def save_color(self, app_config, color_name, color_value):
         """Save a single color value to the config file"""
