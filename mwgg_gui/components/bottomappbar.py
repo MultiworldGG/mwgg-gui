@@ -237,10 +237,30 @@ class BottomAppBar(MDBottomAppBar):
             action_items.append(button)
         self.text_input = BottomBarTextInput(id=f'{screen_name}_text_input')
         self.ids.console_text_input_fab.id = "console_fab_button"
+        self._pane_opener = None
         Clock.schedule_once(lambda dt: self.set_actions(action_items), 0)
 
     def set_actions(self, action_items: list[MDActionBottomAppBarButton]):
         self.action_items = action_items
+
+    def set_pane_opener(self, icon: str, callback, visible: bool) -> None:
+        """Compact layouts park the screen's side pane in a modal drawer;
+        this adds/removes the action button that opens it."""
+        if visible and self._pane_opener is None:
+            self._pane_opener = MDActionBottomAppBarButton(id="pane_opener", icon=icon)
+            self._pane_opener.bind(on_release=lambda *_: callback())
+
+        def _apply(dt):
+            items = list(self.action_items or [])
+            if visible:
+                if self._pane_opener not in items:
+                    self.action_items = [self._pane_opener] + items
+            elif self._pane_opener is not None and self._pane_opener in items:
+                items.remove(self._pane_opener)
+                self.action_items = items
+
+        # After the constructor's own scheduled set_actions.
+        Clock.schedule_once(_apply, 0)
 
     def add_widget(self, widget, index=0, canvas=None):
         """Override add_widget to handle MDTextField widgets"""

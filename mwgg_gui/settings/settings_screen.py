@@ -215,7 +215,12 @@ class SettingsScreenSection(MDScreen):
         self.nav_drawer = nav_drawer
         self.name = name
         self.title = title
-        Clock.schedule_once(lambda x: self.nav_drawer.set_state("open"))
+        # Standard drawer (medium/expanded) opens alongside the content; a
+        # modal drawer (compact) would permanently cover it, so skip there —
+        # the hamburger opener handles it.
+        from kivymd.app import MDApp
+        if MDApp.get_running_app().layout_mode.width_class != "compact":
+            Clock.schedule_once(lambda x: self.nav_drawer.set_state("open"))
         
         # Create the appropriate settings component based on the section name
         try:
@@ -270,19 +275,45 @@ class SettingsScreen(MDScreen):
         logger.debug(f"Loaded nav_layout: {self.nav_layout}")
         
         self.settings_nav_drawer = self.nav_layout.ids.settings_nav_drawer
-        self.settings_nav_drawer.type = "standard"
         logger.debug(f"Retrieved nav_drawer: {self.settings_nav_drawer}")
-        
+
         self.settings_screen_manager = self.nav_layout.ids.settings_screen_manager
         self.setup_sections()
         logger.debug(f"Retrieved screen_manager: {self.settings_screen_manager}")
-        
+
         self.add_widget(self.nav_layout)
-        
+
         logger.debug("Added nav_layout to screen")
-        
+
+        # Compact: the sections drawer becomes modal with a hamburger opener;
+        # wider layouts keep the standard always-docked drawer.
+        from kivymd.app import MDApp
+        self.app = MDApp.get_running_app()
+        self._drawer_opener = None
+        self.app.layout_mode.bind(width_class=self._apply_layout_mode)
+        self._apply_layout_mode()
+
         # Set up the navigation menu after everything else is initialized
         Clock.schedule_once(self.setup_navigation_menu)
+
+    def _apply_layout_mode(self, *args):
+        compact = self.app.layout_mode.width_class == "compact"
+        self.settings_nav_drawer.drawer_type = "modal" if compact else "standard"
+        if compact:
+            if self._drawer_opener is None:
+                from kivymd.uix.button import MDIconButton
+                self._drawer_opener = MDIconButton(
+                    icon="menu",
+                    pos_hint={"x": 0, "top": 1},
+                    on_release=lambda *_: self.settings_nav_drawer.set_state("open"),
+                )
+            if self._drawer_opener.parent is None:
+                self.add_widget(self._drawer_opener)
+            self.settings_nav_drawer.set_state("close")
+        else:
+            if self._drawer_opener is not None and self._drawer_opener.parent is not None:
+                self.remove_widget(self._drawer_opener)
+            self.settings_nav_drawer.set_state("open")
     
     def setup_sections(self, *args):
         logger.debug("Setting up settings sections")

@@ -194,6 +194,10 @@ class MultiMDApp(MDApp):
 
         RegisterFonts(self, self.app_config.get('client', 'monospace_font', fallback='Argon'))
 
+        # Persisted Compact Mode preference (Settings > Interface > Layout).
+        if self.app_config.get('client', 'device_orientation', fallback='') == 'Portrait':
+            self.layout_mode.force_width_class('compact')
+
         self.ctx = ctx
         self.commandprocessor = self.ctx.command_processor(self.ctx)
 

@@ -202,6 +202,16 @@ class YamlScreen(InnerMDScreen):
             padding=[dp(12), dp(8)],
             spacing=dp(8),
         )
+        # Compact-only form/preview toggle (both panes stay alive when
+        # detached, so form state and edited preview text persist).
+        self._visible_pane = "form"
+        self._toggle_icon = MDButtonIcon(icon="eye")
+        self._toggle_text = MDButtonText(text="Preview")
+        self._toggle_btn = MDButton(self._toggle_icon, self._toggle_text, style="outlined")
+        self._toggle_btn.bind(on_release=lambda *_: self._show_pane(
+            "preview" if self._visible_pane == "form" else "form"))
+        bar.add_widget(self._toggle_btn)
+
         bar.add_widget(MDLabel(size_hint_x=1))  # spacer
         cancel_btn = MDButton(MDButtonText(text="Cancel"), style="tonal")
         cancel_btn.bind(on_release=lambda *_: self.cancel())
@@ -220,6 +230,42 @@ class YamlScreen(InnerMDScreen):
         root.add_widget(self._grid)
         root.add_widget(bar)
         self.add_widget(root)
+
+        self.app.layout_mode.bind(width_class=self._apply_layout_mode)
+        self._apply_layout_mode()
+
+    def _show_pane(self, name: str) -> None:
+        """Compact mode: attach exactly one of the two panes at full width."""
+        self._visible_pane = name
+        show = self._left if name == "form" else self._preview
+        hide = self._preview if name == "form" else self._left
+        if hide.parent is self._grid:
+            self._grid.remove_widget(hide)
+        if show.parent is None:
+            self._grid.add_widget(show)
+        show.size_hint_x = 1
+        self._toggle_text.text = "Preview" if name == "form" else "Form"
+        self._toggle_icon.icon = "eye" if name == "form" else "form-select"
+
+    def _apply_layout_mode(self, *args):
+        if getattr(self, "_grid", None) is None:
+            return
+        compact = self.app.layout_mode.width_class == "compact"
+        if compact:
+            self._toggle_btn.opacity = 1
+            self._toggle_btn.disabled = False
+            self._show_pane(self._visible_pane)
+        else:
+            self._toggle_btn.opacity = 0
+            self._toggle_btn.disabled = True
+            # Restore the side-by-side split in left|preview order.
+            for pane in (self._left, self._preview):
+                if pane.parent is self._grid:
+                    self._grid.remove_widget(pane)
+            self._left.size_hint_x = 0.58
+            self._preview.size_hint_x = 0.42
+            self._grid.add_widget(self._left)
+            self._grid.add_widget(self._preview)
 
         # Kick off the worker for the initial mode. The form gets built
         # in _on_world_data_loaded once the response is in.

@@ -107,6 +107,13 @@ class LayoutMode(EventDispatcher):
         Window.bind(size=self._on_window_size)
         self._on_window_size(Window, Window.size)
 
+    def force_width_class(self, width_class: str | None) -> None:
+        """Pin both size classes to `width_class` (None returns to
+        window-size classification). Used by the settings Compact Mode
+        switch and the MWGG_FORCE_LAYOUT env override."""
+        self._forced_class = width_class if width_class in _SIZE_CLASSES else None
+        self._on_window_size(Window, Window.size)
+
     def _on_window_size(self, _window, size):
         width, height = size
         self.orientation = "portrait" if height > width else "landscape"

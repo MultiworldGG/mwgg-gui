@@ -217,6 +217,7 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         super().__init__(**kwargs)
         self.slots_mdlist = MDList(width=260)
         self.tracker_regions_mdlist = TrackerRegionList(width=260)
+        self._pane_drawer = None
 
         self.bottom_appbar = BottomAppBar(screen_name="console")
 
@@ -274,9 +275,53 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         self.consolegrid.add_widget(self.important_appbar)
         self.consolegrid.add_widget(self.ui_console)
 
+        # Compact widths park the sliver pane in a modal drawer; reparenting
+        # the SAME widget preserves the populated lists and the tracker's
+        # Players/Logic state across mode flips.
+        self.app.layout_mode.bind(width_class=self._apply_layout_mode)
+        self._apply_layout_mode()
+
         # If tracker mode is active, seed the locations list now that ctx exists.
         if self.important_appbar.tracker_mode:
             Clock.schedule_once(lambda dt: self.update_tracker_locations(), 0.5)
+
+    def _ensure_pane_drawer(self):
+        if self._pane_drawer is None:
+            from kivymd.uix.navigationdrawer import MDNavigationDrawer
+            self._pane_drawer = MDNavigationDrawer(drawer_type="modal", anchor="left")
+            self._pane_drawer.width = min(dp(320), Window.width * 0.85)
+        if self._pane_drawer.parent is None:
+            self.app.navigation_layout.add_widget(self._pane_drawer)
+        return self._pane_drawer
+
+    def _open_pane_drawer(self):
+        self._ensure_pane_drawer().set_state("open")
+
+    def _apply_layout_mode(self, *args):
+        if not hasattr(self, "consolegrid"):
+            return
+        compact = self.app.layout_mode.width_class == "compact"
+        pane = self.important_appbar
+        if compact:
+            if pane.parent is self.consolegrid:
+                self.consolegrid.remove_widget(pane)
+                drawer = self._ensure_pane_drawer()
+                pane.size_hint_x = 1
+                drawer.add_widget(pane)
+            self.bottom_appbar.set_pane_opener("account-group", self._open_pane_drawer, True)
+        else:
+            if self._pane_drawer is not None and pane.parent is self._pane_drawer:
+                self._pane_drawer.set_state("close")
+                self._pane_drawer.remove_widget(pane)
+                pane.size_hint_x = None
+                pane.width = dp(260)
+                self.consolegrid.add_widget(pane, index=1)
+            self.bottom_appbar.set_pane_opener("account-group", self._open_pane_drawer, False)
+
+    def on_pre_leave(self, *args):
+        if self._pane_drawer is not None:
+            self._pane_drawer.set_state("close")
+        return super().on_pre_leave(*args)
 
     def _get_slot_priority(self, slot_data) -> tuple[bool, int]:
         """

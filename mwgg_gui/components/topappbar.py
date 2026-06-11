@@ -65,27 +65,35 @@ Builder.load_string('''
             id: menu_button
             on_release: app.open_top_appbar_menu(self)
     EnergyLinkLabel:
-        size_hint_x: .10
+        # Lowest-priority readout: only shown at expanded width.
+        size_hint_x: .10 if app.layout_mode.width_class == 'expanded' else 0
+        opacity: 1 if app.layout_mode.width_class == 'expanded' else 0
+        disabled: app.layout_mode.width_class != 'expanded'
         id: energy_link_label
         text: ""
     ServerLabel:
-        size_hint_x: .6
+        # Grows as the energy/clock readouts drop out on narrower widths.
+        size_hint_x: .6 if app.layout_mode.width_class == 'expanded' else (.7 if app.layout_mode.width_class == 'medium' else .85)
         id: server_info_label
         text: "Not Connected"
     ClockLabel:
         id: clock_label
-        size_hint_x: .15
+        size_hint_x: 0 if app.layout_mode.width_class == 'compact' else .15
+        opacity: 0 if app.layout_mode.width_class == 'compact' else 1
     Timer:
+        # Gameplay-critical: visible at every width.
         id: timer
         size_hint_x: .15
         text: "00:00:00"
 
     MDTopAppBarTrailingButtonContainer:
+        id: trailing_container
         MDActionTopAppBarButton:
             id: timer_button
             icon: "timer-outline"
             on_release: root.toggle_timer()
         MDActionTopAppBarButton:
+            id: profile_button
             icon: "account-circle-outline"
             on_release: root.open_profile()
 ''')
@@ -288,6 +296,22 @@ class ServerLabel(MDTooltip, MDTopAppBarTitle):
                 self.role = "medium"
             elif self.texture_size[1] > self.initial_height and self.role == "medium":
                 self.role = "small"
+
+    def on_touch_down(self, touch):
+        # Hover tooltips never fire on touch devices; a tap opens the same
+        # server/game info in a dialog instead.
+        if self.collide_point(*touch.pos):
+            app = MDApp.get_running_app()
+            if app.layout_mode.touch_mode:
+                self._open_info_dialog()
+                return True
+        return super().on_touch_down(touch)
+
+    def _open_info_dialog(self):
+        from mwgg_gui.components.dialog import MessageBox
+        pages = list(self.game_pages) if self.game_pages else [self.game_info]
+        box = MessageBox(title=self.server_name, message="\n\n".join(pages), is_error=False)
+        box.open()
 
     def _update_tooltip_content(self):
         """Update the tooltip widgets based on current state"""
@@ -508,7 +532,67 @@ class TopAppBar(MDTopAppBar):
         self.shadow_color = self.theme_cls.transparentColor
         self.timer_button = self.ids.timer_button
         self.timer_button.bind(on_long_press=self.reset)
+        self._overflow_button = None
+        self._overflow_menu = None
+        # Strong references: ids hold weak proxies, and a button detached
+        # from the tree (compact overflow collapse) would otherwise be
+        # garbage-collected before it can be restored.
+        self._trailing_buttons = (
+            self.ids.timer_button.__self__,
+            self.ids.profile_button.__self__,
+        )
+        self.app.layout_mode.bind(width_class=self._apply_width_class)
+        # Deferred: the trailing container reparents its kv children into an
+        # internal layout on the first frame; apply after that settles.
+        Clock.schedule_once(lambda dt: self._apply_width_class(
+            self.app.layout_mode, self.app.layout_mode.width_class), 0)
         asyncio.create_task(self.update_progress_info(), name="ProgressBar")
+
+    def _apply_width_class(self, _layout_mode, width_class):
+        """Compact: collapse the trailing timer/profile buttons into a single
+        overflow menu so the title row keeps room for server info + timer.
+
+        The container moves kv children into an internal layout, so removal
+        goes through each button's actual parent; re-adding goes through the
+        container, which routes back into that internal layout."""
+        from kivymd.uix.appbar import MDActionTopAppBarButton
+        container = self.ids.trailing_container
+        timer_button, profile_button = self._trailing_buttons
+        if width_class == "compact":
+            if self._overflow_button is None:
+                self._overflow_button = MDActionTopAppBarButton(icon="dots-vertical")
+                self._overflow_button.bind(on_release=self.open_overflow_menu)
+            for button in (timer_button, profile_button):
+                if button.parent is not None:
+                    button.parent.remove_widget(button)
+            if self._overflow_button.parent is None:
+                container.add_widget(self._overflow_button)
+        else:
+            if self._overflow_button is not None and self._overflow_button.parent is not None:
+                self._overflow_button.parent.remove_widget(self._overflow_button)
+            for button in (timer_button, profile_button):
+                if button.parent is None:
+                    container.add_widget(button)
+
+    def open_overflow_menu(self, caller):
+        from kivymd.uix.menu import MDDropdownMenu
+        if self._overflow_menu:
+            self._overflow_menu.dismiss()
+        self._overflow_menu = MDDropdownMenu(
+            caller=caller,
+            items=[
+                {"text": "Profile", "on_release": lambda: self._overflow_action(self.open_profile)},
+                {"text": "Pause/Resume timer", "on_release": lambda: self._overflow_action(self.toggle_timer)},
+                {"text": "Reset timer", "on_release": lambda: self._overflow_action(lambda: self.timer.reset())},
+            ],
+            width_mult=3,
+        )
+        self._overflow_menu.open()
+
+    def _overflow_action(self, action):
+        if self._overflow_menu:
+            self._overflow_menu.dismiss()
+        action()
 
     async def update_progress_info(self):
         """

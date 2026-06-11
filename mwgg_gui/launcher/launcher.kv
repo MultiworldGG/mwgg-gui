@@ -51,18 +51,19 @@
                     text_color: app.theme_cls.onSurfaceVariantColor
 
             MDBoxLayout: # Connect & Play, Patch Game, Create YAML, Generate, Host
-                orientation: 'horizontal'
+                orientation: 'vertical' if app.layout_mode.width_class == 'compact' else 'horizontal'
                 spacing: 10
                 MDBoxLayout:
                     orientation: 'vertical'
                     spacing: dp(15)
                     MDBoxLayout:
-                        orientation: 'horizontal'
+                        orientation: 'vertical' if app.layout_mode.width_class == 'compact' else 'horizontal'
                         spacing: dp(10)
                         MDButton:
                             id: connect_button
                             pos_hint: {"center_x": 0.5, "center_y": 0.5}
                             on_release: app.launcher_screen.connect()
+                            size_hint_x: 1 if app.layout_mode.width_class == 'compact' else None
                             width: dp(200)
                             radius: dp(10)
                             MDButtonText:
@@ -76,6 +77,7 @@
                             id: game_patch_button
                             on_release: app.launcher_screen.patch_game()
                             pos_hint: {"center_x": 0.5, "center_y": 0.5}
+                            size_hint_x: 1 if app.layout_mode.width_class == 'compact' else None
                             width: dp(200)
                             radius: dp(10)
                             MDButtonText:
@@ -86,7 +88,7 @@
                             MDButtonIcon:
                                 icon: "file-edit"
                     MDBoxLayout:
-                        orientation: 'horizontal'
+                        orientation: 'vertical' if app.layout_mode.width_class == 'compact' else 'horizontal'
                         spacing: dp(10)
                         MDBoxLayout:
                             spacing: dp(4)
@@ -146,6 +148,7 @@
                         id: game_yaml_button
                         on_release: app.launcher_screen.create_yaml()
                         pos_hint: {"center_x": 0.5}
+                        size_hint_x: 1 if app.layout_mode.width_class == 'compact' else None
                         width: dp(200)
                         radius: dp(10)
                         disabled: True
@@ -160,6 +163,7 @@
                         id: generate_button
                         on_release: app.launcher_screen.generate()
                         pos_hint: {"center_x": 0.5}
+                        size_hint_x: 1 if app.layout_mode.width_class == 'compact' else None
                         width: dp(200)
                         radius: dp(10)
                         MDButtonText:
@@ -173,6 +177,7 @@
                         id: host_button
                         on_release: app.launcher_screen.host()
                         pos_hint: {"center_x": 0.5}
+                        size_hint_x: 1 if app.layout_mode.width_class == 'compact' else None
                         width: dp(200)
                         radius: dp(10)
                         MDButtonText:
@@ -185,7 +190,8 @@
                 MDBoxLayout:
                     orientation: 'vertical'
                     spacing: dp(5)
-                    width: dp(10)
+                    width: 0 if app.layout_mode.width_class == 'compact' else dp(10)
+                    opacity: 0 if app.layout_mode.width_class == 'compact' else 1
                     size_hint_x: None
                     MDDivider:
                         size_hint_y: .8
