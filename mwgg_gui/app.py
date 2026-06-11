@@ -476,6 +476,16 @@ class MultiMDApp(MDApp):
             # Still set the exit event to ensure shutdown proceeds
             self.ctx.exit_event.set()
 
+    def on_pause(self):
+        """Mobile lifecycle: keep the app alive when backgrounded instead of
+        being killed. The websocket may drop while paused; CommonContext's
+        autoreconnect handles re-establishing it after on_resume. Desktop
+        never receives on_pause."""
+        return True
+
+    def on_resume(self):
+        pass
+
     def update_colors(self):
         '''
         This function is called when the theme color is changed.

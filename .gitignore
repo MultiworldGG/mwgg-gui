@@ -17,3 +17,9 @@ htmlcov/
 .venv/
 venv/
 env/
+
+# Mobile build artifacts
+mobile/vendor/
+mobile/bin/
+mobile/.buildozer/
+mobile/ios/toolchain/

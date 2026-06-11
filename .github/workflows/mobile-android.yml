@@ -1,0 +1,64 @@
+name: mobile-android
+
+# Builds the Android APK with buildozer. Heavy (~30-60 min cold), so it runs
+# on manual dispatch and version tags, not on every push.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+env:
+  MONOREPO_REPO: MultiworldGG/MultiworldGG-Beta
+  MONOREPO_REF: main
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout MultiworldGG monorepo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MONOREPO_REPO }}
+          ref: ${{ env.MONOREPO_REF }}
+          token: ${{ secrets.MWGG_MONOREPO_TOKEN || github.token }}
+          path: MultiworldGG
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Assemble vendor tree
+        run: |
+          pip install "git+https://github.com/MultiworldGG/MultiworldGG-Index@game_index_sixteen"
+          MWGG_IGDB_PATH="$(python -c 'import mwgg_igdb; print(mwgg_igdb.__file__)')" \
+            python mobile/sync_vendor.py --monorepo "$GITHUB_WORKSPACE/MultiworldGG/src"
+
+      - name: Cache buildozer
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.buildozer
+            mobile/.buildozer
+          key: buildozer-${{ runner.os }}-${{ hashFiles('mobile/buildozer.spec') }}
+          restore-keys: buildozer-${{ runner.os }}-
+
+      - name: Install buildozer
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git zip unzip openjdk-17-jdk autoconf libtool \
+            pkg-config zlib1g-dev libncurses-dev cmake libffi-dev libssl-dev
+          pip install --upgrade buildozer cython
+
+      - name: Build APK
+        working-directory: mobile
+        run: buildozer -v android debug
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mwgg-mobile-apk
+          path: mobile/bin/*.apk
+          if-no-files-found: error
