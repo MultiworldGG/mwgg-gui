@@ -104,7 +104,15 @@ def load_world_data(game_name: str, visibility: str = "simple", module: str = ""
     exits `_EXIT_NEEDS_RELOAD`; we re-run it once so the freshly-installed world
     loads in a clean process. Raises `WorldDataError` if the subprocess fails or
     its output can't be parsed.
+
+    On mobile there are no subprocesses: the world loads in-process and the
+    same payload is built directly (see world_data_mobile.py).
     """
+    from mwgg_gui.constants import IS_MOBILE
+    if IS_MOBILE:
+        from mwgg_gui.yaml_creator.world_data_mobile import load_world_data_in_process
+        return load_world_data_in_process(game_name, visibility, module)
+
     result = _run_generate(game_name, visibility, module)
     if result.returncode == _EXIT_NEEDS_RELOAD:
         logger.info("Generate installed '%s'; re-running to load it.", game_name)

@@ -31,9 +31,8 @@ from kivy.properties import (
     NumericProperty,
     OptionProperty,
 )
-from kivy.utils import platform as _kivy_platform
-
 from mwgg_gui import bootstrap
+from mwgg_gui.constants import IS_MOBILE
 
 _SIZE_CLASSES = ("compact", "medium", "expanded")
 
@@ -53,7 +52,7 @@ class LayoutMode(EventDispatcher):
     height_class = OptionProperty("medium", options=list(_SIZE_CLASSES))
     orientation = OptionProperty("landscape", options=["portrait", "landscape"])
 
-    touch_mode = BooleanProperty(_kivy_platform in ("android", "ios"))
+    touch_mode = BooleanProperty(IS_MOBILE)
     # Matches the Titlebar gate in MultiMDApp.build(): the custom titlebar
     # widget only exists on Windows desktop.
     has_titlebar = BooleanProperty(False)

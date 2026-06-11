@@ -1,6 +1,5 @@
 __all__ = ("MWColorPicker",)
 from kivy.properties import ColorProperty, StringProperty, ObjectProperty
-from PIL import ImageGrab
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.textfield import MDTextFieldHintText
@@ -262,15 +261,22 @@ class MWColorPicker(MDBoxLayout):
         try:
             # Check if touch is within the image's bounds
             if self.image.collide_point(touch.x, touch.y):
+                # Screen-pixel eyedropper needs PIL.ImageGrab, which only
+                # exists on desktop platforms — lazily imported so loading
+                # this module never crashes on Android/iOS.
+                try:
+                    from PIL import ImageGrab
+                except ImportError:
+                    return super().on_touch_down(touch)
 
                 # Convert touch position to window coordinates
                 window_pos = self.to_window(touch.x, touch.y)
-                
+
                 # Add window location offsets
                 screen_x = Window.left + window_pos[0] # Window.left is 410
                 # Get the "inverse" position of the window because kivy is weird
-                screen_y = Window.height - window_pos[1] + Window.top 
-                
+                screen_y = Window.height - window_pos[1] + Window.top
+
                 # Get the color at the screen coordinates
                 pixel = ImageGrab.grab(bbox=(screen_x, screen_y-1, screen_x+1, screen_y)).load()[0,0]
             

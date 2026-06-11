@@ -18,8 +18,7 @@ from kivy.lang import Builder
 from kivy.metrics import dp
 import logging
 from logging.handlers import QueueHandler
-from multiprocessing import Queue
-from multiprocessing.queues import Empty
+from queue import Queue, Empty
 from kivy.utils import get_hex_from_color
 from mwgg_gui.overrides.markuptextfield import MarkupTextField
 from mwgg_gui.components.guidataclasses import MarkupPair

@@ -4,7 +4,10 @@ import sys
 import typing
 import asynckivy
 from datetime import datetime, UTC
-from multiprocessing import Queue
+# In-process buffer between print_json and the console view; queue.Queue (not
+# multiprocessing.Queue) because nothing crosses a process boundary and
+# multiprocessing's sem_open is unavailable on Android.
+from queue import Queue
 from logging.handlers import QueueHandler
 from collections import deque
 

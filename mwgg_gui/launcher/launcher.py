@@ -49,6 +49,7 @@ import urllib.parse
 from kivymd.app import MDApp
 from mwgg_igdb import GameIndex
 
+from mwgg_gui.constants import IS_MOBILE
 from mwgg_gui.overrides.expansionlist import *
 from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar
@@ -186,6 +187,15 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
         self.add_widget(self.launchergrid)
         self.add_widget(self.bottom_appbar)
+
+        # Mobile scope is client-only: no patching, no generation, no server
+        # hosting on device. The flows behind these buttons spawn desktop
+        # executables/subprocesses, so the buttons are removed outright.
+        if IS_MOBILE:
+            for widget_id in ("game_patch_button", "generate_button", "host_button"):
+                widget = self.launcher_view.ids.get(widget_id)
+                if widget is not None and widget.parent is not None:
+                    widget.parent.remove_widget(widget)
 
         # Pane widths come from the <LauncherSliverAppbar> kv rule
         # (width: dp(260), size_hint_x: None); the box gives the launcher
