@@ -38,44 +38,15 @@ from kivy.config import ConfigParser
 ##### AND WE CAN ADD OUR OWN SHIT
 #####
 
-MWKVConfig.set("input", "mouse", "mouse,disable_multitouch")
-MWKVConfig.set("kivy", "exit_on_escape", "0")
-MWKVConfig.set("kivy", "default_font", ['Inter',
-                                    os.path.join("data","fonts","Inter-Regular.ttf"),
-                                    os.path.join("data","fonts","Inter-Italic.ttf"),
-                                    os.path.join("data","fonts","Inter-Bold.ttf"),
-                                    os.path.join("data","fonts","Inter-BoldItalic.ttf")])
-MWKVConfig.set("graphics", "width", "1099")
-MWKVConfig.set("graphics", "height", "699")
-# custom_titlebar is Windows-only: Kivy's set_custom_titlebar() only succeeds
-# there, and we explicitly write "0" on other platforms to overwrite any value
-# persisted by a previous Windows-only run (MWKVConfig.write() persists to
-# KIVY_HOME, so a one-time misconfig sticks across runs otherwise).
-MWKVConfig.set("graphics", "custom_titlebar", "1" if sys.platform == "win32" else "0")
-# NOTE: window_icon previously set here was using a CWD-relative path and was
-# overridden anyway by App.icon at run() time — see MultiMDApp.icon below.
-MWKVConfig.set("graphics", "minimum_height", "700")
-MWKVConfig.set("graphics", "minimum_width", "600")
-MWKVConfig.set("graphics", "focus", "False")
-MWKVConfig.write()
+from mwgg_gui import bootstrap
+
+# Window geometry / input / titlebar chrome are shell decisions (desktop
+# launcher vs mobile app) — see mwgg_gui/bootstrap.py. Config must be applied
+# before the kivy.core.window import below, window chrome right after it.
+bootstrap.configure_shell(MWKVConfig)
 
 from kivy.core.window import Window
-# Windows-only: hide the window during the splash sequence so the splash
-# process owns the visible UI until Kivy finishes loading (see MultiWorld.py
-# for the splash gate). Borderless is also Windows-only because the custom
-# titlebar Kivy uses to replace the system one only works on Windows — on
-# Mac/Linux it silently fails ("Window: Window.custom_titlebar not set to
-# True… can't set custom titlebar"), leaving a borderless window with no
-# titlebar at all (no drag, no close button). Additionally on WSLg/llvmpipe
-# the opacity=0 + transparent clearcolor combo causes EffectWidget FBO
-# creation to fail at first layout (GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT),
-# which kills the Kivy main loop right after "Added nav_layout to screen".
-if sys.platform == "win32":
-    Window.opacity = 0
-    Window.clearcolor = [0, 0, 0, 0]
-    Window.borderless = True
-else:
-    Window.clearcolor = [0, 0, 0, 1]
+bootstrap.apply_window_chrome(Window)
 # Window title is set via MultiMDApp.title — Kivy's App.run() applies that
 # after the window exists, clobbering any earlier Window.set_title() call.
 
@@ -184,8 +155,17 @@ class MultiMDApp(MDApp):
     # detect a live frontend instance without importing Kivy directly.
     _active_instance: "typing.ClassVar[typing.Optional[MultiMDApp]]" = None
 
+    # Shared LayoutMode service (size classes, touch mode, chrome metrics).
+    # ObjectProperty with rebind so kv rules like
+    # `app.layout_mode.chrome_bottom_appbar` stay live. Assigned before any
+    # screen/kv construction; phantom post-takeover instances receive the
+    # same shared instance, so the binding target never changes.
+    layout_mode = ObjectProperty(None, rebind=True)
+
     def __init__(self, ctx: context_type, **kwargs):
         super().__init__(**kwargs)
+        from mwgg_gui.components.layout_mode import get_layout_mode
+        self.layout_mode = get_layout_mode()
         # Only claim the singleton slot if no live instance owns it. Phantom
         # subclass instances built post-takeover (so per-game build() side
         # effects like add_client_tab can run) must not clobber the launcher.
@@ -302,7 +282,8 @@ class MultiMDApp(MDApp):
 
     def set_opacity(self, dt):
         Window.opacity = 1
-        Window.size = (1100, 700)
+        if bootstrap.is_desktop_shell():
+            Window.size = (1100, 700)
         Window.clearcolor = [0,0,0,1]
 
     def terminate_splash_screen_wrapper(self):

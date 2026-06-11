@@ -528,7 +528,9 @@ class AutoAdjustHeightBehavior:
         super().__init__(**kwargs)
         self._update_adjusted_height()
         Window.bind(height=self._on_window_height)
-    
+        from mwgg_gui.components.layout_mode import get_layout_mode
+        get_layout_mode().bind(chrome_total=self._update_adjusted_height)
+
     def _update_adjusted_height(self, *args):
         self.size_hint_y = adjust_height(
             title_bar=self.adjust_title_bar,
@@ -541,20 +543,22 @@ class AutoAdjustHeightBehavior:
         self._update_adjusted_height()
 
 
-def adjust_height(title_bar: bool=True, 
-                  app_bar: bool=True, 
-                  bottom_appbar: bool = False, 
+def adjust_height(title_bar: bool=True,
+                  app_bar: bool=True,
+                  bottom_appbar: bool = False,
                   custom: int = 0) -> float:
     """Returns a float for a size_hint_y value based on the components
     in the layout.
     """
+    from mwgg_gui.components.layout_mode import get_layout_mode
+    layout_mode = get_layout_mode()
     removed_height = 0
     if title_bar:
-        removed_height += dp(43)
+        removed_height += layout_mode.chrome_titlebar + layout_mode.safe_inset_top
     if app_bar:
-        removed_height += dp(60)
+        removed_height += layout_mode.chrome_top_appbar
     if bottom_appbar:
-        removed_height += dp(82)
+        removed_height += layout_mode.chrome_bottom_total
     if custom:
         removed_height += custom
     new_height = Window.height - removed_height

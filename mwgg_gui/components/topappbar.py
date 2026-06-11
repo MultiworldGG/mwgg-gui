@@ -584,11 +584,16 @@ class TopAppBarLayout(AnchorLayout):
     anchor_x = "left"
     anchor_y = "top"
     size_hint_x = 1
-    padding = 0,39,0,0
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        
+
+        # Clear the custom titlebar (win32) and/or the device status bar.
+        from mwgg_gui.components.layout_mode import get_layout_mode
+        layout_mode = get_layout_mode()
+        self._apply_top_padding(layout_mode)
+        layout_mode.bind(safe_inset_top=lambda *_: self._apply_top_padding(layout_mode))
+
         # Add progress overlay FIRST (provides both background and progress)
         self.progress_overlay = ProgressOverlay()
         self.progress_overlay.size_hint = (None, None)
@@ -608,6 +613,9 @@ class TopAppBarLayout(AnchorLayout):
         self.top_appbar.bind(size=self._update_progress_overlay_size)
         self.top_appbar.bind(pos=self._update_progress_overlay_pos)
     
+    def _apply_top_padding(self, layout_mode):
+        self.padding = (0, layout_mode.chrome_titlebar_pad + layout_mode.safe_inset_top, 0, 0)
+
     def _update_progress_overlay(self, instance, value):
         """Update progress overlay width when app bar progress changes"""
         self.progress_overlay.p_width = value

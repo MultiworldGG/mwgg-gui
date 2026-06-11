@@ -119,11 +119,20 @@ class ConsoleView(MDFloatLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.bottom_scroll_button = BottomScrollButton(opacity=0, x=Window.width - dp(60), y=dp(10))
-        self.text_console = TextConsole(bottom_scroll_button=self.bottom_scroll_button, pos_hint={"x": 0, "y": 0}, 
-                                        size_hint=(1-(4/Window.width),1-(185/Window.height)))
+        self.text_console = TextConsole(bottom_scroll_button=self.bottom_scroll_button, pos_hint={"x": 0, "y": 0})
+        self._sync_geometry()
         self.add_widget(self.text_console)
         self.text_console.fbind('scroll_y', self.set_bottom_scroll_button_opacity)
         self.add_widget(self.bottom_scroll_button)
+        # Historically these were frozen at construction from the then-current
+        # window size; keep the same proportions but track resizes.
+        Window.bind(size=self._sync_geometry)
+
+    def _sync_geometry(self, *args):
+        from mwgg_gui.components.layout_mode import get_layout_mode
+        chrome = get_layout_mode().chrome_total
+        self.text_console.size_hint = (1 - (4 / Window.width), 1 - (chrome / Window.height))
+        self.bottom_scroll_button.x = Window.width - dp(60)
 
     def console_handler(self) -> QueueHandler:
         """Create a StreamHandler that writes directly to the text_buffer"""

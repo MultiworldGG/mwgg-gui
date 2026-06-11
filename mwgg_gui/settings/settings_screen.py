@@ -96,7 +96,7 @@ def register_settings_section(name: str, title: str, factory, items: list | None
 KV = '''
 SettingsNavLayout:
     size_hint_y: None
-    height: Window.height-103
+    height: Window.height - app.layout_mode.chrome_top_total
     settings_nav_menu: settings_nav_menu
 
     MDScreenManager:
@@ -154,7 +154,7 @@ SettingsNavLayout:
     orientation: "vertical"
     size_hint_y: None
     pos_hint: {"center_x": 0.5}
-    height: Window.height-103
+    height: Window.height - app.layout_mode.chrome_top_total
     md_bg_color: app.theme_cls.backgroundColor
 '''
 

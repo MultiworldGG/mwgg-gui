@@ -228,17 +228,19 @@ class YamlScreen(InnerMDScreen):
 
     # ----- pixel-height sizing --------------------------------------------
 
-    # Chrome (title bar + top app bar + bottom app bar) reserved by
-    # every screen in this app — raw pixels, same constant as
-    # `launcher.kv:8` and `hintscreen.py:229`. NOT a dp value.
-    _CHROME_PX = 185
+    @property
+    def _chrome_px(self) -> float:
+        """Chrome (title bar + top app bar + bottom app bar) reserved by
+        every screen in this app — from the shared LayoutMode service."""
+        from mwgg_gui.components.layout_mode import get_layout_mode
+        return get_layout_mode().chrome_total
 
     def _left_height(self) -> float:
         """Total height of the _left pane: window minus chrome minus
         the bottom action bar minus the grid's vertical padding."""
         return max(
             dp(180),
-            Window.height - self._CHROME_PX - dp(56) - dp(12),
+            Window.height - self._chrome_px - dp(56) - dp(12),
         )
 
     def _scroll_box_height(self) -> float:

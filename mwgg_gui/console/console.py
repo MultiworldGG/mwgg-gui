@@ -31,7 +31,7 @@ import asynckivy
 Builder.load_string('''
 <ConsoleLayout>:
     id: console_layout
-    pos: 0,82
+    pos: 0, app.layout_mode.chrome_bottom_total
 
 <ConsoleSliverAppbar>:
     pos_hint: {"x": 0, "top": 1}
@@ -72,7 +72,13 @@ Builder.load_string('''
                 on_release: root.set_deafen()
 ''')
 
-class ConsoleLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
+class ConsoleLayout(AutoAdjustHeightBehavior, MDBoxLayout):
+    """Horizontal row: sliver side pane (fixed dp(260)) | console view.
+
+    A BoxLayout (rather than the historical RelativeLayout + frozen
+    Window-ratio size_hints) keeps the side pane at its designed width on
+    resize and gives compact mode a clean reparenting seam.
+    """
     adjust_title_bar = True
     adjust_app_bar = True
     adjust_bottom_appbar = True
@@ -80,6 +86,10 @@ class ConsoleLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.orientation = "horizontal"
+        # Historical gutters: 2px between pane and console, 2px right margin.
+        self.spacing = 2
+        self.padding = (0, 0, 2, 0)
         self.size_hint_x = 1
 
 class ConsoleSliverAppbar(MDSliverAppbar):
@@ -223,17 +233,17 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         self.tracker_regions_mdlist.populate_from_ctx(self.app.ctx)
 
     def init_important(self):
-        self.consolegrid = ConsoleLayout(width=Window.width, height=Window.height-185)
+        chrome = self.app.layout_mode.chrome_total
+        self.consolegrid = ConsoleLayout(width=Window.width, height=Window.height - chrome)
         self.add_widget(self.consolegrid)
         self.add_widget(self.bottom_appbar)
 
+        # Pane widths come from the <ConsoleSliverAppbar> kv rule
+        # (width: dp(260), size_hint_x: None); the box gives the console
+        # view the remainder.
+        self.important_appbar.size_hint_y = 1
 
-        self.important_appbar.size_hint_x = 260/Window.width
-        self.important_appbar.size_hint_y=1-(8/Window.height)
-
-        self.ui_console = ConsoleView(pos_hint={"y": 0, "center_x": .5+(130/Window.width)},
-                                      size_hint_x=1-(264/Window.width),
-                                      size_hint_y=1-(8/Window.height))
+        self.ui_console = ConsoleView(size_hint_x=1, size_hint_y=1)
         self.important_appbar.ids.scroll.scroll_wheel_distance = 40
 
         # Players screen holds the slot/hint expansion list, sized to its content.

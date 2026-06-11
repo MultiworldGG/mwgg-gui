@@ -4,8 +4,8 @@
 
 <LauncherLayout>:
     id: launcher_layout
-    y: 82
-    size_hint_y: 1-(185/Window.height)
+    y: app.layout_mode.chrome_bottom_total
+    size_hint_y: 1-(app.layout_mode.chrome_total/Window.height)
 
 <LauncherView>: # Right side of launcher screen
     id: launcher_view

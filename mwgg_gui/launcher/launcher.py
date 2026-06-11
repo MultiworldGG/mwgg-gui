@@ -92,8 +92,19 @@ def _needs_game_validation(game_module: str, game_label: str) -> bool:
 with open(os.path.join(os.path.dirname(__file__), "launcher.kv"), encoding="utf-8") as kv_file:
     Builder.load_string(kv_file.read())
 
-class LauncherLayout(MDFloatLayout):
-    pass
+class LauncherLayout(MDBoxLayout):
+    """Horizontal row: games-list side pane (fixed dp(260)) | launcher view.
+
+    A BoxLayout (rather than the historical FloatLayout + frozen
+    Window-ratio size_hints) keeps the side pane at its designed width on
+    resize and gives compact mode a clean reparenting seam.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = "horizontal"
+        # Historical gutter between the pane (260) and the view (x=264).
+        self.spacing = 4
 
 class LauncherView(MDBoxLayout):
     slot_layout: ObjectProperty
@@ -176,18 +187,18 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.add_widget(self.launchergrid)
         self.add_widget(self.bottom_appbar)
 
-        self.important_appbar.size_hint_x = 260/Window.width
-        self.important_appbar.size_hint_y=1
-        self.launcher_view.size_hint_x = 1-(264/Window.width)
-        self.launcher_view.size_hint_y =1
+        # Pane widths come from the <LauncherSliverAppbar> kv rule
+        # (width: dp(260), size_hint_x: None); the box gives the launcher
+        # view the remainder.
+        self.important_appbar.size_hint_y = 1
+        self.launcher_view.size_hint_x = 1
+        self.launcher_view.size_hint_y = 1
 
         self.important_appbar.ids.scroll.scroll_wheel_distance = 40
-        #self.important_appbar.ids.scroll.y = 82
 
         self.important_appbar.content.add_widget(self.games_mdlist)
 
         self.launchergrid.add_widget(self.important_appbar)
-        self.launcher_view.pos_hint={"y": 0, "x": 260/Window.width}
         self.launchergrid.add_widget(self.launcher_view)
 
         fave_scroll = FavoritesScroll()

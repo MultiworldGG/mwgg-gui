@@ -25,7 +25,7 @@ from mwgg_gui.components.mw_theme import AutoAdjustHeightBehavior
 Builder.load_string('''
 <CustomLayout>:
     id: custom_layout
-    pos: 0,82
+    pos: 0, app.layout_mode.chrome_bottom_total
 ''')
 
 class CustomLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
