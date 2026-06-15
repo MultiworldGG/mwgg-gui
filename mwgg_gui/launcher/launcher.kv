@@ -102,7 +102,7 @@
                                 pos_hint: {"center_y": 0.5}
                                 group: 'client_type'
                                 id: text_client_checkbox
-                                on_active: app.launcher_screen.set_client_type('text')
+                                on_active: app.launcher_screen.set_client_type('text') if self.active else None
                         MDDivider:
                             orientation: "vertical"
                             theme_divider_color: "Custom"
@@ -121,7 +121,7 @@
                                 pos_hint: {"center_y": 0.5}
                                 group: 'client_type'
                                 id: universal_tracker_checkbox
-                                on_active: app.launcher_screen.set_client_type('universal_tracker')
+                                on_active: app.launcher_screen.set_client_type('universal_tracker') if self.active else None
                         MDDivider:
                             orientation: "vertical"
                             theme_divider_color: "Custom"
@@ -140,7 +140,7 @@
                                 pos_hint: {"center_y": 0.5}
                                 group: 'client_type'
                                 id: manual_checkbox
-                                on_active: app.launcher_screen.set_client_type('manual')
+                                on_active: app.launcher_screen.set_client_type('manual') if self.active else None
                                 
                     MDButton:
                         id: game_yaml_button

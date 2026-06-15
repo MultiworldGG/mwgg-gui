@@ -132,7 +132,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     game_tag_filter: StringProperty
     bottom_appbar: BottomAppBar
     selected_game: tuple[str, str] = ("", "")
-    client_type: str = "text"
+    # "game" = launch the selected game's client (or the text client when no
+    # game is selected). The three radio checkboxes override it with an
+    # explicit "text"/"universal_tracker"/"manual" choice.
+    client_type: str = "game"
     highlighted_favorite: ObjectProperty(None, allownone=True)
     app: MDApp
     result: Any

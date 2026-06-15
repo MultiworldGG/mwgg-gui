@@ -64,7 +64,21 @@ class MessageBox(MDDialog):
         self.dialog = None
         if self.callback:
             self.callback(False)
-        
+
+    def dismiss(self, *args):
+        """Close the dialog that `open()` actually shows.
+
+        `open()` builds and opens a nested MDDialog (`self.dialog`); the
+        MessageBox instance itself is never opened. The inherited
+        MDDialog.dismiss() would act on that never-shown outer dialog and
+        leave the visible one on screen, so callers such as
+        CommonContext.gui_error could not replace a stale dialog -- which is
+        why reconnect errors piled up hundreds of boxes deep.
+        """
+        if self.dialog is not None:
+            self.dialog.dismiss(*args)
+            self.dialog = None
+
     def open(self):
         """Opens the dialog and displays it to the user."""
         # Create the dialog
@@ -129,7 +143,13 @@ class ConsoleBox(MDDialog):
         # Just dismiss the dialog on cancel
         self.dialog.dismiss()
         self.dialog = None
-        
+
+    def dismiss(self, *args):
+        """Close the nested dialog opened by `open()` (see MessageBox.dismiss)."""
+        if self.dialog is not None:
+            self.dialog.dismiss(*args)
+            self.dialog = None
+
     def open(self):
         """Opens the dialog and displays it to the user."""
         # Create text input field
