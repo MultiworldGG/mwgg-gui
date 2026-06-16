@@ -624,7 +624,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     self.app.loading_layout.hide_loading()
                     MessageBox("Restart Required", 
                                "You will need to restart the launcher to apply updates.",
-                               error=True, 
+                               is_error=True,
                                callback=lambda x: self.restart_launcher()).open()
 
                 
@@ -962,7 +962,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     self.app.loading_layout.hide_loading()
                     MessageBox("Restart Required", 
                                "You will need to restart the launcher to apply updates.",
-                               error=True, 
+                               is_error=True,
                                callback=lambda x: self.restart_launcher()).open()
                 
                 if process.returncode == 0:
@@ -1100,7 +1100,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     )
                     MessageBox("Restart Required",
                                "You will need to restart the launcher to apply updates.",
-                               error=True,
+                               is_error=True,
                                callback=lambda x: self.restart_launcher(connect_args)).open()
                 # else: stay on launcher; handle_connection_loss surfaces the error
 
