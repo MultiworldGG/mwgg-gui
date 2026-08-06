@@ -50,9 +50,8 @@ class MessageBox(MDDialog):
                     text_color=self.app.theme_cls.onSurfaceColor,
                 ),
                 on_release=self._cancel,
-            ),
+            )
 
-    
     def _ok(self, instance):
         self.dialog.dismiss()
         self.dialog = None
