@@ -8,6 +8,9 @@ from .dialog import (
     MessageBox,
     ConsoleBox,
 )
+from .connect_dialog import (
+    ConnectDialog,
+)
 from .guidataclasses import (
     UIHint,
     UIPlayerData,

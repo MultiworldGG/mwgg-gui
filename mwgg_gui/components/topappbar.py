@@ -34,6 +34,7 @@ import asyncio
 import urllib.parse
 import asynckivy
 from Utils import persistent_store, persistent_load, format_SI_prefix
+from mwgg_gui.constants import ROLE_LAUNCHER
 
 
 logger = logging.getLogger("MultiWorld")
@@ -501,6 +502,13 @@ class TopAppBar(MDTopAppBar):
         self.app = MDApp.get_running_app()
         self.timer = self.ids.timer
         self.server_info_label = self.ids.server_info_label
+        # The launcher process never connects (every launch spawns a
+        # separate client process) -- "Not Connected" is meaningless there.
+        # Client-role processes keep the label; on_connect/on_disconnect
+        # (never fired in launcher role) are the only other writers of
+        # server_info_label.text.
+        if self.app.role == ROLE_LAUNCHER:
+            self.server_info_label.text = ""
         self.energy_link_label = self.ids.energy_link_label
         self.theme_bg_color = "Custom"
         self.md_bg_color = self.theme_cls.transparentColor

@@ -1,6 +1,7 @@
 import os
 import logging
 import sys
+import threading
 import typing
 import asynckivy
 from datetime import datetime, UTC
@@ -97,6 +98,7 @@ from kivymd.uix.screen import MDScreen
 from NetUtils import KivyMarkupJSONtoTextParser, JSONMessagePart, SlotType, HintStatus, MWGGUIHintStatus
 from Utils import persistent_load
 # from Utils import async_start, get_input_text_from_response
+from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
 
 from mwgg_gui.components.titlebar import Titlebar
@@ -144,6 +146,11 @@ class MultiMDApp(MDApp):
 
     base_title = StringProperty("MultiworldGG")
 
+    # Process role ("launcher" | "client", see mwgg_gui.constants) and the
+    # client-type hint a spawning launcher passed via MWGG_CLIENT_TYPE.
+    role: str
+    client_type_hint: str
+
     title_bar: Titlebar
     main_layout: MainLayout
     navigation_layout: NavLayout
@@ -184,8 +191,16 @@ class MultiMDApp(MDApp):
     # detect a live frontend instance without importing Kivy directly.
     _active_instance: "typing.ClassVar[typing.Optional[MultiMDApp]]" = None
 
-    def __init__(self, ctx: context_type, **kwargs):
+    def __init__(self, ctx: context_type, role: typing.Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
+        # Mirrors the existing MWGG_FRONTEND pattern: an explicit constructor
+        # kwarg wins (for when a future caller passes it directly), otherwise
+        # fall back to the MWGG_ROLE env var Launcher.py/MultiWorld.py assign
+        # (never setdefault) before spawning this process.
+        self.role = role or os.environ.get("MWGG_ROLE", ROLE_LAUNCHER)
+        self.client_type_hint = os.environ.get("MWGG_CLIENT_TYPE", "")
+        if self.role == ROLE_LAUNCHER:
+            self.base_title = "MultiworldGG Launcher"
         # Only claim the singleton slot if no live instance owns it. Phantom
         # subclass instances built post-takeover (so per-game build() side
         # effects like add_client_tab can run) must not clobber the launcher.
@@ -337,7 +352,13 @@ class MultiMDApp(MDApp):
         # add binding for countdown timer
         self.bind(countdown_timer=self.on_countdown_timer)
 
-        self.change_screen("launcher")
+        if self.role == ROLE_CLIENT:
+            # Client-direct boot: no game-select screen, straight to the
+            # console for the game/patch/URI this process was spawned with.
+            self.client_console_init()
+            self.change_screen("console")
+        else:
+            self.change_screen("launcher")
 
         def on_start(*args):
             self.root.md_bg_color = self.theme_cls.surfaceColor
@@ -350,11 +371,62 @@ class MultiMDApp(MDApp):
 
             self._create_screen("settings")
 
+            if self.role == ROLE_CLIENT:
+                # Stays up until the spawned client's ready_callback (routed
+                # through frontend_protocol) calls hide_loading().
+                self.loading_layout.show_loading(display_logs=True)
+            else:
+                # Launcher role only: app-installer update check, in the
+                # background once the UI is up. Never blocks startup.
+                self._start_update_check()
+
         super().on_start()
         Clock.schedule_once(on_start)
         # Terminate the splash screen after the UI is fully initialized
         Clock.schedule_once(lambda dt: self.terminate_splash_screen_wrapper())
 
+    def _start_update_check(self) -> None:
+        """Launcher role only: check GitHub for a newer app installer in a
+        daemon thread and Clock-marshal an UpdateDialog onto the UI if one is
+        found. Everything is feature-detected: source checkouts (not frozen)
+        and environments without the monorepo's Updater module simply skip,
+        and network errors are swallowed with a log line."""
+        def _check() -> None:
+            try:
+                import Updater
+            except ImportError:
+                logging.getLogger("Client").info(
+                    "Update check skipped: Updater module unavailable")
+                return
+            try:
+                if not Updater.can_check_for_updates():
+                    logging.getLogger("Client").info(
+                        "Update check skipped: not an installed (frozen) build")
+                    return
+                import BaseUtils
+                new_version, download_url, changelog = Updater.get_latest_release_info()
+                current_version = BaseUtils.version_tuple
+                if new_version <= current_version:
+                    logging.getLogger("Client").info(
+                        "No update available (current %s, latest %s)",
+                        current_version, new_version)
+                    return
+            except Exception as e:
+                logging.getLogger("Client").warning("Update check failed: %s", e)
+                return
+
+            def _open_dialog(dt) -> None:
+                from mwgg_gui.components.update_dialog import UpdateDialog
+                UpdateDialog(
+                    current_version=current_version,
+                    new_version=new_version,
+                    changelog=changelog,
+                    download_url=download_url,
+                ).open()
+
+            Clock.schedule_once(_open_dialog)
+
+        threading.Thread(target=_check, name="UpdateCheck", daemon=True).start()
 
     def build(self):
         '''
@@ -562,6 +634,15 @@ class MultiMDApp(MDApp):
         if item in self.screen_manager.screen_names:
             return
 
+        if item in ("launcher", "yaml") and self.role == ROLE_CLIENT:
+            # Client-direct processes never build a launcher screen -- the
+            # game-select UI (and the YAML creator that hangs off it) lives
+            # exclusively in the launcher process.
+            logging.getLogger("Client").warning(
+                "Refusing to create %r screen in client role", item
+            )
+            return
+
         if item == "settings":
             self.settings_screen = SettingsScreen()
             self.screen_manager.add_widget(self.settings_screen)
@@ -677,6 +758,15 @@ class MultiMDApp(MDApp):
         """FrontendProtocol: dismiss the loading overlay if shown."""
         if hasattr(self, 'loading_layout') and self.loading_layout:
             self.loading_layout.hide_loading()
+
+    def open_connect_dialog(self) -> None:
+        """Open the reconnect dialog (client mode only). No-op in launcher
+        mode -- the launcher process never holds a live ctx.connect() for
+        the dialog to target; that's what spawning a client is for."""
+        if self.role != ROLE_CLIENT:
+            return
+        from mwgg_gui.components.connect_dialog import ConnectDialog
+        ConnectDialog().open()
 
     def show_error_dialog(self, title: str, message: str):
         """FrontendProtocol: open an MDDialog-based MessageBox for the given
@@ -823,6 +913,10 @@ class MultiMDApp(MDApp):
         This function is called when the connection is established.
         It sets up the UI player data and updates the hints.
         '''
+        # Defensive: a reconnect (ConnectDialog, /connect) may leave the
+        # loading overlay up if its own timed hide_loading() already fired
+        # before Connected arrived, or never fires at all on some paths.
+        self.hide_loading()
 
         for slot, name in self.ctx.player_names.items():
             self.ui_hint_data[slot] = {}

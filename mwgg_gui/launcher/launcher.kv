@@ -1,11 +1,16 @@
+#:import NoTransition kivy.uix.screenmanager.NoTransition
+
 <LauncherScreen>:
     size_hint: 1,1
     pos_hint: {"center_x": 0.5, "center_y": 0.5}
 
 <LauncherLayout>:
     id: launcher_layout
-    y: 82
-    size_hint_y: 1-(185/Window.height)
+    # No bottom app bar on the launcher screen (see LauncherScreen.init_important) --
+    # only reserve clearance for the title bar (43dp) + top app bar (60dp),
+    # matching mw_theme.adjust_height(title_bar=True, app_bar=True, bottom_appbar=False).
+    y: 0
+    size_hint_y: 1-(103/Window.height)
 
 <LauncherView>: # Right side of launcher screen
     id: launcher_view
@@ -35,6 +40,7 @@
         md_bg_color: app.theme_cls.surfaceVariantColor
         MDBoxLayout: # Inner padded layout
             orientation: 'vertical'
+            spacing: dp(10)
             MDBoxLayout: # Title & Favorites
                 id: title_layout
                 orientation: 'vertical'
@@ -50,205 +56,210 @@
                     theme_text_color: "Custom"
                     text_color: app.theme_cls.onSurfaceVariantColor
 
-            MDBoxLayout: # Connect & Play, Patch Game, Create YAML, Generate, Host
-                orientation: 'horizontal'
-                spacing: 10
-                MDBoxLayout:
-                    orientation: 'vertical'
-                    spacing: dp(15)
-                    MDBoxLayout:
+            MDSegmentedButton:
+                id: play_tools_toggle
+                size_hint_x: None
+                width: dp(220)
+                pos_hint: {"center_x": 0.5}
+                MDSegmentedButtonItem:
+                    id: play_mode_item
+                    active: True
+                    MDSegmentButtonIcon:
+                        icon: "controller-classic"
+                    MDSegmentButtonLabel:
+                        text: "Play"
+                MDSegmentedButtonItem:
+                    id: tools_mode_item
+                    MDSegmentButtonIcon:
+                        icon: "toolbox"
+                    MDSegmentButtonLabel:
+                        text: "Tools"
+
+            MDScreenManager:
+                id: play_tools_manager
+                transition: NoTransition()
+                MDScreen:
+                    name: "play"
+                    MDBoxLayout: # Launch & Play, client type radios, Launch Settings
                         orientation: 'horizontal'
-                        spacing: dp(10)
-                        MDButton:
-                            id: connect_button
-                            pos_hint: {"center_x": 0.5, "center_y": 0.5}
-                            on_release: app.launcher_screen.connect()
-                            width: dp(200)
-                            radius: dp(10)
-                            MDButtonText:
-                                theme_text_color: "Custom"
-                                text_color: app.theme_cls.onSurfaceVariantColor
-                                text: 'Connect & Play'
-                                halign: 'center'
-                            MDButtonIcon:
-                                icon: "play-network"
-                        MDButton:
-                            id: game_patch_button
-                            on_release: app.launcher_screen.patch_game()
-                            pos_hint: {"center_x": 0.5, "center_y": 0.5}
-                            width: dp(200)
-                            radius: dp(10)
-                            MDButtonText:
-                                theme_text_color: "Custom"
-                                text_color: app.theme_cls.onSurfaceVariantColor
-                                text: 'Patch Game'
-                                halign: 'center'
-                            MDButtonIcon:
-                                icon: "file-edit"
-                    MDBoxLayout:
-                        orientation: 'horizontal'
-                        spacing: dp(10)
+                        spacing: 10
                         MDBoxLayout:
-                            spacing: dp(4)
+                            orientation: 'vertical'
+                            spacing: dp(15)
+                            MDButton:
+                                id: connect_button
+                                pos_hint: {"center_x": 0.5, "center_y": 0.5}
+                                on_release: app.launcher_screen.connect()
+                                width: dp(200)
+                                radius: dp(10)
+                                MDButtonText:
+                                    theme_text_color: "Custom"
+                                    text_color: app.theme_cls.onSurfaceVariantColor
+                                    text: 'Launch & Play'
+                                    halign: 'center'
+                                MDButtonIcon:
+                                    icon: "rocket-launch"
+                            MDBoxLayout:
+                                orientation: 'horizontal'
+                                spacing: dp(10)
+                                MDBoxLayout:
+                                    spacing: dp(4)
+                                    MDLabel:
+                                        text: 'Text Client'
+                                        halign: 'center'
+                                        theme_font_style: "Custom"
+                                        font_style: "Body"
+                                        role: "medium"
+                                        theme_text_color: "Custom"
+                                        text_color: app.theme_cls.onSurfaceVariantColor
+                                    MDCheckbox:
+                                        pos_hint: {"center_y": 0.5}
+                                        group: 'client_type'
+                                        id: text_client_checkbox
+                                        on_active: app.launcher_screen.set_client_type('text') if self.active else app.launcher_screen.set_client_type('game')
+                                MDDivider:
+                                    orientation: "vertical"
+                                    theme_divider_color: "Custom"
+                                    color: app.theme_cls.outlineColor
+                                MDBoxLayout:
+                                    spacing: dp(4)
+                                    MDLabel:
+                                        text: 'Universal Tracker'
+                                        halign: 'center'
+                                        theme_font_style: "Custom"
+                                        font_style: "Body"
+                                        role: "medium"
+                                        theme_text_color: "Custom"
+                                        text_color: app.theme_cls.onSurfaceVariantColor
+                                    MDCheckbox:
+                                        pos_hint: {"center_y": 0.5}
+                                        group: 'client_type'
+                                        id: universal_tracker_checkbox
+                                        on_active: app.launcher_screen.set_client_type('universal_tracker') if self.active else app.launcher_screen.set_client_type('game')
+                                MDDivider:
+                                    orientation: "vertical"
+                                    theme_divider_color: "Custom"
+                                    color: app.theme_cls.outlineColor
+                                MDBoxLayout:
+                                    spacing: dp(4)
+                                    MDLabel:
+                                        text: 'Manual Client'
+                                        halign: 'center'
+                                        theme_font_style: "Custom"
+                                        font_style: "Body"
+                                        role: "medium"
+                                        theme_text_color: "Custom"
+                                        text_color: app.theme_cls.onSurfaceVariantColor
+                                    MDCheckbox:
+                                        pos_hint: {"center_y": 0.5}
+                                        group: 'client_type'
+                                        id: manual_checkbox
+                                        on_active: app.launcher_screen.set_client_type('manual') if self.active else app.launcher_screen.set_client_type('game')
+                        MDBoxLayout:
+                            orientation: 'vertical'
+                            spacing: dp(5)
+                            width: dp(10)
+                            size_hint_x: None
+                            MDDivider:
+                                size_hint_y: .8
+                                pos_hint: {"center_y": 0.5}
+                                orientation: "vertical"
+                                theme_divider_color: "Custom"
+                                color: app.theme_cls.outlineColor
+                        MDBoxLayout:
+                            orientation: 'vertical'
+                            spacing: dp(8)
                             MDLabel:
-                                text: 'Text Client'
-                                halign: 'center'
+                                text: "Launch Settings"
+                                size_hint_y: None
+                                height: self.texture_size[1]
+                                halign: 'left'
+                                theme_font_style: "Custom"
+                                font_style: "Title"
+                                role: "small"
+                                theme_text_color: "Custom"
+                                text_color: app.theme_cls.onSurfaceVariantColor
+                            MDLabel:
+                                text: "The game opens in its own window; the launcher stays open."
+                                size_hint_y: None
+                                height: self.texture_size[1]
+                                halign: 'left'
                                 theme_font_style: "Custom"
                                 font_style: "Body"
-                                role: "medium"
+                                role: "small"
                                 theme_text_color: "Custom"
                                 text_color: app.theme_cls.onSurfaceVariantColor
-                            MDCheckbox:
-                                pos_hint: {"center_y": 0.5}
-                                group: 'client_type'
-                                id: text_client_checkbox
-                                on_active: app.launcher_screen.set_client_type('text')
-                        MDDivider:
-                            orientation: "vertical"
-                            theme_divider_color: "Custom"
-                            color: app.theme_cls.outlineColor
-                        MDBoxLayout:
-                            spacing: dp(4)
-                            MDLabel:
-                                text: 'Universal Tracker'
-                                halign: 'center'
-                                theme_font_style: "Custom"
-                                font_style: "Body"
-                                role: "medium"
-                                theme_text_color: "Custom"
-                                text_color: app.theme_cls.onSurfaceVariantColor
-                            MDCheckbox:
-                                pos_hint: {"center_y": 0.5}
-                                group: 'client_type'
-                                id: universal_tracker_checkbox
-                                on_active: app.launcher_screen.set_client_type('universal_tracker')
-                        MDDivider:
-                            orientation: "vertical"
-                            theme_divider_color: "Custom"
-                            color: app.theme_cls.outlineColor
-                        MDBoxLayout:
-                            spacing: dp(4)
-                            MDLabel:
-                                text: 'Manual Client'
-                                halign: 'center'
-                                theme_font_style: "Custom"
-                                font_style: "Body"
-                                role: "medium"
-                                theme_text_color: "Custom"
-                                text_color: app.theme_cls.onSurfaceVariantColor
-                            MDCheckbox:
-                                pos_hint: {"center_y": 0.5}
-                                group: 'client_type'
-                                id: manual_checkbox
-                                on_active: app.launcher_screen.set_client_type('manual')
-                                
-                    MDButton:
-                        id: game_yaml_button
-                        on_release: app.launcher_screen.create_yaml()
-                        pos_hint: {"center_x": 0.5}
-                        width: dp(200)
-                        radius: dp(10)
-                        disabled: True
-                        MDButtonText:
-                            theme_text_color: "Custom"
-                            text_color: app.theme_cls.onSurfaceVariantColor
-                            text: 'Create YAML'
-                            halign: 'center'
-                        MDButtonIcon:
-                            icon: "code-block-brackets"
-                    MDButton:
-                        id: generate_button
-                        on_release: app.launcher_screen.generate()
-                        pos_hint: {"center_x": 0.5}
-                        width: dp(200)
-                        radius: dp(10)
-                        MDButtonText:
-                            theme_text_color: "Custom"
-                            text_color: app.theme_cls.onSurfaceVariantColor
-                            text: 'Generate'
-                            halign: 'center'
-                        MDButtonIcon:
-                            icon: "gamepad-square-outline"
-                    MDButton:
-                        id: host_button
-                        on_release: app.launcher_screen.host()
-                        pos_hint: {"center_x": 0.5}
-                        width: dp(200)
-                        radius: dp(10)
-                        MDButtonText:
-                            theme_text_color: "Custom"
-                            text_color: app.theme_cls.onSurfaceVariantColor
-                            text: 'Host'
-                            halign: 'center'
-                        MDButtonIcon:
-                            icon: "router-network"
-                MDBoxLayout:
-                    orientation: 'vertical'
-                    spacing: dp(5)
-                    width: dp(10)
-                    size_hint_x: None
-                    MDDivider:
-                        size_hint_y: .8
-                        pos_hint: {"center_y": 0.5}
-                        orientation: "vertical"
-                        theme_divider_color: "Custom"
-                        color: app.theme_cls.outlineColor
-                MDBoxLayout:
-                    id: server_layout
-                    orientation: 'vertical'
-                    spacing: dp(15)
-                    LauncherAuthTextField:
-                        id: server
-                        size_hint_x: 0.8
-                        pos_hint: {"center_x": 0.5}
-                        text: app.ctx.hostname
-                        MDTextFieldLeadingIcon:
-                            theme_icon_color: "Custom"
-                            icon: 'router-network'
-                            icon_color_focus: self.parent.icon_color_focus
-                            icon_color_normal: self.parent.icon_color_normal
-                        MDTextFieldHintText:
-                            text: "Server Address"
-                    LauncherAuthTextField:
-                        id: port
-                        input_filter: 'int'
-                        size_hint_x: 0.8
-                        pos_hint: {"center_x": 0.5}
-                        text: app.ctx.port
-                        MDTextFieldLeadingIcon:
-                            theme_icon_color: "Custom"
-                            icon: 'numeric'
-                            icon_color_focus: self.parent.icon_color_focus
-                            icon_color_normal: self.parent.icon_color_normal
-                        MDTextFieldHintText:
-                            text: "Port"
-                    LauncherAuthTextField:
-                        id: slot_name
-                        size_hint_x: 0.8
-                        pos_hint: {"center_x": 0.5}
-                        text: app.ctx.username
-                        on_text_validate: app.launcher_screen.connect()
-                        MDTextFieldLeadingIcon:
-                            theme_icon_color: "Custom"
-                            icon_color_focus: self.parent.icon_color_focus
-                            icon_color_normal: self.parent.icon_color_normal
-                            icon: 'ticket-account'
-                        MDTextFieldHintText:
-                            text: "Username"
-                    LauncherAuthTextField:
-                        id: slot_password
-                        password: True
-                        size_hint_x: 0.8
-                        pos_hint: {"center_x": 0.5}
-                        text: app.app_config.get("client", "slot_password", fallback="")
-                        on_text_validate: app.launcher_screen.connect()
-                        MDTextFieldLeadingIcon:
-                            theme_icon_color: "Custom"
-                            icon_color_focus: self.parent.icon_color_focus
-                            icon_color_normal: self.parent.icon_color_normal
-                            icon: 'lock'    
-                        MDTextFieldHintText:
-                            text: "Password"
+                            MDBoxLayout:
+                                id: server_layout
+                                orientation: 'vertical'
+                                spacing: dp(8)
+                                adaptive_height: True
+                                LauncherAuthTextField:
+                                    id: server
+                                    size_hint_x: 0.8
+                                    pos_hint: {"center_x": 0.5}
+                                    text: app.ctx.hostname
+                                    MDTextFieldLeadingIcon:
+                                        theme_icon_color: "Custom"
+                                        icon: 'router-network'
+                                        icon_color_focus: self.parent.icon_color_focus
+                                        icon_color_normal: self.parent.icon_color_normal
+                                    MDTextFieldHintText:
+                                        text: "Server Address"
+                                LauncherAuthTextField:
+                                    id: port
+                                    input_filter: 'int'
+                                    size_hint_x: 0.8
+                                    pos_hint: {"center_x": 0.5}
+                                    text: app.ctx.port
+                                    MDTextFieldLeadingIcon:
+                                        theme_icon_color: "Custom"
+                                        icon: 'numeric'
+                                        icon_color_focus: self.parent.icon_color_focus
+                                        icon_color_normal: self.parent.icon_color_normal
+                                    MDTextFieldHintText:
+                                        text: "Port"
+                                LauncherAuthTextField:
+                                    id: slot_name
+                                    size_hint_x: 0.8
+                                    pos_hint: {"center_x": 0.5}
+                                    text: app.ctx.username
+                                    on_text_validate: app.launcher_screen.connect()
+                                    MDTextFieldLeadingIcon:
+                                        theme_icon_color: "Custom"
+                                        icon_color_focus: self.parent.icon_color_focus
+                                        icon_color_normal: self.parent.icon_color_normal
+                                        icon: 'ticket-account'
+                                    MDTextFieldHintText:
+                                        text: "Username"
+                                LauncherAuthTextField:
+                                    id: slot_password
+                                    password: True
+                                    size_hint_x: 0.8
+                                    pos_hint: {"center_x": 0.5}
+                                    text: app.app_config.get("client", "slot_password", fallback="")
+                                    on_text_validate: app.launcher_screen.connect()
+                                    MDTextFieldLeadingIcon:
+                                        theme_icon_color: "Custom"
+                                        icon_color_focus: self.parent.icon_color_focus
+                                        icon_color_normal: self.parent.icon_color_normal
+                                        icon: 'lock'
+                                    MDTextFieldHintText:
+                                        text: "Password"
+                            Widget:
+                                # Absorbs leftover vertical space below the
+                                # fields so title/caption/fields stay
+                                # top-anchored instead of centering/sinking
+                                # toward the bottom on tall windows (server_layout
+                                # is adaptive_height, so without this filler
+                                # it's the only non-fixed sibling and BoxLayout
+                                # anchors the stack from the bottom).
+                                size_hint_y: 1
+                MDScreen:
+                    name: "tools"
+                    id: tools_screen
+                    ToolsSection:
+                        id: tools_section
 
 <LauncherGenerateContent>:
     orientation: 'vertical'
@@ -329,7 +340,7 @@
         icon: root.icon
 
 <LauncherAuthTextField>:
-    -height: dp(56)
+    -height: dp(48)
     theme_font_name: "Custom"
     theme_font_style: "Custom"
     theme_icon_color: "Custom"

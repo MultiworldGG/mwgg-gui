@@ -99,9 +99,15 @@ class ConsoleSliverAppbar(MDSliverAppbar):
         self.content.id = "content"
         self.add_widget(self.content)
 
-        # Determine tracker mode from the launcher's client_type selection
+        # Determine tracker mode from the launcher's client_type selection.
+        # Client-direct processes never build a launcher screen (see
+        # app.py._create_screen's client-role guard), so fall back to the
+        # MWGG_CLIENT_TYPE env var the launcher spawned this process with.
         launcher = getattr(self.app, "launcher_screen", None)
-        self.tracker_mode = bool(launcher and getattr(launcher, "client_type", "") == "universal_tracker")
+        if launcher is not None:
+            self.tracker_mode = getattr(launcher, "client_type", "") == "universal_tracker"
+        else:
+            self.tracker_mode = getattr(self.app, "client_type_hint", "") == "universal_tracker"
 
         self.screen_manager = MDScreenManager(size_hint_y=None, height=dp(48))
         self.players_screen = MDScreen(name="players", size_hint_y=None, height=dp(48))
