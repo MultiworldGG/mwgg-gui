@@ -1,9 +1,9 @@
 """
 Per-option-type row widgets for the Player Options form.
 
-Each widget takes a *descriptor dict* (produced by `worker.py`), not a
-class object — the GUI process never imports the world's Options
-module. Descriptor shape per type is documented in `worker.py`.
+Each widget takes a *descriptor dict* (produced by `world_data.py`), not
+a class object — the GUI process never imports the world's Options
+module. Descriptor shape per type is documented in `world_data.py`.
 
 Every widget extends `OptionRow` and exposes:
   - `option_name` : str

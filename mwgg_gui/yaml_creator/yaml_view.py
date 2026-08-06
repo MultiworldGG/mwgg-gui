@@ -78,11 +78,16 @@ class YamlPreview(MDBoxLayout):
     on_sync = ObjectProperty(None)
     """Callback signature: `on_sync(parsed_form_state)` — invoked when the
     user clicks Sync and the YAML parses cleanly."""
+    known_options = ObjectProperty(None)
+    """Optional zero-arg callable returning the option names the form owns
+    (or None). Game-section keys outside it are preserved as extras rather
+    than parsed as options — see `yaml_io.yaml_to_form_state`."""
 
-    def __init__(self, game_name: str, on_sync=None, **kwargs):
+    def __init__(self, game_name: str, on_sync=None, known_options=None, **kwargs):
         super().__init__(**kwargs)
         self.game_name = game_name
         self.on_sync = on_sync
+        self.known_options = known_options
         self._suppress_on_text = False
 
         self._code = CodeInput(
@@ -112,7 +117,10 @@ class YamlPreview(MDBoxLayout):
         """Parse the current text. On success, invoke `on_sync` with the
         parsed form state. On failure, show the error strip."""
         try:
-            state = yaml_to_form_state(self._code.text, self.game_name)
+            known = self.known_options() if self.known_options else None
+            state = yaml_to_form_state(
+                self._code.text, self.game_name, known_options=known
+            )
         except ParseError as e:
             self._show_error(str(e))
             return

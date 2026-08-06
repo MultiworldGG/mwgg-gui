@@ -40,7 +40,7 @@ from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
 import yaml
 
-from Utils import local_path
+import Utils
 
 from mwgg_gui.components.dialog import MessageBox
 from mwgg_gui.overrides.innermdscreen import InnerMDScreen
@@ -53,6 +53,18 @@ from .yaml_view import YamlPreview
 logger = logging.getLogger("Client")
 
 __all__ = ("YamlScreen",)
+
+
+def _players_dir() -> str:
+    """Settings-resolved Players directory (settings.generator.
+    player_files_path) — the exact dir Generate scans. `Utils.players_path`
+    needs a beta core new enough to ship it; older cores fall back to the
+    user_path default (never local_path — the install dir may not be
+    writable)."""
+    players_path = getattr(Utils, "players_path", None)
+    if players_path is not None:
+        return players_path()
+    return Utils.user_path("Players")
 
 
 Builder.load_string(
@@ -71,12 +83,17 @@ Builder.load_string(
     md_bg_color: app.theme_cls.surfaceVariantColor
     MDTextField:
         id: player_name
-        size_hint_x: 0.45
+        size_hint_x: 0.24
         MDTextFieldHintText:
             text: "Player name"
+    MDTextField:
+        id: description
+        size_hint_x: 0.34
+        MDTextFieldHintText:
+            text: "Description"
     MDSegmentedButton:
         id: mode_toggle
-        size_hint_x: 0.55
+        size_hint_x: 0.42
         pos_hint: {"center_y": 0.5}
         MDSegmentedButtonItem:
             id: mode_player
@@ -111,6 +128,12 @@ class YamlScreen(InnerMDScreen):
         # Worker results, keyed by visibility ("simple" / "complex").
         # Populated asynchronously; consulted by _show_form.
         self._world_data: dict = {}
+        # Unknown top-level / game-section keys captured on Sync → Form
+        # (hand-written `triggers:` and the like). Held here — across mode
+        # switches and form rebuilds — and re-emitted on every preview push
+        # so form edits never destroy them.
+        self._yaml_extras: dict = {}
+        self._game_extras: dict = {}
 
         # Defer build to next frame so geometry is settled.
         Clock.schedule_once(lambda dt: self._build(), 0)
@@ -153,6 +176,9 @@ class YamlScreen(InnerMDScreen):
         self._header.ids.player_name.bind(
             text=lambda *_: self._push_to_preview()
         )
+        self._header.ids.description.bind(
+            text=lambda *_: self._push_to_preview()
+        )
         # Bind the mode-toggle segments in Python so `self` (the screen)
         # is the callback target. In KV, `root` inside the HeaderCard
         # rule resolves to the HeaderCard, not the screen.
@@ -190,6 +216,7 @@ class YamlScreen(InnerMDScreen):
         self._preview = YamlPreview(
             game_name=self.game_name,
             on_sync=self._on_preview_sync,
+            known_options=self._known_option_names,
             size_hint_x=0.42,
         )
         self._grid.add_widget(self._preview)
@@ -389,20 +416,38 @@ class YamlScreen(InnerMDScreen):
         if self._form is None:
             return
         player_name = (self._header.ids.player_name.text or "Player").strip()
+        description = (self._header.ids.description.text or "").strip()
         collected = self._form.collect()
         logger.info("yaml_creator: _push_to_preview, collected=%r", collected)
         text = form_state_to_yaml(
             player_name=player_name,
             game_name=self.game_name,
             options=collected,
+            description=description,
+            extras=self._yaml_extras,
+            game_extras=self._game_extras,
         )
         self._preview.set_text(text)
 
+    def _known_option_names(self):
+        """Option names the current form owns — lets the preview pane
+        classify hand-written game-section keys as extras on sync."""
+        if self._form is None:
+            return None
+        return self._form.option_names()
+
     def _on_preview_sync(self, state):
         """User clicked Sync → Form in the preview pane."""
+        # Hold every key the form doesn't own so pushes re-emit it. Stored
+        # FIRST: the widget updates below fire _push_to_preview synchronously,
+        # and a push with the stale extras would rewrite the preview without
+        # the keys the user just hand-wrote.
+        self._yaml_extras = state.get("__extras__") or {}
+        self._game_extras = state.get("__game_extras__") or {}
         name = state.get("__name__")
         if name:
             self._header.ids.player_name.text = str(name)
+        self._header.ids.description.text = str(state.get("__description__") or "")
         options = state.get("__options__") or {}
         if self._form is not None:
             self._form.apply(options)
@@ -417,7 +462,7 @@ class YamlScreen(InnerMDScreen):
             yaml.safe_load(text)
 
             player_name = (self._header.ids.player_name.text or "Player").strip()
-            players_dir = local_path("Players")
+            players_dir = _players_dir()
             os.makedirs(players_dir, exist_ok=True)
             filename = f"{player_name}_{self.module_name}.yaml"
             filepath = os.path.join(players_dir, filename)

@@ -372,6 +372,15 @@ class OptionsForm(MDList):
                 return widget
         return None
 
+    def option_names(self) -> set:
+        """Names of every option the form currently owns a row for. The
+        preview pane uses this to tell real options apart from
+        hand-written game-section keys it must preserve."""
+        names: set = set()
+        for panel in self._panels.values():
+            names.update(panel.row_widgets.keys())
+        return names
+
     def on_change(self, options: dict):
         """Default handler — overridden via `bind(on_change=...)`."""
 
@@ -395,4 +404,4 @@ class WeightedOptionsForm(OptionsForm):
         return [WeightedPrimer()]
 
     def _make_widget(self, descriptor):
-        return weight_widget_for_option(descriptor)
+        return weight_widget_for_option(descriptor, self._world)

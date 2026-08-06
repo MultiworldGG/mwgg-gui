@@ -8,8 +8,11 @@ matches.
 
 `value` for a weighted row is a dict {value_label: weight_int}.
 
-`weight_widget_for_option(descriptor)` picks the right row type given
-an option descriptor produced by `worker.py`.
+`weight_widget_for_option(descriptor, world)` picks the right row type
+given an option descriptor produced by `world_data.py`. Options the
+generator consumes as direct values (`supports_weighting` false — the
+set/dict/counter family) get the same direct-value rows player mode
+uses instead of a weight stack.
 
 A `WeightedPrimer` widget (separate `MDCard`) is rendered once at the
 top of the weighted form to explain the raffle metaphor.
@@ -27,7 +30,7 @@ from kivymd.uix.label import MDLabel
 from kivymd.uix.slider import MDSlider, MDSliderHandle, MDSliderValueLabel
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
-from .option_widgets import OptionRow
+from .option_widgets import OptionRow, widget_for_option
 
 __all__ = (
     "WeightedRow",
@@ -372,8 +375,30 @@ class WeightedPrimer(MDCard):
 # ----- factory -------------------------------------------------------------
 
 
-def weight_widget_for_option(descriptor: dict) -> WeightedRow:
+# Types the generator consumes as direct values: Generate.handle_option
+# feeds options with `supports_weighting = False` (the set/dict/counter
+# family) their raw YAML value via from_any, with no weighted pick. Used
+# as the routing fallback for payloads too old to carry the
+# `supports_weighting` field.
+_DIRECT_VALUE_TYPES = frozenset({
+    "item_set",
+    "location_set",
+    "option_set",
+    "option_counter",
+    "option_dict",
+})
+
+
+def weight_widget_for_option(descriptor: dict, world: dict) -> OptionRow:
     t = descriptor.get("type", "free_text")
+    # Direct-value options get the same rows player mode uses — a
+    # {value: weight} stack here would be misparsed by the generator
+    # (wrong seeds or an OptionError), never weighted-picked.
+    supports_weighting = descriptor.get("supports_weighting")
+    if supports_weighting is None:
+        supports_weighting = t not in _DIRECT_VALUE_TYPES
+    if not supports_weighting:
+        return widget_for_option(descriptor, world)
     if t == "toggle":
         return WeightedToggleRow(descriptor)
     if t == "text_choice":
@@ -386,5 +411,5 @@ def weight_widget_for_option(descriptor: dict) -> WeightedRow:
         return WeightedRangeRow(descriptor)
     if t == "free_text":
         return WeightedFreeTextRow(descriptor)
-    # Set/Dict/Counter options aren't weighted on the web — fall through.
+    # Unrecognized weightable type — free text keeps it editable.
     return WeightedFreeTextRow(descriptor)
