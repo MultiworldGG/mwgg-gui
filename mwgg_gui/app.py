@@ -159,6 +159,8 @@ class MultiMDApp(MDApp):
     screen_manager: MainScreenMgr
 
     console_screen: ConsoleScreen
+    # Duck-typed: the classic variant (kvui.ClassicHintScreen) satisfies the
+    # same surface — update_hints_list() and bottom_appbar.text_input.
     hint_screen: HintScreen
     settings_screen: SettingsScreen
     launcher_screen: LauncherScreen
@@ -287,7 +289,12 @@ class MultiMDApp(MDApp):
             'primary_palette': 'Purple',
             'font_scale': '1.0',
             'monospace_font': 'Argon',
-            'device_orientation': '0'
+            'device_orientation': '0',
+            # Classic (MAIN-style) hint screen is the migration default; the
+            # new screen is opt-in. Every read must also pass
+            # fallback='classic' -- build_config never runs for a
+            # pre-existing client.ini, so the key may be absent there.
+            'hint_screen': 'classic'
         })
         # Tool-run suppression uses dynamic per-world keys
         # (tool_warning_ok_<slug>) read with fallback=False -- no defaults.
@@ -652,7 +659,7 @@ class MultiMDApp(MDApp):
             self.settings_screen = SettingsScreen()
             self.screen_manager.add_widget(self.settings_screen)
         elif item == "hint":
-            self.hint_screen = HintScreen()
+            self.hint_screen = self._build_hint_screen()
             self.screen_manager.add_widget(self.hint_screen)
             self.hint_text_input = self.hint_screen.bottom_appbar.text_input
         elif item == "launcher":
@@ -677,6 +684,57 @@ class MultiMDApp(MDApp):
             self.create_custom_screen(item)
             return
         self._invalidate_top_appbar_menu()
+
+    def _build_hint_screen(self):
+        """Instantiate the hint screen variant selected by the client
+        hint_screen setting: "classic" -> kvui.ClassicHintScreen when the
+        installed core provides it, anything else -> the new HintScreen.
+
+        fallback='classic' is load-bearing: build_config never runs for a
+        pre-existing client.ini, so the key may be missing there."""
+        from mwgg_gui.hint.select import resolve_hint_screen_class
+        style = self.app_config.get('client', 'hint_screen', fallback='classic')
+        cls = resolve_hint_screen_class(style)
+        if cls is not None:
+            try:
+                return cls()
+            except Exception as e:
+                logging.getLogger("Client").warning(
+                    "Failed to build classic hint screen (%s); "
+                    "using the new hint screen", e
+                )
+        return HintScreen()
+
+    def set_hint_screen_style(self, style: str):
+        """Swap the live hint screen to the given style ("new"/"classic").
+
+        Pre-connect (no hint screen yet) this is a no-op: the new style
+        takes effect when on_connect/refresh_hints creates the screen,
+        which also keeps classic hint rows from building without a live
+        ctx."""
+        if "hint" not in self.screen_manager.screen_names:
+            return
+        was_current = self.screen_manager.current == "hint"
+        if was_current:
+            self.screen_manager.current = (
+                "console" if "console" in self.screen_manager.screen_names
+                else self.screen_manager.screen_names[0]
+            )
+        try:
+            self.screen_manager.remove_widget(
+                self.screen_manager.get_screen("hint")
+            )
+        except Exception as e:
+            logging.getLogger("Client").warning(
+                "Failed to remove hint screen on style change: %s", e
+            )
+            return
+        self.hint_screen = None
+        self._invalidate_top_appbar_menu()
+        self._create_screen("hint")
+        self.hint_screen.update_hints_list()
+        if was_current:
+            self.screen_manager.current = "hint"
 
     def _resolve_live_app(self) -> "MultiMDApp":
         """Return the live launcher app instance whose screen_manager is on
