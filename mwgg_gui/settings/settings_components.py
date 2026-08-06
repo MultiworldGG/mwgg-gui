@@ -957,6 +957,12 @@ class InterfaceSettings(SettingsScrollBox):
             active=bool(self.app.ctx.all_players_chat),
             on_switch=self.toggle_all_players_chat
         ))
+        layout_section.add_widget(LabeledSwitch(
+            text="Item Tooltips",
+            theme_text_color="Secondary",
+            active=self.app.app_config.getboolean('client', 'item_tooltips', fallback=True),
+            on_switch=self.toggle_item_tooltips
+        ))
 
         scroll_section = SettingsSection(name="scroll_settings", title="Scroll")
         scroll_section.add_widget(LabeledSlider(
@@ -1025,6 +1031,15 @@ class InterfaceSettings(SettingsScrollBox):
             self.app.ctx.all_players_chat = value
         except Exception as e:
             logger.error(f"Error in toggle_all_players_chat: {e}", exc_info=True)
+
+    def toggle_item_tooltips(self, instance, value):
+        # The hover code re-reads this key on every (throttled) hit-test,
+        # so the switch takes effect immediately -- no rebinding needed.
+        try:
+            self.app.app_config.set('client', 'item_tooltips', str(value))
+            self.app.app_config.write()
+        except Exception as e:
+            logger.error(f"Error in toggle_item_tooltips: {e}", exc_info=True)
 
     def on_hint_screen_select(self, value):
         # Direct write, no confirm dialog -- the screen swap is instant.

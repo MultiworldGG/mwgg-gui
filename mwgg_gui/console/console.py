@@ -220,6 +220,19 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
 
         Clock.schedule_once(lambda x: self.init_important())
 
+    def on_enter(self, *args):
+        """Arm the console hover tooltip whenever this screen is shown.
+        getattr-guarded: the first on_enter fires at startup before the
+        Clock-deferred init_important has created ui_console."""
+        console = getattr(self, "ui_console", None)
+        if console is not None:
+            console.text_console.start_hover_tracking()
+
+    def on_leave(self, *args):
+        console = getattr(self, "ui_console", None)
+        if console is not None:
+            console.text_console.stop_hover_tracking()
+
     def update_slots_list(self):
         """Update the slots list when hints data becomes available"""
         asynckivy.start(self.set_slots_list())
@@ -273,6 +286,13 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         # If tracker mode is active, seed the locations list now that ctx exists.
         if self.important_appbar.tracker_mode:
             Clock.schedule_once(lambda dt: self.update_tracker_locations(), 0.5)
+
+        # on_enter already fired (once, at startup) before this deferred
+        # build created ui_console, so re-arm hover tracking if the console
+        # is the visible screen. start_hover_tracking is idempotent, so the
+        # normal on_enter/on_leave flow stays correct on later switches.
+        if self.manager and self.manager.current == self.name:
+            self.ui_console.text_console.start_hover_tracking()
 
     def _get_slot_priority(self, slot_data) -> tuple[bool, int]:
         """

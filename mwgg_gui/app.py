@@ -294,7 +294,10 @@ class MultiMDApp(MDApp):
             # new screen is opt-in. Every read must also pass
             # fallback='classic' -- build_config never runs for a
             # pre-existing client.ini, so the key may be absent there.
-            'hint_screen': 'classic'
+            'hint_screen': 'classic',
+            # Item-hover progression tooltips in the console. Reads pass
+            # fallback=True for pre-existing client.ini files.
+            'item_tooltips': '1'
         })
         # Tool-run suppression uses dynamic per-world keys
         # (tool_warning_ok_<slug>) read with fallback=False -- no defaults.
