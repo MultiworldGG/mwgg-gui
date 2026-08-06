@@ -1,12 +1,16 @@
 """
 Client for extracting a world's option metadata out-of-process.
 
-The GUI must not import worlds into its own interpreter (`AutoWorldRegister`
-pulls in a lot of global state), so option introspection runs in a separate
-process. We invoke MultiworldGG's `Generate` entry point with `--yaml-options`:
-in frozen builds that's the bundled `MultiWorldGGGenerate` executable, which
-runs in the full frozen environment (so worlds' C-extension base deps like
-bsdiff4 import correctly); in dev it's `python Generate.py`.
+The GUI must not import game worlds into its own interpreter
+(`AutoWorldRegister` pulls in a lot of global state), so option introspection
+runs in a separate process: we invoke MultiworldGG's `Generate` entry point
+with `--yaml-options`. The argv prefix is resolved through
+`worlds.LauncherComponents.get_exe`, which reads `BaseUtils.FROZEN_TARGETS`
+— the single source of truth for built exe names — so this module can't
+drift from the actual frozen executable. Importing `worlds.LauncherComponents`
+(lazily, inside the function) is sanctioned: the launcher-side `worlds`
+package loads only the origin-filtered infrastructure worlds
+(generic + tracker), never game worlds. Importing game-world code is not.
 
 Generate installs the world if needed, loads it, and writes a single JSON
 object to stdout. All of its own logging/noise is diverted to stderr in this
@@ -22,11 +26,9 @@ import json
 import logging
 import os
 import subprocess
-import sys
-from pathlib import Path
 from typing import Optional
 
-from BaseUtils import local_path, is_frozen, is_windows
+from BaseUtils import is_frozen, is_windows
 
 logger = logging.getLogger("Client")
 
@@ -56,22 +58,31 @@ class WorldDataError(Exception):
 
 
 def _generate_command() -> list[str]:
-    """Build the argv prefix that runs MultiworldGG's Generate entry point."""
-    if is_frozen():
-        # The Generate executable is a sibling of the running launcher.
-        exe_name = "MultiWorldGGGenerate.exe" if is_windows else "MultiWorldGGGenerate"
-        exe = Path(sys.executable).parent / exe_name
-        return [str(exe)]
-    # Dev: run the script with the current interpreter. local_path() resolves to
-    # the MultiworldGG repo root, where Generate.py lives.
-    return [sys.executable, str(Path(local_path("Generate.py")))]
+    """Build the argv prefix that runs MultiworldGG's Generate entry point.
+
+    Resolved through LauncherComponents — same path as the launcher's own
+    generation flow — so the frozen exe name can't drift from the actual
+    built target (see BaseUtils.FROZEN_TARGETS). The import stays inside
+    the function: it's a sanctioned launcher-side import, but keeping it
+    off the module import path keeps world_data loadable standalone.
+    """
+    from worlds.LauncherComponents import find_component, get_exe
+
+    component = find_component("Generate")
+    if component is None:
+        raise WorldDataError("No 'Generate' component is registered.")
+    cmd = get_exe(component)
+    if cmd is None:
+        raise WorldDataError("Could not resolve the Generate executable.")
+    return cmd
 
 
 def _run_generate(game_name: str, visibility: str, module: str = "") -> subprocess.CompletedProcess:
     """Spawn Generate --yaml-options once. Raises WorldDataError on timeout /
     spawn failure; otherwise returns the CompletedProcess for the caller to
     inspect (returncode + stdout)."""
-    cmd = _generate_command() + [
+    prefix = _generate_command()
+    cmd = prefix + [
         "--yaml-options",
         "--game", game_name,
         "--visibility", visibility,
@@ -80,6 +91,24 @@ def _run_generate(game_name: str, visibility: str, module: str = "") -> subproce
     # lookup — the index in a fresh Generate process only knows pip/index worlds.
     if module:
         cmd += ["--module", module]
+    # Run at the exe's directory: the child's get_settings() prefers a
+    # host.yaml in cwd over the user_path one, and the launcher process's
+    # own cwd is arbitrary. Parity with the generation flow in launcher.py.
+    cwd = os.path.dirname(prefix[-1])
+    env = os.environ.copy()
+    # Block ModuleUpdate's self-update path in the child: on frozen builds
+    # Utils.exit_restart_for_update would respawn a detached duplicate
+    # Generate in a new console and exit 10. dump_yaml_options' world-install
+    # path is unaffected — only ModuleUpdate.update() is gated by this.
+    env["SKIP_REQUIREMENTS_UPDATE"] = "1"
+    if not is_frozen():
+        # Disable Kivy's argument parser when running from source.
+        env["KIVY_NO_ARGS"] = "1"
+    kwargs = {}
+    if is_windows:
+        # Generate is a console-subsystem exe; without this every options
+        # fetch flashes a console window on frozen Windows.
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     logger.debug("yaml-options spawn: %s", cmd)
     try:
         return subprocess.run(
@@ -87,6 +116,9 @@ def _run_generate(game_name: str, visibility: str, module: str = "") -> subproce
             capture_output=True,
             text=True,
             timeout=_TIMEOUT_SECONDS,
+            cwd=cwd,
+            env=env,
+            **kwargs,
         )
     except subprocess.TimeoutExpired:
         raise WorldDataError(
@@ -107,7 +139,10 @@ def load_world_data(game_name: str, visibility: str = "simple", module: str = ""
     """
     result = _run_generate(game_name, visibility, module)
     if result.returncode == _EXIT_NEEDS_RELOAD:
-        logger.info("Generate installed '%s'; re-running to load it.", game_name)
+        logger.info(
+            "Generate requested reload (world installed or environment "
+            "refreshed); re-running once."
+        )
         result = _run_generate(game_name, visibility, module)
 
     if result.returncode != 0:
