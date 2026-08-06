@@ -289,6 +289,11 @@ class MultiMDApp(MDApp):
             'monospace_font': 'Argon',
             'device_orientation': '0'
         })
+        # Tool-run suppression uses dynamic per-world keys
+        # (tool_warning_ok_<slug>) read with fallback=False -- no defaults.
+        config.setdefaults('security', {
+            'suppress_apworld_install_warning': '0'
+        })
 
     def on_config_change(self, config, section, key, value):
         """Handle configuration changes"""

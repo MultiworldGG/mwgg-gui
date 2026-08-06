@@ -6,7 +6,9 @@ from .bottomappbar import (
 )
 from .dialog import (
     MessageBox,
+    CodeWarningBox,
     ConsoleBox,
+    confirm_arbitrary_code,
 )
 from .connect_dialog import (
     ConnectDialog,

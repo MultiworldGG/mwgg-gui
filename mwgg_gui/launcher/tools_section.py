@@ -14,7 +14,10 @@ or a late world import can't smuggle a stray component into the grid) minus
 `Type.HIDDEN`, dispatched through an override map for the handful of
 components whose real UI already lives in `LauncherScreen`'s existing dialog
 flows (Generate/Host/Text Client), plus two GUI-local entries (Patch Game /
-Create YAML) that have no `LauncherComponents` equivalent at all.
+Create YAML) that have no `LauncherComponents` equivalent at all, plus one
+card per tool declared in an installed world's manifest (`tools` in
+archipelago.json -- import-free scan + detached-subprocess spawn, both
+feature-detected so an older core just contributes no cards).
 """
 from __future__ import annotations
 
@@ -22,7 +25,9 @@ __all__ = ("ToolEntry", "ToolCard", "ToolsSection")
 
 import logging
 import threading
+import webbrowser
 from dataclasses import dataclass
+from functools import partial
 from typing import Callable, Optional
 
 from kivy.clock import Clock
@@ -35,6 +40,8 @@ from kivymd.uix.card import MDCard
 from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.label import MDIcon
 from kivymd.uix.scrollview import MDScrollView
+
+from mwgg_gui.components.dialog import confirm_arbitrary_code
 
 logger = logging.getLogger("Client")
 
@@ -228,6 +235,21 @@ class ToolsSection(MDScrollView):
             activate = overrides.get(component.display_name)
             if activate is None:
                 activate = self._default_activator(launcher_components, component)
+            # Post-lookup wrap, deliberately outside the launcher_screen
+            # override map above: the install warning must also cover the
+            # launcher_screen-None state, where core skips its own native
+            # confirm because Kivy is running.
+            if component.display_name == "Install APWorld":
+                activate = partial(
+                    confirm_arbitrary_code,
+                    "Install APWorld",
+                    "APWorlds contain program code that runs on your computer "
+                    "when the world is loaded. Only install APWorlds from "
+                    "sources you trust.",
+                    "suppress_apworld_install_warning",
+                    activate,
+                    confirm_text="Install",
+                )
             icon_path = launcher_components.icon_paths.get(
                 component.icon, launcher_components.icon_paths["icon"]
             )
@@ -252,7 +274,56 @@ class ToolsSection(MDScrollView):
                 icon_name="code-block-brackets",
             ))
 
+        entries.extend(self._world_tool_entries(launcher_components))
+
         return entries
+
+    def _world_tool_entries(self, launcher_components) -> list[ToolEntry]:
+        """Cards for tools declared in installed worlds' manifests. Both core
+        APIs are feature-detected (older core: no cards), and the scan is
+        wrapped as a unit so a bad manifest never blanks the whole grid."""
+        entries_fn = getattr(launcher_components, "world_tool_entries", None)
+        spawn_fn = getattr(launcher_components, "spawn_world_tool", None)
+        if entries_fn is None or spawn_fn is None:
+            return []
+        entries: list[ToolEntry] = []
+        try:
+            for tool in entries_fn():
+                if tool.kind == "url":
+                    # Pure link -- no world code runs, so no warning.
+                    activate = partial(webbrowser.open, tool.url)
+                else:
+                    activate = self._world_tool_activator(spawn_fn, tool)
+                if tool.description and tool.world_name:
+                    description = f"{tool.world_name}: {tool.description}"
+                else:
+                    description = tool.description or f"Tool from {tool.world_name}"
+                entries.append(ToolEntry(
+                    title=tool.name,
+                    description=description,
+                    activate=activate,
+                    icon_source=tool.icon_path,
+                ))
+        except Exception:
+            logger.exception("Tools section: world-tool scan failed")
+        return entries
+
+    @staticmethod
+    def _world_tool_activator(spawn_fn, tool) -> Callable[[], None]:
+        """Wrap a code tool's spawn behind the arbitrary-code warning with
+        the world's own suppression key -- the first tool run of each newly
+        installed world always warns."""
+        return partial(
+            confirm_arbitrary_code,
+            "Run World Tool",
+            f"'{tool.name}' is part of the '{tool.world_name}' APWorld. "
+            "Running it executes that APWorld's code on your computer with "
+            "your permissions. Only continue if you trust where this APWorld "
+            "came from.",
+            f"tool_warning_ok_{tool.module}",
+            lambda: spawn_fn(tool.module, tool.name),
+            confirm_text="Run Tool",
+        )
 
     @staticmethod
     def _default_activator(launcher_components, component) -> Callable[[], None]:

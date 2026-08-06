@@ -2,14 +2,18 @@
 Dialog class - MessageBox override for dialogs
 """
 from __future__ import annotations
-__all__ = ("MessageBox", "ConsoleBox")
+__all__ = ("MessageBox", "CodeWarningBox", "ConsoleBox", "confirm_arbitrary_code")
 
-from kivymd.uix.dialog import (MDDialog, 
-                               MDDialogHeadlineText, 
-                               MDDialogSupportingText, 
-                               MDDialogButtonContainer, 
+import logging
+
+from kivymd.uix.dialog import (MDDialog,
+                               MDDialogHeadlineText,
+                               MDDialogSupportingText,
+                               MDDialogButtonContainer,
                                MDDialogContentContainer)
 from kivymd.uix.button import MDButton, MDButtonText
+from kivymd.uix.label import MDLabel
+from kivymd.uix.selectioncontrol import MDCheckbox
 from kivymd.uix.textfield import MDTextField, MDTextFieldHelperText
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -20,6 +24,8 @@ from kivy.properties import ObjectProperty
 
 from typing import Callable
 from asyncio import Queue
+
+logger = logging.getLogger("Client")
 
 class MessageBox(MDDialog):
     """
@@ -93,6 +99,113 @@ class MessageBox(MDDialog):
         )
         self.dialog.state_press = 0
         self.dialog.open()
+
+
+class CodeWarningBox(MessageBox):
+    """
+    Arbitrary-code warning dialog: a MessageBox with a "Don't warn me again"
+    checkbox row and a configurable confirm-button label. When confirmed with
+    the checkbox active, the given `[security]` config key is persisted so
+    `confirm_arbitrary_code` skips the dialog on later calls.
+
+    Args:
+        title (str): The dialog title
+        message (str): The warning text
+        callback (Callable[[bool], None]): Confirm/cancel result callback
+        confirm_text (str): Label for the confirm button
+        suppress_config_key (str): `[security]` key persisted on confirmed+checked
+    """
+
+    def __init__(self, title="", message="", callback: Callable[[bool], None] = None,
+                 confirm_text="Continue", suppress_config_key=""):
+        super().__init__(title=title, message=message, callback=callback)
+        self.confirm_text = confirm_text
+        self.suppress_config_key = suppress_config_key
+        self.suppress_checkbox = None
+
+    def _ok(self, instance):
+        if self.suppress_config_key and self.suppress_checkbox and self.suppress_checkbox.active:
+            try:
+                self.app.app_config.adddefaultsection('security')
+                self.app.app_config.set('security', self.suppress_config_key, 'True')
+                self.app.app_config.write()
+            except Exception as e:
+                logger.error(f"Failed to persist warning suppression: {e}", exc_info=True)
+        super()._ok(instance)
+
+    def open(self):
+        """Opens the dialog and displays it to the user."""
+        self.suppress_checkbox = MDCheckbox(
+            size_hint=(None, None),
+            size=(dp(36), dp(36)),
+            pos_hint={"center_y": 0.5},
+        )
+        # Create the dialog
+        self.dialog = MDDialog(
+            MDDialogHeadlineText(
+                text=self.title,
+            ),
+            MDDialogContentContainer(
+                MDDialogSupportingText(
+                    text=self.message,
+                    theme_text_color="Primary",
+                    text_color=self.app.theme_cls.onSurfaceColor,
+                ),
+                MDBoxLayout(
+                    self.suppress_checkbox,
+                    MDLabel(
+                        text="Don't warn me again",
+                        theme_text_color="Custom",
+                        text_color=self.app.theme_cls.onSurfaceColor,
+                        valign="center",
+                        pos_hint={"center_y": 0.5},
+                    ),
+                    orientation="horizontal",
+                    spacing=dp(8),
+                    size_hint_y=None,
+                    height=dp(40),
+                ),
+                orientation="vertical",
+                spacing=dp(8),
+            ),
+            MDDialogButtonContainer(
+                self.cancel_button,
+                MDButton(
+                    MDButtonText(
+                        text=self.confirm_text,
+                        theme_text_color="Custom",
+                        text_color=self.app.theme_cls.onSurfaceColor,
+                    ),
+                    on_release=lambda instance: self._ok(instance),
+                ),
+                spacing=dp(8),
+            ),
+        )
+        self.dialog.state_press = 0
+        self.dialog.open()
+
+
+def confirm_arbitrary_code(title: str, text: str, config_key: str,
+                           on_confirm: Callable[[], None], confirm_text: str = "Continue"):
+    """Run `on_confirm` behind an arbitrary-code warning dialog, unless the
+    user suppressed the warning via the given `[security]` config key
+    (read with fallback=False -- dynamic keys need no setdefaults)."""
+    app = MDApp.get_running_app()
+    try:
+        suppressed = app.app_config.getboolean('security', config_key, fallback=False)
+    except Exception as e:
+        logger.error(f"Failed to read warning suppression '{config_key}': {e}", exc_info=True)
+        suppressed = False
+    if suppressed:
+        on_confirm()
+        return
+    CodeWarningBox(
+        title=title,
+        message=text,
+        callback=lambda ok: on_confirm() if ok else None,
+        confirm_text=confirm_text,
+        suppress_config_key=config_key,
+    ).open()
 
 
 class ConsoleBox(MDDialog):
