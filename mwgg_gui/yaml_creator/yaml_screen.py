@@ -466,12 +466,16 @@ class YamlScreen(InnerMDScreen):
             os.makedirs(players_dir, exist_ok=True)
             filename = f"{player_name}_{self.module_name}.yaml"
             filepath = os.path.join(players_dir, filename)
-            with open(filepath, "w", encoding="utf-8") as f:
-                f.write(text)
-            MessageBox(
-                "YAML saved",
-                f"Wrote {filepath}",
-            ).open()
+            if os.path.exists(filepath):
+                # Players/ may hold hand-maintained YAMLs the form never saw —
+                # never clobber one without asking.
+                MessageBox(
+                    "Overwrite YAML?",
+                    f"{filename} already exists in your Players folder. Overwrite it?",
+                    callback=lambda ok: self._write_yaml(filepath, text) if ok else None,
+                ).open()
+                return
+            self._write_yaml(filepath, text)
         except yaml.YAMLError as e:
             MessageBox(
                 "YAML Error",
@@ -479,6 +483,22 @@ class YamlScreen(InnerMDScreen):
                 is_error=True,
             ).open()
         except Exception as e:
+            logger.error("Failed to save YAML: %s", e, exc_info=True)
+            MessageBox(
+                "Save Error",
+                f"Failed to save YAML: {e}",
+                is_error=True,
+            ).open()
+
+    def _write_yaml(self, filepath, text):
+        try:
+            with open(filepath, "w", encoding="utf-8") as f:
+                f.write(text)
+            MessageBox(
+                "YAML saved",
+                f"Wrote {filepath}",
+            ).open()
+        except OSError as e:
             logger.error("Failed to save YAML: %s", e, exc_info=True)
             MessageBox(
                 "Save Error",
