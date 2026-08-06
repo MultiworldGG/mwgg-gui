@@ -59,6 +59,7 @@ from mwgg_gui.components.dialog import MessageBox
 # `ToolsSection:` as a bare kv tag.
 from mwgg_gui.launcher.tools_section import ToolsSection
 
+import Utils
 from Utils import (get_available_worlds,
                    user_path,
                    local_path,
@@ -92,6 +93,18 @@ def _needs_game_validation(game_module: str, game_label: str) -> bool:
     if not game_label:
         return False
     return True
+
+
+def _players_dir() -> str:
+    """Settings-resolved Players directory (settings.generator.
+    player_files_path) — the dir Generate itself scans. `Utils.players_path`
+    needs a beta core new enough to ship it; older cores fall back to the
+    user_path default."""
+    players_path = getattr(Utils, "players_path", None)
+    if players_path is not None:
+        return players_path()
+    return user_path("Players")
+
 
 with open(os.path.join(os.path.dirname(__file__), "launcher.kv"), encoding="utf-8") as kv_file:
     Builder.load_string(kv_file.read())
@@ -446,7 +459,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             title="Select Generation Files (.zip/.yaml)",
             filetypes=[("YAML Files", ["*.yaml", "*.yml"]), ("ZIP Files", ["*.zip"]), ("All Supported", ["*.yaml", "*.yml", "*.zip"])],
             multiple=True,
-            suggest=user_path("Players")
+            suggest=_players_dir()
         )
         
         if not result:
@@ -528,10 +541,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             self.show_snackbar("Seed must be a number or empty for random", is_error=True)
             return
             
+        # Blank output field -> omit --outputpath entirely so Generate's own
+        # settings-backed default (general_options.output_path) applies,
+        # instead of forcing an `output` dir under the launcher's cwd.
         output_path = output_field.text.strip()
-        if not output_path:
-            output_path = os.path.join(os.getcwd(), 'output')
-            
+
         self._generation_result = {
             'seed': seed_value,
             'output_path': output_path
@@ -564,6 +578,12 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         cwd = os.path.dirname(base_cmd[-1])
         # Also set KIVY_NO_ARGS to disable Kivy's argument parser when running from source
         env = None if is_frozen() else {**os.environ, 'KIVY_NO_ARGS': '1'}
+        # Generate is a console-subsystem exe -- suppress the console window
+        # that would otherwise flash over the GUI on frozen Windows (its
+        # output streams to the logger regardless).
+        popen_kwargs = {}
+        if is_windows:
+            popen_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
         if options.get('seed'):
             cmd.extend(["--seed", str(options['seed'])])
@@ -595,9 +615,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     cwd=cwd,
                     bufsize=1,  # Line buffered
                     universal_newlines=True,
-                    env=env
+                    env=env,
+                    **popen_kwargs
                 )
-                
+
                 # Stream stdout
                 for line in process.stdout:
                     line = line.rstrip()
@@ -917,7 +938,13 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
         if options.get('output_path'):
             cmd.extend(["--outputpath", options['output_path']])
-        
+
+        # Same console-window suppression as the generation flow: Patch is a
+        # console-subsystem exe on frozen Windows.
+        popen_kwargs = {}
+        if is_windows:
+            popen_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
         logger.info(f"Starting patch with command: {' '.join(cmd)}")
         
         # Show loading screen
@@ -934,9 +961,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     cwd=cwd,
                     bufsize=1,  # Line buffered
                     universal_newlines=True,
-                    env=env
+                    env=env,
+                    **popen_kwargs
                 )
-                
+
                 # Stream stdout
                 for line in process.stdout:
                     line = line.rstrip()
