@@ -17,7 +17,7 @@ flows (Generate/Host/Text Client), plus two GUI-local entries (Patch Game /
 Create YAML) that have no `LauncherComponents` equivalent at all, plus one
 card per tool/adjuster declared in an installed world's manifest
 (`components` in archipelago.json, mirroring the world's Component
-registrations -- import-free scan + detached-subprocess spawn, both
+registrations -- import-free scan, in-process run on click, both
 feature-detected so an older core just contributes no cards).
 """
 from __future__ import annotations
@@ -41,7 +41,7 @@ from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.label import MDIcon
 from kivymd.uix.scrollview import MDScrollView
 
-from mwgg_gui.components.dialog import confirm_arbitrary_code
+from mwgg_gui.components.dialog import MessageBox, confirm_arbitrary_code
 
 logger = logging.getLogger("Client")
 
@@ -283,8 +283,8 @@ class ToolsSection(MDScrollView):
         APIs are feature-detected (older core: no cards), and the scan is
         wrapped as a unit so a bad manifest never blanks the whole grid."""
         entries_fn = getattr(launcher_components, "world_tool_entries", None)
-        spawn_fn = getattr(launcher_components, "spawn_world_tool", None)
-        if entries_fn is None or spawn_fn is None:
+        run_fn = getattr(launcher_components, "run_world_tool", None)
+        if entries_fn is None or run_fn is None:
             return []
         entries: list[ToolEntry] = []
         try:
@@ -297,17 +297,34 @@ class ToolsSection(MDScrollView):
                 entries.append(ToolEntry(
                     title=tool.name,
                     description=description,
-                    activate=self._world_tool_activator(spawn_fn, tool),
+                    activate=self._world_tool_activator(run_fn, tool),
                 ))
         except Exception:
             logger.exception("Tools section: world-tool scan failed")
         return entries
 
     @staticmethod
-    def _world_tool_activator(spawn_fn, tool) -> Callable[[], None]:
-        """Wrap a code tool's spawn behind the arbitrary-code warning with
+    def _world_tool_activator(run_fn, tool) -> Callable[[], None]:
+        """Wrap a code tool's run behind the arbitrary-code warning with
         the world's own suppression key -- the first tool run of each newly
-        installed world always warns."""
+        installed world always warns. The tool runs in this process (only
+        client processes need ordered world loads; the launcher's datapackage
+        is irrelevant), on a worker thread because the first run may install/
+        extract the world before importing it."""
+        def _run():
+            try:
+                run_fn(tool.module, tool.name)
+            except Exception as e:
+                logger.exception("World tool %r (%s) failed", tool.name, tool.module)
+                Clock.schedule_once(lambda dt, err=e: MessageBox(
+                    "World Tool",
+                    f"'{tool.name}' failed: {err}",
+                    is_error=True,
+                ).open())
+
+        def _start():
+            threading.Thread(target=_run, name=f"world-tool-{tool.module}", daemon=True).start()
+
         return partial(
             confirm_arbitrary_code,
             "Run World Tool",
@@ -316,7 +333,7 @@ class ToolsSection(MDScrollView):
             "your permissions. Only continue if you trust where this APWorld "
             "came from.",
             f"tool_warning_ok_{tool.module}",
-            lambda: spawn_fn(tool.module, tool.name),
+            _start,
             confirm_text="Run Tool",
         )
 
