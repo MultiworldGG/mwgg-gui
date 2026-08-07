@@ -15,8 +15,9 @@ or a late world import can't smuggle a stray component into the grid) minus
 components whose real UI already lives in `LauncherScreen`'s existing dialog
 flows (Generate/Host/Text Client), plus two GUI-local entries (Patch Game /
 Create YAML) that have no `LauncherComponents` equivalent at all, plus one
-card per tool declared in an installed world's manifest (`tools` in
-archipelago.json -- import-free scan + detached-subprocess spawn, both
+card per tool/adjuster declared in an installed world's manifest
+(`components` in archipelago.json, mirroring the world's Component
+registrations -- import-free scan + detached-subprocess spawn, both
 feature-detected so an older core just contributes no cards).
 """
 from __future__ import annotations
@@ -25,7 +26,6 @@ __all__ = ("ToolEntry", "ToolCard", "ToolsSection")
 
 import logging
 import threading
-import webbrowser
 from dataclasses import dataclass
 from functools import partial
 from typing import Callable, Optional
@@ -289,20 +289,15 @@ class ToolsSection(MDScrollView):
         entries: list[ToolEntry] = []
         try:
             for tool in entries_fn():
-                if tool.kind == "url":
-                    # Pure link -- no world code runs, so no warning.
-                    activate = partial(webbrowser.open, tool.url)
-                else:
-                    activate = self._world_tool_activator(spawn_fn, tool)
+                kind_label = "Adjuster" if getattr(tool, "type", "tool") == "adjuster" else "Tool"
                 if tool.description and tool.world_name:
                     description = f"{tool.world_name}: {tool.description}"
                 else:
-                    description = tool.description or f"Tool from {tool.world_name}"
+                    description = tool.description or f"{kind_label} from {tool.world_name}"
                 entries.append(ToolEntry(
                     title=tool.name,
                     description=description,
-                    activate=activate,
-                    icon_source=tool.icon_path,
+                    activate=self._world_tool_activator(spawn_fn, tool),
                 ))
         except Exception:
             logger.exception("Tools section: world-tool scan failed")
