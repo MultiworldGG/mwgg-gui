@@ -13,16 +13,15 @@ Entries are `builtin_components()` (origin-filtered, so a `.apworld` install
 or a late world import can't smuggle a stray component into the grid) minus
 `Type.HIDDEN`, dispatched through an override map for the handful of
 components whose real UI already lives in `LauncherScreen`'s existing dialog
-flows (Generate/Host/Text Client), plus two GUI-local entries (Patch Game /
-Create YAML) that have no `LauncherComponents` equivalent at all, plus one
-card per tool/adjuster declared in an installed world's manifest
-(`components` in archipelago.json, mirroring the world's Component
-registrations -- import-free scan, in-process run on click, both
-feature-detected so an older core just contributes no cards).
+flows (Generate/Host/Text Client), plus one GUI-local entry (Create YAML)
+that has no `LauncherComponents` equivalent at all. Per-world manifest
+components don't get cards here -- this grid is non-game tools only; the
+selected game's components render on the play page's component strip
+(LauncherScreen), which reuses `world_tool_activator` below.
 """
 from __future__ import annotations
 
-__all__ = ("ToolEntry", "ToolCard", "ToolsSection")
+__all__ = ("ToolEntry", "ToolCard", "ToolsSection", "world_tool_activator")
 
 import logging
 import threading
@@ -85,14 +84,22 @@ Builder.load_string(
 <ToolsSection>:
     do_scroll_x: False
     grid: grid
-    MDGridLayout:
-        id: grid
-        cols: 2
-        adaptive_height: True
-        spacing: dp(16)
-        padding: dp(4)
+    AnchorLayout:
+        # ScrollView needs its direct child to own its height; the anchor also
+        # centers the grid horizontally, which the grid itself can't do
+        # (GridLayout ignores pos_hint and ScrollView pins a narrow child left).
+        anchor_x: "center"
+        anchor_y: "top"
         size_hint_y: None
-        height: self.minimum_height
+        height: max(grid.minimum_height + dp(8), root.height)
+        MDGridLayout:
+            id: grid
+            # Bound to the ScrollView's width, never the grid's own adaptive
+            # width -- cols -> minimum_width -> width -> cols would cycle.
+            cols: max(1, min(4, int(root.width // dp(244))))
+            adaptive_size: True
+            spacing: dp(16)
+            padding: dp(4)
     """
 )
 
@@ -111,6 +118,41 @@ class ToolEntry:
     activate: Callable[[], None]
     icon_name: Optional[str] = None
     icon_source: Optional[str] = None
+
+
+def world_tool_activator(run_fn, tool) -> Callable[[], None]:
+    """Wrap a world tool/adjuster run behind the arbitrary-code warning with
+    the world's own suppression key -- the first tool run of each newly
+    installed world always warns. The tool runs in this process (only client
+    processes need ordered world loads; the launcher's datapackage is
+    irrelevant), on a worker thread because the first run may install/extract
+    the world before importing it. Shared by the play page's per-game
+    component strip (LauncherScreen)."""
+    def _run():
+        try:
+            run_fn(tool.module, tool.name)
+        except Exception as e:
+            logger.exception("World tool %r (%s) failed", tool.name, tool.module)
+            Clock.schedule_once(lambda dt, err=e: MessageBox(
+                "World Tool",
+                f"'{tool.name}' failed: {err}",
+                is_error=True,
+            ).open())
+
+    def _start():
+        threading.Thread(target=_run, name=f"world-tool-{tool.module}", daemon=True).start()
+
+    return partial(
+        confirm_arbitrary_code,
+        "Run World Tool",
+        f"'{tool.name}' is part of the '{tool.world_name}' APWorld. "
+        "Running it executes that APWorld's code on your computer with "
+        "your permissions. Only continue if you trust where this APWorld "
+        "came from.",
+        f"tool_warning_ok_{tool.module}",
+        _start,
+        confirm_text="Run Tool",
+    )
 
 
 class ToolCard(MDCard):
@@ -203,7 +245,11 @@ class ToolsSection(MDScrollView):
         crash if the launcher screen was never built (client-role process)."""
         self.rebuild()
         launcher_screen = getattr(self.app, "launcher_screen", None)
-        if launcher_screen is None or not hasattr(launcher_screen, "set_game_list"):
+        if launcher_screen is None:
+            return
+        if hasattr(launcher_screen, "refresh_world_components"):
+            launcher_screen.refresh_world_components()
+        if not hasattr(launcher_screen, "set_game_list"):
             return
         try:
             import asynckivy
@@ -262,80 +308,13 @@ class ToolsSection(MDScrollView):
 
         if launcher_screen is not None:
             entries.append(ToolEntry(
-                title="Patch Game",
-                description="Apply a patch file to produce a playable game copy.",
-                activate=launcher_screen.patch_game,
-                icon_name="file-edit",
-            ))
-            entries.append(ToolEntry(
                 title="Create YAML",
                 description="Author a Players/ YAML for the selected game (select a game first).",
                 activate=launcher_screen.create_yaml,
                 icon_name="code-block-brackets",
             ))
 
-        entries.extend(self._world_tool_entries(launcher_components))
-
         return entries
-
-    def _world_tool_entries(self, launcher_components) -> list[ToolEntry]:
-        """Cards for tools declared in installed worlds' manifests. Both core
-        APIs are feature-detected (older core: no cards), and the scan is
-        wrapped as a unit so a bad manifest never blanks the whole grid."""
-        entries_fn = getattr(launcher_components, "world_tool_entries", None)
-        run_fn = getattr(launcher_components, "run_world_tool", None)
-        if entries_fn is None or run_fn is None:
-            return []
-        entries: list[ToolEntry] = []
-        try:
-            for tool in entries_fn():
-                kind_label = "Adjuster" if getattr(tool, "type", "tool") == "adjuster" else "Tool"
-                if tool.description and tool.world_name:
-                    description = f"{tool.world_name}: {tool.description}"
-                else:
-                    description = tool.description or f"{kind_label} from {tool.world_name}"
-                entries.append(ToolEntry(
-                    title=tool.name,
-                    description=description,
-                    activate=self._world_tool_activator(run_fn, tool),
-                ))
-        except Exception:
-            logger.exception("Tools section: world-tool scan failed")
-        return entries
-
-    @staticmethod
-    def _world_tool_activator(run_fn, tool) -> Callable[[], None]:
-        """Wrap a code tool's run behind the arbitrary-code warning with
-        the world's own suppression key -- the first tool run of each newly
-        installed world always warns. The tool runs in this process (only
-        client processes need ordered world loads; the launcher's datapackage
-        is irrelevant), on a worker thread because the first run may install/
-        extract the world before importing it."""
-        def _run():
-            try:
-                run_fn(tool.module, tool.name)
-            except Exception as e:
-                logger.exception("World tool %r (%s) failed", tool.name, tool.module)
-                Clock.schedule_once(lambda dt, err=e: MessageBox(
-                    "World Tool",
-                    f"'{tool.name}' failed: {err}",
-                    is_error=True,
-                ).open())
-
-        def _start():
-            threading.Thread(target=_run, name=f"world-tool-{tool.module}", daemon=True).start()
-
-        return partial(
-            confirm_arbitrary_code,
-            "Run World Tool",
-            f"'{tool.name}' is part of the '{tool.world_name}' APWorld. "
-            "Running it executes that APWorld's code on your computer with "
-            "your permissions. Only continue if you trust where this APWorld "
-            "came from.",
-            f"tool_warning_ok_{tool.module}",
-            _start,
-            confirm_text="Run Tool",
-        )
 
     @staticmethod
     def _default_activator(launcher_components, component) -> Callable[[], None]:

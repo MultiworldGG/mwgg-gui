@@ -18,7 +18,7 @@ __all__ = ('LauncherScreen',
 import asynckivy
 from kivy.clock import Clock
 from kivy.metrics import dp
-from kivy.properties import StringProperty, ObjectProperty, ListProperty
+from kivy.properties import StringProperty, ObjectProperty, ListProperty, NumericProperty
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.floatlayout import MDFloatLayout
@@ -30,7 +30,7 @@ from kivymd.theming import ThemableBehavior
 from kivymd.uix.list import MDList
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.dialog import MDDialog, MDDialogHeadlineText, MDDialogButtonContainer
-from kivymd.uix.button import MDButton, MDButtonText
+from kivymd.uix.button import MDButton, MDButtonIcon, MDButtonText
 from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
 
 
@@ -120,6 +120,9 @@ class LauncherView(MDBoxLayout):
         "Game not set, connecting using Text Client. "
         "Switch to Universal Tracker or set your game."
     )
+    # Number of manifest components the selected game declares; the play
+    # page's component strip collapses to zero height when it's 0.
+    game_component_count = NumericProperty(0)
 
 class LauncherAuthTextField(MDTextField):
     pass
@@ -177,6 +180,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.highlighted_favorite = None
         self.app = MDApp.get_running_app()
         self.available_games = []
+        # None until the first manifest scan lands (module -> WorldTool list).
+        self._world_components: dict[str, list] | None = None
         # Load favorite games from config
 
         # Built (for its .text_input, which app._create_screen reaches into)
@@ -238,6 +243,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         Clock.schedule_once(lambda dt: self.populate_favorites(), 0.2)
         # Start game list population after available_games is populated
         asynckivy.start(self.set_game_list())
+        # Warm the per-game component cache so the first game selection
+        # usually finds it already loaded.
+        self.refresh_world_components()
 
     def _wire_launch_mode_toggle(self):
         """Bind the Play/Tools segmented toggle to the inner screen manager,
@@ -285,6 +293,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.launcher_view.module_name = game_info[0]
         # Update button text based on context
         self.update_connect_button_text()
+        self._update_component_strip()
 
         if not self.is_favorite(game_info[0]):
             self.add_to_favorite_bar(game_info[0])
@@ -1067,6 +1076,114 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 f"Failed to open YAML editor for {self.selected_game[1]}: {str(e)}",
                 is_error=True,
             ).open()
+
+    # Per-game component strip (play page): the selected game's manifest
+    # components. Clients spawn a separate client-role process; tools and
+    # adjusters run in-process behind the arbitrary-code warning.
+    _COMPONENT_TYPE_ICONS = {"client": "play-network", "tool": "wrench", "adjuster": "tune"}
+
+    def refresh_world_components(self):
+        """One background manifest scan, cached per-module for the play strip.
+        Import + scan on a worker thread (same lazy discipline as
+        ToolsSection.bootstrap); widgets touched only via Clock. Called at
+        startup and again after an APWorld install."""
+        def _load():
+            try:
+                import worlds.LauncherComponents as launcher_components
+            except Exception:
+                logger.exception("World component scan: core import failed")
+                return
+            scan = getattr(launcher_components, "world_manifest_components", None)
+            # Older core: only tool/adjuster entries exist, so no client
+            # buttons -- matching its spawn_client, which has no component=.
+            fallback = getattr(launcher_components, "world_tool_entries", None)
+            try:
+                if scan is not None:
+                    tools = scan()
+                elif fallback is not None:
+                    tools = fallback()
+                else:
+                    tools = []
+            except Exception:
+                logger.exception("World component scan failed")
+                tools = []
+            index: dict[str, list] = {}
+            for tool in tools:
+                index.setdefault(tool.module, []).append(tool)
+            Clock.schedule_once(lambda dt: self._on_world_components_loaded(index))
+
+        threading.Thread(target=_load, name="mwgg-world-components-scan", daemon=True).start()
+
+    def _on_world_components_loaded(self, index: dict[str, list]):
+        self._world_components = index
+        # Repaint for whatever is selected now -- a game picked before the
+        # scan landed gets its strip filled in here.
+        self._update_component_strip()
+
+    def _update_component_strip(self):
+        view = self.launcher_view
+        box = view.ids.game_components_box
+        box.clear_widgets()
+        # selected_game is "" until the first selection despite the tuple
+        # annotation -- never index it without the truthiness guard.
+        module = self.selected_game[0] if self.selected_game else ""
+        tools = (self._world_components or {}).get(module, [])
+        view.game_component_count = len(tools)
+        for tool in tools:
+            box.add_widget(self._make_component_button(tool))
+
+    def _make_component_button(self, tool) -> MDButton:
+        button = MDButton(
+            MDButtonIcon(icon=self._COMPONENT_TYPE_ICONS.get(tool.type, "wrench")),
+            MDButtonText(text=tool.name),
+            style="tonal",
+            size_hint_x=1,
+        )
+        button.bind(on_release=lambda *_args, t=tool: self._activate_world_component(t))
+        return button
+
+    def _activate_world_component(self, tool):
+        if getattr(tool, "type", "tool") == "client":
+            self._spawn_component_client(tool)
+            return
+        import worlds.LauncherComponents as launcher_components
+        run_fn = getattr(launcher_components, "run_world_tool", None)
+        if run_fn is None:
+            MessageBox("World Tool", "This core version cannot run world tools.", is_error=True).open()
+            return
+        from mwgg_gui.launcher.launcher_tools import world_tool_activator
+        # Same semantics as the tools-grid cards had: per-world suppressible
+        # warning, worker thread, Clock-hopped MessageBox on failure.
+        world_tool_activator(run_fn, tool)()
+
+    def _spawn_component_client(self, tool):
+        """Named-client twin of _spawn_client: same field reads, persist and
+        health check; spawn_client stays the only spawn path. No pre-flight
+        verify -- named components are often trackers/map clients whose game
+        need not match the server slot. The client-type radios don't apply:
+        a named component already picks which client to boot."""
+        port_error = self._validate_port_input()
+        if port_error:
+            MessageBox("Invalid Port", port_error, is_error=True).open()
+            return
+        from worlds.LauncherComponents import spawn_client
+
+        host_port, slot_name, password = self._raw_connect_inputs()
+        try:
+            process = spawn_client(
+                game=tool.module,
+                server_address=host_port or None,
+                slot_name=slot_name or None,
+                password=password or None,
+                client_type="game",
+                component=tool.name,
+            )
+        except Exception as e:
+            logger.error(f"Failed to launch {tool.name}: {e}")
+            MessageBox("Launch Error", f"Failed to launch {tool.name}: {str(e)}", is_error=True).open()
+            return
+        self._persist_last_connect(host_port, slot_name)
+        self._check_spawn_health(process, tool.name)
 
     def get_current_game(self) -> tuple[str, str] | None:
         """Return the currently selected (module_name, display_name) tuple,
