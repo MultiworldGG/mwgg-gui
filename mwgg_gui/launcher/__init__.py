@@ -13,7 +13,7 @@ from .launcher_sliver_appbar import (
     SearchBar,
     LauncherTextField,
 )
-from .tools_section import (
+from .launcher_tools import (
     ToolEntry,
     ToolCard,
     ToolsSection,

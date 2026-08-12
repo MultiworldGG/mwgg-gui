@@ -57,7 +57,7 @@ from mwgg_gui.components.dialog import MessageBox
 # Imported (not just for its symbols) so ToolsSection/ToolCard are registered
 # with the Kivy Factory before launcher.kv below is parsed -- it references
 # `ToolsSection:` as a bare kv tag.
-from mwgg_gui.launcher.tools_section import ToolsSection
+from mwgg_gui.launcher.launcher_tools import ToolsSection
 
 import Utils
 from Utils import (get_available_worlds,
