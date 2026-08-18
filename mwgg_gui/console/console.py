@@ -21,6 +21,7 @@ from kivymd.theming import ThemableBehavior
 
 from mwgg_gui.overrides.expansionlist import *
 from mwgg_gui.components.bottomappbar import BottomAppBar
+from mwgg_gui.components.columns import ColumnSortMixin, ColumnFilterMixin
 from mwgg_gui.components.mw_theme import AutoAdjustHeightBehavior
 
 import asynckivy
@@ -75,13 +76,22 @@ class ConsoleLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
         super().__init__(**kwargs)
         self.size_hint_x = 1
 
-class ConsoleSliverAppbar(MDSliverAppbar):
+class ConsoleSliverAppbar(MDSliverAppbar, ColumnSortMixin, ColumnFilterMixin):
+    # This class is kvui.HintLog in the monorepo, and world code (the Universal
+    # Tracker's on_kv_post patch) registers ColumnSorter/ColumnFilter instances
+    # on it. The hint screen reads those registrations to build its chips.
     content: MDSliverAppbarContent
     app: MDApp
     deafened_icon: StringProperty
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # The cooperative __init__ chain normally reaches the mixins; keep the
+        # registration lists present even if a base class breaks the chain.
+        if not hasattr(self, "column_sorters"):
+            self.column_sorters = []
+        if not hasattr(self, "column_filters"):
+            self.column_filters = []
         self.app = MDApp.get_running_app()
         self.content = MDSliverAppbarContent(orientation="vertical")
         self.content.id = "content"
