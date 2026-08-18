@@ -282,6 +282,7 @@ class HintScreen(MDScreen):
         self._updating_hints = True
         self.populate_hints_by_type()
         try:
+            self.hint_layout.sync_column_chips()
             self.hints_mdlist.clear_widgets()
             await asynckivy.sleep(0)  # Allow UI to process the clear
 
@@ -500,14 +501,91 @@ class HintLayout(AutoAdjustHeightBehavior, MDBoxLayout):
             # Update RecycleView data and refresh
             self.filter_chip_box.data[-1]["chips"] = new_chips
             self.filter_chip_box.refresh_from_data()
+        elif self._registered_filter(self.active_sort_key):
+            # Registered column filter (e.g. the tracker's in_logic column):
+            # offer its option labels as toggle chips, mirroring the Player flow.
+            filt = self._registered_filter(self.active_sort_key)
+            new_chips = self.filter_chip_box.data[-1]["chips"]
+            for option in filt.get_basic_menu_names([]):
+                chip = MDChip(MDChipText(text=option),
+                    type="filter",
+                    pos_hint={"x": 0, "center_y": 0.5},
+                    active=option not in filt.filter_denylist)
+                chip.bind(active=lambda inst, value, filt=filt, option=option: self._on_column_option_toggled(filt, option, value))
+                new_chips.append(chip)
+            self.filter_chip_box.data[-1]["chips"] = new_chips
+            self.filter_chip_box.refresh_from_data()
         else:
             # Reset to default filter chips - create new instances
             # This handles "All" and other non-player filter chips
             self.filter_chip_box.data = [{"chips": self._default_filter_chips.copy(), "width": self._search_width}]
             self.filter_chip_box.refresh_from_data()
         Clock.schedule_once(lambda dt: setattr(self, '_refreshing_chips', False), 0.1)
- 
+
         # Apply sorting to all panels
+        self.apply_sort_to_all_panels(self.active_sort_key)
+
+    def _column_registry(self):
+        """The console sidebar (kvui.HintLog in the monorepo) that world code
+        registers column sorters/filters on — e.g. the Universal Tracker's
+        in-logic column."""
+        appbar = getattr(getattr(self.app, "console_screen", None), "important_appbar", None)
+        if appbar is None or not hasattr(appbar, "column_sorters"):
+            return None
+        return appbar
+
+    def _registered_sorter(self, key: str):
+        registry = self._column_registry()
+        if not registry or not key:
+            return None
+        return next((sorter for sorter in registry.column_sorters if sorter.key == key), None)
+
+    def _registered_filter(self, key: str):
+        registry = self._column_registry()
+        if not registry or not key:
+            return None
+        return next((filt for filt in registry.column_filters if filt.key == key), None)
+
+    def has_active_column_filters(self) -> bool:
+        registry = self._column_registry()
+        return bool(registry) and any(
+            filt.filter_denylist or filt.filter_allowlist for filt in registry.column_filters)
+
+    @staticmethod
+    def _adapt_row(item: dict) -> dict:
+        """Present a hint row the way upstream kvui hands rows to registered
+        column callbacks: data["status"]["hint"] with numeric location/status."""
+        hint = item.get("hint_data")
+        status = HintStatus.HINT_FOUND if getattr(hint, "found", False) else \
+            getattr(hint, "hint_status", HintStatus.HINT_UNSPECIFIED)
+        return {"status": {"hint": {"location": getattr(hint, "location_id", None), "status": status}}}
+
+    def sync_column_chips(self):
+        """Add a filter chip for each registered column sorter (idempotent)."""
+        registry = self._column_registry()
+        if not registry:
+            return
+        added = False
+        for sorter in registry.column_sorters:
+            if any(getattr(chip, "_column_key", None) == sorter.key for chip in self._default_filter_chips):
+                continue
+            label = sorter.key.replace("_", " ").title()
+            chip = MDChip(MDChipText(text=label),
+                type="filter",
+                pos_hint={"x": 0, "center_y": 0.5},
+                active=False)
+            chip._column_key = sorter.key
+            chip.bind(active=lambda inst, value, chip_data={"filter_text": label, "sort_key": sorter.key, "active": False}: self.on_filter_chip_selected(value, chip_data))
+            self._default_filter_chips.append(chip)
+            added = True
+        if added and not self._refreshing_chips:
+            self.add_chips(filter_data=self._default_filter_chips.copy(), width=self._search_width)
+
+    def _on_column_option_toggled(self, filt, option: str, active: bool):
+        if active:
+            filt.filter_denylist.discard(option)
+        else:
+            filt.filter_denylist.add(option)
         self.apply_sort_to_all_panels(self.active_sort_key)
     
     def _get_status_sort_weight(self, hint_item: dict) -> int:
@@ -545,12 +623,21 @@ class HintLayout(AutoAdjustHeightBehavior, MDBoxLayout):
                 self._sort_panel_data(panel, sort_key)
     
     def _sort_panel_data(self, panel: "HintListPanel", sort_key: str):
-        """Sort the data in a specific panel's RecycleView with simplified logic"""
-        if not panel.hint_content or not panel.hint_content.data:
+        """Sort and filter the data in a specific panel's RecycleView"""
+        if not panel.hint_content:
             return
-        
-        hint_items = panel.hint_content.data.copy()
-        
+        # Source from the panel's full row set so rows hidden by a column
+        # filter can reappear when the filter is relaxed.
+        source = getattr(panel, "all_hint_items", None)
+        hint_items = list(source) if source is not None else list(panel.hint_content.data)
+        if not hint_items:
+            return
+
+        registry = self._column_registry()
+        if registry and registry.column_filters:
+            hint_items = [item for item in hint_items
+                          if all(filt.filter_data(self._adapt_row(item)) for filt in registry.column_filters)]
+
         # Define key functions for each sort type
         key_functions = {
             "player_name": lambda item: item.get("player_name", "").lower(),
@@ -564,11 +651,14 @@ class HintLayout(AutoAdjustHeightBehavior, MDBoxLayout):
         
         # Get secondary key function
         secondary_key = key_functions.get(sort_key) if sort_key else None
-        
+        # A registered column sorter (e.g. the tracker's in_logic) sorts by its
+        # own value first — status weight would defeat the column's ordering.
+        column_sorter = self._registered_sorter(sort_key) if secondary_key is None else None
+
         # Determine if we're filtering by a specific value (e.g., specific player name)
         # When a specific player chip is clicked, prioritize that player's items first
         filter_value = self.active_filter_text if sort_key == "player_name" and self.active_filter_text and self.active_filter_text != "Player" else None
-        
+
         def sort_key_func(item: dict):
             """Create sort key function with priority, status, and sort_key"""
             # Priority: If filtering by specific player name, matching items come first
@@ -577,10 +667,12 @@ class HintLayout(AutoAdjustHeightBehavior, MDBoxLayout):
                 item_player = item.get("player_name", "")
                 if item_player.lower() != filter_value.lower():
                     priority = 1  # Non-matching items go after matching ones
-            
+
             # Primary sort: status_weight (always used, lower = higher priority)
             status_weight = self._get_status_sort_weight(item)
-            
+
+            if column_sorter:
+                return (priority, column_sorter.sort_func(self._adapt_row(item)), status_weight)
             # Secondary sort: selected sort_key (if any)
             if secondary_key:
                 sort_value = secondary_key(item)
@@ -851,10 +943,12 @@ class HintListPanel(GameListPanel):
 
             hint_items.append(hint_item)
 
+        self.all_hint_items = hint_items
         self.hint_content.data = hint_items
-        
-        # Apply sorting if hint_layout has an active sort key
-        if self.hint_layout and self.hint_layout.active_sort_key:
+
+        # Apply sorting/filtering if a sort key or a registered column filter is active
+        if self.hint_layout and (self.hint_layout.active_sort_key
+                                 or self.hint_layout.has_active_column_filters()):
             self.hint_layout._sort_panel_data(self, self.hint_layout.active_sort_key)
         
         # Force RecycleView to refresh and create widgets
