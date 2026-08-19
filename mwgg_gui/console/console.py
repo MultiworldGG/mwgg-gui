@@ -24,6 +24,7 @@ from kivymd.theming import ThemableBehavior
 
 from mwgg_gui.overrides.expansionlist import *
 from mwgg_gui.components.bottomappbar import BottomAppBar
+from mwgg_gui.components.columns import ColumnSortMixin, ColumnFilterMixin
 from mwgg_gui.components.mw_theme import AutoAdjustHeightBehavior
 
 import asynckivy
@@ -31,7 +32,7 @@ import asynckivy
 Builder.load_string('''
 <ConsoleLayout>:
     id: console_layout
-    pos: 0,82
+    pos: 0, app.layout_mode.chrome_bottom_total
 
 <ConsoleSliverAppbar>:
     pos_hint: {"x": 0, "top": 1}
@@ -72,7 +73,13 @@ Builder.load_string('''
                 on_release: root.set_deafen()
 ''')
 
-class ConsoleLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
+class ConsoleLayout(AutoAdjustHeightBehavior, MDBoxLayout):
+    """Horizontal row: sliver side pane (fixed dp(260)) | console view.
+
+    A BoxLayout (rather than the historical RelativeLayout + frozen
+    Window-ratio size_hints) keeps the side pane at its designed width on
+    resize and gives compact mode a clean reparenting seam.
+    """
     adjust_title_bar = True
     adjust_app_bar = True
     adjust_bottom_appbar = True
@@ -80,9 +87,16 @@ class ConsoleLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self.orientation = "horizontal"
+        # Historical gutters: 2px between pane and console, 2px right margin.
+        self.spacing = 2
+        self.padding = (0, 0, 2, 0)
         self.size_hint_x = 1
 
-class ConsoleSliverAppbar(MDSliverAppbar):
+class ConsoleSliverAppbar(MDSliverAppbar, ColumnSortMixin, ColumnFilterMixin):
+    # This class is kvui.HintLog in the monorepo, and world code (the Universal
+    # Tracker's on_kv_post patch) registers ColumnSorter/ColumnFilter instances
+    # on it. The hint screen reads those registrations to build its chips.
     content: MDSliverAppbarContent
     app: MDApp
     deafened_icon: StringProperty
@@ -94,6 +108,12 @@ class ConsoleSliverAppbar(MDSliverAppbar):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # The cooperative __init__ chain normally reaches the mixins; keep the
+        # registration lists present even if a base class breaks the chain.
+        if not hasattr(self, "column_sorters"):
+            self.column_sorters = []
+        if not hasattr(self, "column_filters"):
+            self.column_filters = []
         self.app = MDApp.get_running_app()
         self.content = MDSliverAppbarContent(orientation="vertical")
         self.content.id = "content"
@@ -207,6 +227,7 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         super().__init__(**kwargs)
         self.slots_mdlist = MDList(width=260)
         self.tracker_regions_mdlist = TrackerRegionList(width=260)
+        self._pane_drawer = None
 
         self.bottom_appbar = BottomAppBar(screen_name="console")
 
@@ -223,17 +244,17 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         self.tracker_regions_mdlist.populate_from_ctx(self.app.ctx)
 
     def init_important(self):
-        self.consolegrid = ConsoleLayout(width=Window.width, height=Window.height-185)
+        chrome = self.app.layout_mode.chrome_total
+        self.consolegrid = ConsoleLayout(width=Window.width, height=Window.height - chrome)
         self.add_widget(self.consolegrid)
         self.add_widget(self.bottom_appbar)
 
+        # Pane widths come from the <ConsoleSliverAppbar> kv rule
+        # (width: dp(260), size_hint_x: None); the box gives the console
+        # view the remainder.
+        self.important_appbar.size_hint_y = 1
 
-        self.important_appbar.size_hint_x = 260/Window.width
-        self.important_appbar.size_hint_y=1-(8/Window.height)
-
-        self.ui_console = ConsoleView(pos_hint={"y": 0, "center_x": .5+(130/Window.width)},
-                                      size_hint_x=1-(264/Window.width),
-                                      size_hint_y=1-(8/Window.height))
+        self.ui_console = ConsoleView(size_hint_x=1, size_hint_y=1)
         self.important_appbar.ids.scroll.scroll_wheel_distance = 40
 
         # Players screen holds the slot/hint expansion list, sized to its content.
@@ -264,9 +285,53 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         self.consolegrid.add_widget(self.important_appbar)
         self.consolegrid.add_widget(self.ui_console)
 
+        # Compact widths park the sliver pane in a modal drawer; reparenting
+        # the SAME widget preserves the populated lists and the tracker's
+        # Players/Logic state across mode flips.
+        self.app.layout_mode.bind(width_class=self._apply_layout_mode)
+        self._apply_layout_mode()
+
         # If tracker mode is active, seed the locations list now that ctx exists.
         if self.important_appbar.tracker_mode:
             Clock.schedule_once(lambda dt: self.update_tracker_locations(), 0.5)
+
+    def _ensure_pane_drawer(self):
+        if self._pane_drawer is None:
+            from kivymd.uix.navigationdrawer import MDNavigationDrawer
+            self._pane_drawer = MDNavigationDrawer(drawer_type="modal", anchor="left")
+            self._pane_drawer.width = min(dp(320), Window.width * 0.85)
+        if self._pane_drawer.parent is None:
+            self.app.navigation_layout.add_widget(self._pane_drawer)
+        return self._pane_drawer
+
+    def _open_pane_drawer(self):
+        self._ensure_pane_drawer().set_state("open")
+
+    def _apply_layout_mode(self, *args):
+        if not hasattr(self, "consolegrid"):
+            return
+        compact = self.app.layout_mode.width_class == "compact"
+        pane = self.important_appbar
+        if compact:
+            if pane.parent is self.consolegrid:
+                self.consolegrid.remove_widget(pane)
+                drawer = self._ensure_pane_drawer()
+                pane.size_hint_x = 1
+                drawer.add_widget(pane)
+            self.bottom_appbar.set_pane_opener("account-group", self._open_pane_drawer, True)
+        else:
+            if self._pane_drawer is not None and pane.parent is self._pane_drawer:
+                self._pane_drawer.set_state("close")
+                self._pane_drawer.remove_widget(pane)
+                pane.size_hint_x = None
+                pane.width = dp(260)
+                self.consolegrid.add_widget(pane, index=1)
+            self.bottom_appbar.set_pane_opener("account-group", self._open_pane_drawer, False)
+
+    def on_pre_leave(self, *args):
+        if self._pane_drawer is not None:
+            self._pane_drawer.set_state("close")
+        return super().on_pre_leave(*args)
 
     def _get_slot_priority(self, slot_data) -> tuple[bool, int]:
         """

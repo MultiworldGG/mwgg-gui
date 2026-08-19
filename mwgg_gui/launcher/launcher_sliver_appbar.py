@@ -61,10 +61,11 @@ class LauncherSliverAppbar(MDSliverAppbar):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        from mwgg_gui.components.layout_mode import get_layout_mode
         self.content = MDSliverAppbarContent(orientation="vertical", padding=0)
         self.content.id = "content"
         self.add_widget(self.content)
-        self.ids.scroll.y = dp(82)
+        self.ids.scroll.y = get_layout_mode().chrome_bottom_total
         self.ids.header.pos_hint = {"top": 1}
 
 class LauncherTextField(MDTextField):

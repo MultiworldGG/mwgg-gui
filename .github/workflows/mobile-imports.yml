@@ -1,0 +1,61 @@
+name: mobile-imports
+
+# Fast gate: assemble the vendor tree and import the entire mobile module set
+# under MWGG_SHELL=mobile. Catches vendor-closure breaks and desktop-only
+# imports in minutes instead of a full APK build.
+
+on:
+  pull_request:
+    paths:
+      - "mwgg_gui/**"
+      - "mobile/**"
+      - ".github/workflows/mobile-imports.yml"
+  push:
+    branches: [main]
+    paths:
+      - "mwgg_gui/**"
+      - "mobile/**"
+  workflow_dispatch:
+
+env:
+  # The MultiworldGG monorepo to vendor from. If private, add a PAT with repo
+  # read access as the MWGG_MONOREPO_TOKEN secret.
+  MONOREPO_REPO: MultiworldGG/MultiworldGG-Beta
+  MONOREPO_REF: main
+
+jobs:
+  imports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout MultiworldGG monorepo
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.MONOREPO_REPO }}
+          ref: ${{ env.MONOREPO_REF }}
+          token: ${{ secrets.MWGG_MONOREPO_TOKEN || github.token }}
+          path: MultiworldGG
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install "kivy==2.3.1" "https://github.com/kivymd/KivyMD/archive/d2f7740.zip" \
+            materialyoucolor exceptiongroup asyncgui asynckivy pillow numpy \
+            websockets pyyaml requests certifi nest_asyncio \
+            packaging platformdirs pathspec typing_extensions pygments colorama
+          pip install "git+https://github.com/MultiworldGG/MultiworldGG-Index@game_index_sixteen"
+
+      - name: Assemble vendor tree
+        run: |
+          MWGG_IGDB_PATH="$(python -c 'import mwgg_igdb; print(mwgg_igdb.__file__)')" \
+            python mobile/sync_vendor.py --monorepo "$GITHUB_WORKSPACE/MultiworldGG/src"
+
+      - name: Import smoke (xvfb)
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb libgl1 libgles2
+          xvfb-run -a python mobile/check_imports.py

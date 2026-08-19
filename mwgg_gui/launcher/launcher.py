@@ -49,6 +49,7 @@ import urllib.parse
 from kivymd.app import MDApp
 from mwgg_igdb import GameIndex
 
+from mwgg_gui.constants import IS_MOBILE
 from mwgg_gui.overrides.expansionlist import *
 from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar
@@ -92,8 +93,19 @@ def _needs_game_validation(game_module: str, game_label: str) -> bool:
 with open(os.path.join(os.path.dirname(__file__), "launcher.kv"), encoding="utf-8") as kv_file:
     Builder.load_string(kv_file.read())
 
-class LauncherLayout(MDFloatLayout):
-    pass
+class LauncherLayout(MDBoxLayout):
+    """Horizontal row: games-list side pane (fixed dp(260)) | launcher view.
+
+    A BoxLayout (rather than the historical FloatLayout + frozen
+    Window-ratio size_hints) keeps the side pane at its designed width on
+    resize and gives compact mode a clean reparenting seam.
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = "horizontal"
+        # Historical gutter between the pane (260) and the view (x=264).
+        self.spacing = 4
 
 class LauncherView(MDBoxLayout):
     slot_layout: ObjectProperty
@@ -154,6 +166,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.bottom_appbar = BottomAppBar(screen_name="launcher")
         self.important_appbar = LauncherSliverAppbar()
         self.launcher_view = LauncherView()
+        self._pane_drawer = None
         Clock.schedule_once(lambda x: self.init_important())
 
     def show_snackbar(self, message: str, is_error: bool = False):
@@ -176,24 +189,38 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.add_widget(self.launchergrid)
         self.add_widget(self.bottom_appbar)
 
-        self.important_appbar.size_hint_x = 260/Window.width
-        self.important_appbar.size_hint_y=1
-        self.launcher_view.size_hint_x = 1-(264/Window.width)
-        self.launcher_view.size_hint_y =1
+        # Mobile scope is client-only: no patching, no generation, no server
+        # hosting on device. The flows behind these buttons spawn desktop
+        # executables/subprocesses, so the buttons are removed outright.
+        if IS_MOBILE:
+            for widget_id in ("game_patch_button", "generate_button", "host_button"):
+                widget = self.launcher_view.ids.get(widget_id)
+                if widget is not None and widget.parent is not None:
+                    widget.parent.remove_widget(widget)
+
+        # Pane widths come from the <LauncherSliverAppbar> kv rule
+        # (width: dp(260), size_hint_x: None); the box gives the launcher
+        # view the remainder.
+        self.important_appbar.size_hint_y = 1
+        self.launcher_view.size_hint_x = 1
+        self.launcher_view.size_hint_y = 1
 
         self.important_appbar.ids.scroll.scroll_wheel_distance = 40
-        #self.important_appbar.ids.scroll.y = 82
 
         self.important_appbar.content.add_widget(self.games_mdlist)
 
         self.launchergrid.add_widget(self.important_appbar)
-        self.launcher_view.pos_hint={"y": 0, "x": 260/Window.width}
         self.launchergrid.add_widget(self.launcher_view)
 
         fave_scroll = FavoritesScroll()
         self.favorites_layout = fave_scroll.favorites
         self.launcher_view.ids.title_layout.add_widget(fave_scroll)
         fave_scroll.size = (self.launcher_view.ids.title_layout.width, dp(100))
+
+        # Compact widths park the games-list pane in a modal drawer (same
+        # widget instance, so the populated list and search state survive).
+        self.app.layout_mode.bind(width_class=self._apply_layout_mode)
+        self._apply_layout_mode()
         
         self.available_games = get_available_worlds()
         self.load_favorite_games()
@@ -205,12 +232,56 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         # Start game list population after available_games is populated
         asynckivy.start(self.set_game_list())
 
+    def _ensure_pane_drawer(self):
+        if self._pane_drawer is None:
+            from kivymd.uix.navigationdrawer import MDNavigationDrawer
+            self._pane_drawer = MDNavigationDrawer(drawer_type="modal", anchor="left")
+            self._pane_drawer.width = min(dp(320), Window.width * 0.85)
+        if self._pane_drawer.parent is None:
+            self.app.navigation_layout.add_widget(self._pane_drawer)
+        return self._pane_drawer
+
+    def _open_pane_drawer(self):
+        self._ensure_pane_drawer().set_state("open")
+
+    def _apply_layout_mode(self, *args):
+        if not hasattr(self, "launchergrid"):
+            return
+        compact = self.app.layout_mode.width_class == "compact"
+        pane = self.important_appbar
+        if compact:
+            if pane.parent is self.launchergrid:
+                self.launchergrid.remove_widget(pane)
+                drawer = self._ensure_pane_drawer()
+                pane.size_hint_x = 1
+                drawer.add_widget(pane)
+            self.bottom_appbar.set_pane_opener("gamepad-variant", self._open_pane_drawer, True)
+        else:
+            if self._pane_drawer is not None and pane.parent is self._pane_drawer:
+                self._pane_drawer.set_state("close")
+                self._pane_drawer.remove_widget(pane)
+                pane.size_hint_x = None
+                pane.width = dp(260)
+                self.launchergrid.add_widget(pane, index=1)
+            self.bottom_appbar.set_pane_opener("gamepad-variant", self._open_pane_drawer, False)
+        self._apply_view_padding()
+
+    def on_pre_leave(self, *args):
+        if self._pane_drawer is not None:
+            self._pane_drawer.set_state("close")
+        return super().on_pre_leave(*args)
+
+    def _apply_view_padding(self):
+        compact = self.app.layout_mode.width_class == "compact"
+        wide = dp(12) if compact else dp(50)
+        if self.launcher_view.fallback_status:
+            self.launcher_view.padding = wide, dp(10), wide, wide
+        else:
+            self.launcher_view.padding = wide
+
     def on_fallback_status_changed(self, instance, value):
         """Update the padding of the launcher view based on the fallback status"""
-        if value:
-            self.launcher_view.padding = dp(50), dp(10), dp(50), dp(50)
-        else:
-            self.launcher_view.padding = dp(50)
+        self._apply_view_padding()
 
     async def set_game_list(self):
         """Set the game list based on the game tag filter"""

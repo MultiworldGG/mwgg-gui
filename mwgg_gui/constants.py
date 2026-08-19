@@ -6,6 +6,7 @@ Contains the actions for the console and launcher.
 """
 
 __all__ = (
+    "IS_MOBILE",
     "CONSOLE_ACTIONS",
     "LAUNCHER_ACTIONS",
     "MWGG_WEBHOST_BASE",
@@ -14,6 +15,14 @@ __all__ = (
     "AVATAR_UPLOAD_URL",
     "AVATAR_FILE_EXTENSIONS",
 )
+
+from kivy.utils import platform as _kivy_platform
+
+# Single source of truth for "running on a phone/tablet". Touch affordances
+# key off app.layout_mode.touch_mode (which reads this); feature gating
+# (hiding generate/host/patch, in-process yaml options) keys off IS_MOBILE
+# directly.
+IS_MOBILE = _kivy_platform in ("android", "ios")
 
 # Host that mints upload tokens and serves uploaded avatars. Will move to
 # https://multiworld.gg once the uploader is rolled out there.

@@ -1002,8 +1002,11 @@ class InterfaceSettings(SettingsScrollBox):
         try:
             self.app.app_config.set('client', 'device_orientation', orientation_to_string(value))
             self.app.app_config.write()
+            # Live-apply: forcing compact reflows every screen (drawer panes,
+            # toggled yaml view, collapsed top bar) without a restart.
+            self.app.layout_mode.force_width_class("compact" if value else None)
         except Exception as e:
-            logger.error(f"Error in toggle_device_orientation: {e}", exc_info=True) 
+            logger.error(f"Error in toggle_device_orientation: {e}", exc_info=True)
 
     def toggle_all_players_chat(self, instance, value):
         try:

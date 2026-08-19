@@ -98,7 +98,8 @@ class InnerMDScreen(MDScreen, ThemableBehavior):
         self.content.adjust_bottom_appbar = self.adjust_bottom_appbar
         self.content._update_adjusted_height()
         if self.adjust_bottom_appbar:
-            self.content.y = 82
+            from mwgg_gui.components.layout_mode import get_layout_mode
+            self.content.y = get_layout_mode().chrome_bottom_total
         MDScreen.add_widget(self, self.content)
 
     # ----- widget management ----------------------------------------------
