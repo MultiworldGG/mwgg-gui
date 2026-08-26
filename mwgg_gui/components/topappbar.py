@@ -3,9 +3,12 @@ from __future__ import annotations
 TopAppBar class - creates the top app bar that will be added to
 the top of the screen.  Additionally creates helper functions to bind
 to the mouse and window events to display the appropriate icon
+
+TODO: I don't think Launcher needs the topappbar at all.
+
 """
 from kivymd.app import MDApp
-from kivymd.uix.appbar import MDTopAppBar, MDTopAppBarTitle
+from kivymd.uix.appbar import MDTopAppBar, MDTopAppBarTitle, MDActionTopAppBarButton
 from kivymd.uix.tooltip import (
     MDTooltip,
     MDTooltipRich,
@@ -516,6 +519,17 @@ class TopAppBar(MDTopAppBar):
         self.shadow_color = self.theme_cls.transparentColor
         self.timer_button = self.ids.timer_button
         self.timer_button.bind(on_long_press=self.reset)
+        if self.app.role == ROLE_LAUNCHER:
+            # No game session in the launcher, so no timer; its trailing
+            # slot holds the Website/Discord shortcuts instead.
+            self.timer.parent.remove_widget(self.timer)
+            container = self.timer_button.parent
+            container.remove_widget(self.timer_button)
+            for icon, component_name in (("web", "MultiworldGG Website"),
+                                         ("discord", "Unofficial AP Discord")):
+                button = MDActionTopAppBarButton(icon=icon)
+                button.bind(on_release=lambda *_a, name=component_name: self._open_builtin(name))
+                container.add_widget(button, index=1)
         asyncio.create_task(self.update_progress_info(), name="ProgressBar")
 
     async def update_progress_info(self):
@@ -567,6 +581,15 @@ class TopAppBar(MDTopAppBar):
     def open_profile(self):
         """Open user profile interface (placeholder implementation)."""
         show_profile()
+
+    def _open_builtin(self, name: str):
+        """Trailing-icon shortcut to a builtin component (Website/Discord).
+        Lazy import: by click time the launcher's background scan has
+        warmed worlds.LauncherComponents."""
+        from worlds.LauncherComponents import find_component
+        component = find_component(name)
+        if component and component.func:
+            component.func()
 
     def enable_energy_link(self):
         self.energy_link_label.text = "Energy Link: Standby"

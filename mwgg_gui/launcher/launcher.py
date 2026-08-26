@@ -54,11 +54,6 @@ from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar
 from mwgg_gui.launcher.launcher_favorite_bar import FavoritesScroll, Favorite
 from mwgg_gui.components.dialog import MessageBox
-# Imported (not just for its symbols) so ToolsSection/ToolCard are registered
-# with the Kivy Factory before launcher.kv below is parsed -- it references
-# `ToolsSection:` as a bare kv tag.
-from mwgg_gui.launcher.launcher_tools import ToolsSection
-
 import Utils
 from Utils import (get_available_worlds,
                    user_path,
@@ -182,6 +177,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.available_games = []
         # None until the first manifest scan lands (module -> WorldTool list).
         self._world_components: dict[str, list] | None = None
+        self._component_buttons: list[MDButton] = []
         # Load favorite games from config
 
         # Built (for its .text_input, which app._create_screen reaches into)
@@ -236,7 +232,6 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.available_games = get_available_worlds()
         self.load_favorite_games()
         self.launcher_view.bind(fallback_status=self.on_fallback_status_changed)
-        self._wire_launch_mode_toggle()
         # Update button text based on initial context
         Clock.schedule_once(lambda dt: self.update_connect_button_text(), 0.2)
         #Clock.schedule_once(lambda dt: self.update_selected_game(), 0.2)
@@ -246,19 +241,6 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         # Warm the per-game component cache so the first game selection
         # usually finds it already loaded.
         self.refresh_world_components()
-
-    def _wire_launch_mode_toggle(self):
-        """Bind the Play/Tools segmented toggle to the inner screen manager,
-        and lazily bootstrap the tools grid the first time that screen is
-        entered. Bound in Python (mirroring YamlScreen's HeaderCard mode
-        toggle) rather than kv `on_active:` -- `root` inside a nested kv
-        rule stays bound to LauncherView throughout, but Python attribute
-        access here is simpler to follow than cross-widget id lookups."""
-        ids = self.launcher_view.ids
-        manager = ids.play_tools_manager
-        ids.play_mode_item.bind(active=lambda _i, a: a and setattr(manager, "current", "play"))
-        ids.tools_mode_item.bind(active=lambda _i, a: a and setattr(manager, "current", "tools"))
-        ids.tools_screen.bind(on_enter=lambda *_: ids.tools_section.bootstrap())
 
     def on_fallback_status_changed(self, instance, value):
         """Update the padding of the launcher view based on the fallback status"""
@@ -1084,15 +1066,18 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
     def refresh_world_components(self):
         """One background manifest scan, cached per-module for the play strip.
-        Import + scan on a worker thread (same lazy discipline as
-        ToolsSection.bootstrap); widgets touched only via Clock. Called at
-        startup and again after an APWorld install."""
+        Import + scan on a worker thread; widgets touched only via Clock.
+        Called at startup and again after an APWorld install."""
         def _load():
             try:
                 import worlds.LauncherComponents as launcher_components
             except Exception:
                 logger.exception("World component scan: core import failed")
                 return
+            # Claim the post-Install-APWorld refresh hook. Reclaimed on
+            # every rescan, which is harmless.
+            launcher_components._rebuild_launcher_ui = (
+                lambda *a: Clock.schedule_once(self._on_apworld_installed))
             scan = getattr(launcher_components, "world_manifest_components", None)
             # Older core: only tool/adjuster entries exist, so no client
             # buttons -- matching its spawn_client, which has no component=.
@@ -1120,17 +1105,30 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         # scan landed gets its strip filled in here.
         self._update_component_strip()
 
+    def _on_apworld_installed(self, *_args):
+        """`LauncherComponents._rebuild_launcher_ui` hook, claimed by the
+        scan worker: repaint everything an install changes.
+        TODO: expose as a manual refresh too -- users can drop worlds into
+        custom_worlds/ by hand and the launcher should catch up."""
+        self.refresh_world_components()
+        self.available_games = get_available_worlds()
+        asynckivy.start(self.set_game_list())
+
     def _update_component_strip(self):
         view = self.launcher_view
         box = view.ids.game_components_box
-        box.clear_widgets()
+        # Only the strip's own buttons are dynamic -- clear_widgets() here
+        # would also wipe any static siblings sharing the row.
+        for button in self._component_buttons:
+            box.remove_widget(button)
         # selected_game is "" until the first selection despite the tuple
         # annotation -- never index it without the truthiness guard.
         module = self.selected_game[0] if self.selected_game else ""
         tools = (self._world_components or {}).get(module, [])
         view.game_component_count = len(tools)
-        for tool in tools:
-            box.add_widget(self._make_component_button(tool))
+        self._component_buttons = [self._make_component_button(tool) for tool in tools]
+        for button in self._component_buttons:
+            box.add_widget(button)
 
     def _make_component_button(self, tool) -> MDButton:
         button = MDButton(
@@ -1151,7 +1149,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         if run_fn is None:
             MessageBox("World Tool", "This core version cannot run world tools.", is_error=True).open()
             return
-        from mwgg_gui.launcher.launcher_tools import world_tool_activator
+        from mwgg_gui.launcher.launcher_components import world_tool_activator
         # Same semantics as the tools-grid cards had: per-world suppressible
         # warning, worker thread, Clock-hopped MessageBox on failure.
         world_tool_activator(run_fn, tool)()
