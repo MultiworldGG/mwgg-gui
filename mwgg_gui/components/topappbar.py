@@ -90,6 +90,7 @@ Builder.load_string('''
             icon: "timer-outline"
             on_release: root.toggle_timer()
         MDActionTopAppBarButton:
+            id: profile_button
             icon: "account-circle-outline"
             on_release: root.open_profile()
 ''')
@@ -520,17 +521,27 @@ class TopAppBar(MDTopAppBar):
         self.timer_button = self.ids.timer_button
         self.timer_button.bind(on_long_press=self.reset)
         if self.app.role == ROLE_LAUNCHER:
-            # No game session in the launcher, so no timer; its trailing
-            # slot holds the Website/Discord shortcuts instead.
-            self.timer.parent.remove_widget(self.timer)
-            container = self.timer_button.parent
-            container.remove_widget(self.timer_button)
-            for icon, component_name in (("web", "MultiworldGG Website"),
-                                         ("discord", "Unofficial AP Discord")):
-                button = MDActionTopAppBarButton(icon=icon)
-                button.bind(on_release=lambda *_a, name=component_name: self._open_builtin(name))
-                container.add_widget(button, index=1)
+            # Deferred a tick: MDTopAppBar re-parents its kv children via
+            # Clock, so the title widgets have no parent yet during __init__.
+            Clock.schedule_once(self._setup_launcher_trailing)
         asyncio.create_task(self.update_progress_info(), name="ProgressBar")
+
+    def _setup_launcher_trailing(self, *_args):
+        """No game session in the launcher, so no timer; its trailing slot
+        holds the Website/Discord shortcuts instead, with profile kept last.
+        Rebuilds the container order explicitly -- its add_widget override
+        drops the index argument."""
+        self.timer.parent.remove_widget(self.timer)
+        container = self.timer_button.parent
+        profile_button = self.ids.profile_button
+        container.remove_widget(self.timer_button)
+        container.remove_widget(profile_button)
+        for icon, component_name in (("web", "MultiworldGG Website"),
+                                     ("discord", "Unofficial AP Discord")):
+            button = MDActionTopAppBarButton(icon=icon)
+            button.bind(on_release=lambda *_a, name=component_name: self._open_builtin(name))
+            container.add_widget(button)
+        container.add_widget(profile_button)
 
     async def update_progress_info(self):
         """
