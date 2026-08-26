@@ -51,41 +51,25 @@
                     theme_text_color: "Custom"
                     text_color: app.theme_cls.onSurfaceVariantColor
 
-            MDBoxLayout: # Connect & Play, Patch Game, Create YAML, Generate, Host
+            MDBoxLayout: # Game controls | server fields
                 orientation: 'horizontal'
                 spacing: 10
                 MDBoxLayout:
                     orientation: 'vertical'
                     spacing: dp(15)
-                    MDBoxLayout:
-                        orientation: 'horizontal'
-                        spacing: dp(10)
-                        MDButton:
-                            id: connect_button
-                            pos_hint: {"center_x": 0.5, "center_y": 0.5}
-                            on_release: app.launcher_screen.connect()
-                            width: dp(200)
-                            radius: dp(10)
-                            MDButtonText:
-                                theme_text_color: "Custom"
-                                text_color: app.theme_cls.onSurfaceVariantColor
-                                text: 'Connect & Play'
-                                halign: 'center'
-                            MDButtonIcon:
-                                icon: "play-network"
-                        MDButton:
-                            id: game_patch_button
-                            on_release: app.launcher_screen.patch_game()
-                            pos_hint: {"center_x": 0.5, "center_y": 0.5}
-                            width: dp(200)
-                            radius: dp(10)
-                            MDButtonText:
-                                theme_text_color: "Custom"
-                                text_color: app.theme_cls.onSurfaceVariantColor
-                                text: 'Open Patch'
-                                halign: 'center'
-                            MDButtonIcon:
-                                icon: "file-edit"
+                    MDButton:
+                        id: connect_button
+                        pos_hint: {"center_x": 0.5}
+                        on_release: app.launcher_screen.connect()
+                        width: dp(200)
+                        radius: dp(10)
+                        MDButtonText:
+                            theme_text_color: "Custom"
+                            text_color: app.theme_cls.onSurfaceVariantColor
+                            text: 'Connect & Play'
+                            halign: 'center'
+                        MDButtonIcon:
+                            icon: "play-network"
                     MDBoxLayout:
                         # Collapses when the selected game declares no
                         # manifest components.
@@ -153,32 +137,6 @@
                                 group: 'client_type'
                                 id: manual_checkbox
                                 on_active: app.launcher_screen.set_client_type('manual') if self.active else app.launcher_screen.set_client_type('game')
-                    MDButton:
-                        id: generate_button
-                        on_release: app.launcher_screen.generate()
-                        pos_hint: {"center_x": 0.5}
-                        width: dp(200)
-                        radius: dp(10)
-                        MDButtonText:
-                            theme_text_color: "Custom"
-                            text_color: app.theme_cls.onSurfaceVariantColor
-                            text: 'Generate'
-                            halign: 'center'
-                        MDButtonIcon:
-                            icon: "gamepad-square-outline"
-                    MDButton:
-                        id: host_button
-                        on_release: app.launcher_screen.host()
-                        pos_hint: {"center_x": 0.5}
-                        width: dp(200)
-                        radius: dp(10)
-                        MDButtonText:
-                            theme_text_color: "Custom"
-                            text_color: app.theme_cls.onSurfaceVariantColor
-                            text: 'Host'
-                            halign: 'center'
-                        MDButtonIcon:
-                            icon: "router-network"
                 MDBoxLayout:
                     orientation: 'vertical'
                     spacing: dp(5)
@@ -246,6 +204,57 @@
                             icon: 'lock'
                         MDTextFieldHintText:
                             text: "Password"
+
+            MDDivider:
+                theme_divider_color: "Custom"
+                color: app.theme_cls.outlineColor
+
+            MDBoxLayout: # Game-independent utilities
+                orientation: 'horizontal'
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+                Widget:
+                MDButton:
+                    id: game_patch_button
+                    on_release: app.launcher_screen.patch_game()
+                    pos_hint: {"center_y": 0.5}
+                    width: dp(200)
+                    radius: dp(10)
+                    MDButtonText:
+                        theme_text_color: "Custom"
+                        text_color: app.theme_cls.onSurfaceVariantColor
+                        text: 'Open Patch'
+                        halign: 'center'
+                    MDButtonIcon:
+                        icon: "file-edit"
+                MDButton:
+                    id: generate_button
+                    on_release: app.launcher_screen.generate()
+                    pos_hint: {"center_y": 0.5}
+                    width: dp(200)
+                    radius: dp(10)
+                    MDButtonText:
+                        theme_text_color: "Custom"
+                        text_color: app.theme_cls.onSurfaceVariantColor
+                        text: 'Generate'
+                        halign: 'center'
+                    MDButtonIcon:
+                        icon: "gamepad-square-outline"
+                MDButton:
+                    id: host_button
+                    on_release: app.launcher_screen.host()
+                    pos_hint: {"center_y": 0.5}
+                    width: dp(200)
+                    radius: dp(10)
+                    MDButtonText:
+                        theme_text_color: "Custom"
+                        text_color: app.theme_cls.onSurfaceVariantColor
+                        text: 'Host'
+                        halign: 'center'
+                    MDButtonIcon:
+                        icon: "router-network"
+                Widget:
 
 <LauncherGenerateContent>:
     orientation: 'vertical'
