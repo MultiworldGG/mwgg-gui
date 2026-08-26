@@ -4,10 +4,10 @@
 
 <LauncherLayout>:
     id: launcher_layout
-    y: 82
-    size_hint_y: 1-(185/Window.height)
+    y: 0
+    size_hint_y: 1-(103/Window.height)
 
-<LauncherView>: # Right side of launcher screen
+<LauncherView>:
     id: launcher_view
     server_layout: server_layout
     title_layout: title_layout
@@ -35,6 +35,7 @@
         md_bg_color: app.theme_cls.surfaceVariantColor
         MDBoxLayout: # Inner padded layout
             orientation: 'vertical'
+            spacing: dp(10)
             MDBoxLayout: # Title & Favorites
                 id: title_layout
                 orientation: 'vertical'
@@ -50,43 +51,38 @@
                     theme_text_color: "Custom"
                     text_color: app.theme_cls.onSurfaceVariantColor
 
-            MDBoxLayout: # Connect & Play, Patch Game, Create YAML, Generate, Host
+            MDBoxLayout: # Game controls | server fields
                 orientation: 'horizontal'
                 spacing: 10
                 MDBoxLayout:
                     orientation: 'vertical'
                     spacing: dp(15)
+                    MDButton:
+                        id: connect_button
+                        pos_hint: {"center_x": 0.5}
+                        on_release: app.launcher_screen.connect()
+                        width: dp(200)
+                        radius: dp(10)
+                        MDButtonText:
+                            theme_text_color: "Custom"
+                            text_color: app.theme_cls.onSurfaceVariantColor
+                            text: 'Connect & Play'
+                            halign: 'center'
+                        MDButtonIcon:
+                            icon: "play-network"
                     MDBoxLayout:
+                        # Collapses when the selected game declares no
+                        # manifest components.
+                        id: game_components_box
                         orientation: 'horizontal'
                         spacing: dp(10)
-                        MDButton:
-                            id: connect_button
-                            pos_hint: {"center_x": 0.5, "center_y": 0.5}
-                            on_release: app.launcher_screen.connect()
-                            width: dp(200)
-                            radius: dp(10)
-                            MDButtonText:
-                                theme_text_color: "Custom"
-                                text_color: app.theme_cls.onSurfaceVariantColor
-                                text: 'Connect & Play'
-                                halign: 'center'
-                            MDButtonIcon:
-                                icon: "play-network"
-                        MDButton:
-                            id: game_patch_button
-                            on_release: app.launcher_screen.patch_game()
-                            pos_hint: {"center_x": 0.5, "center_y": 0.5}
-                            width: dp(200)
-                            radius: dp(10)
-                            MDButtonText:
-                                theme_text_color: "Custom"
-                                text_color: app.theme_cls.onSurfaceVariantColor
-                                text: 'Patch Game'
-                                halign: 'center'
-                            MDButtonIcon:
-                                icon: "file-edit"
+                        size_hint_y: None
+                        height: dp(40) if root.game_component_count else 0
+                        opacity: 1 if root.game_component_count else 0
+
                     MDBoxLayout:
                         orientation: 'horizontal'
+                        height: dp(40)
                         spacing: dp(10)
                         MDBoxLayout:
                             spacing: dp(4)
@@ -102,7 +98,7 @@
                                 pos_hint: {"center_y": 0.5}
                                 group: 'client_type'
                                 id: text_client_checkbox
-                                on_active: app.launcher_screen.set_client_type('text')
+                                on_active: app.launcher_screen.set_client_type('text') if self.active else app.launcher_screen.set_client_type('game')
                         MDDivider:
                             orientation: "vertical"
                             theme_divider_color: "Custom"
@@ -121,7 +117,7 @@
                                 pos_hint: {"center_y": 0.5}
                                 group: 'client_type'
                                 id: universal_tracker_checkbox
-                                on_active: app.launcher_screen.set_client_type('universal_tracker')
+                                on_active: app.launcher_screen.set_client_type('universal_tracker') if self.active else app.launcher_screen.set_client_type('game')
                         MDDivider:
                             orientation: "vertical"
                             theme_divider_color: "Custom"
@@ -140,48 +136,7 @@
                                 pos_hint: {"center_y": 0.5}
                                 group: 'client_type'
                                 id: manual_checkbox
-                                on_active: app.launcher_screen.set_client_type('manual')
-                                
-                    MDButton:
-                        id: game_yaml_button
-                        on_release: app.launcher_screen.create_yaml()
-                        pos_hint: {"center_x": 0.5}
-                        width: dp(200)
-                        radius: dp(10)
-                        disabled: True
-                        MDButtonText:
-                            theme_text_color: "Custom"
-                            text_color: app.theme_cls.onSurfaceVariantColor
-                            text: 'Create YAML'
-                            halign: 'center'
-                        MDButtonIcon:
-                            icon: "code-block-brackets"
-                    MDButton:
-                        id: generate_button
-                        on_release: app.launcher_screen.generate()
-                        pos_hint: {"center_x": 0.5}
-                        width: dp(200)
-                        radius: dp(10)
-                        MDButtonText:
-                            theme_text_color: "Custom"
-                            text_color: app.theme_cls.onSurfaceVariantColor
-                            text: 'Generate'
-                            halign: 'center'
-                        MDButtonIcon:
-                            icon: "gamepad-square-outline"
-                    MDButton:
-                        id: host_button
-                        on_release: app.launcher_screen.host()
-                        pos_hint: {"center_x": 0.5}
-                        width: dp(200)
-                        radius: dp(10)
-                        MDButtonText:
-                            theme_text_color: "Custom"
-                            text_color: app.theme_cls.onSurfaceVariantColor
-                            text: 'Host'
-                            halign: 'center'
-                        MDButtonIcon:
-                            icon: "router-network"
+                                on_active: app.launcher_screen.set_client_type('manual') if self.active else app.launcher_screen.set_client_type('game')
                 MDBoxLayout:
                     orientation: 'vertical'
                     spacing: dp(5)
@@ -246,9 +201,60 @@
                             theme_icon_color: "Custom"
                             icon_color_focus: self.parent.icon_color_focus
                             icon_color_normal: self.parent.icon_color_normal
-                            icon: 'lock'    
+                            icon: 'lock'
                         MDTextFieldHintText:
                             text: "Password"
+
+            MDDivider:
+                theme_divider_color: "Custom"
+                color: app.theme_cls.outlineColor
+
+            MDBoxLayout: # Game-independent utilities
+                orientation: 'horizontal'
+                size_hint_y: None
+                height: dp(48)
+                spacing: dp(10)
+                Widget:
+                MDButton:
+                    id: game_patch_button
+                    on_release: app.launcher_screen.patch_game()
+                    pos_hint: {"center_y": 0.5}
+                    width: dp(200)
+                    radius: dp(10)
+                    MDButtonText:
+                        theme_text_color: "Custom"
+                        text_color: app.theme_cls.onSurfaceVariantColor
+                        text: 'Open Patch'
+                        halign: 'center'
+                    MDButtonIcon:
+                        icon: "file-edit"
+                MDButton:
+                    id: generate_button
+                    on_release: app.launcher_screen.generate()
+                    pos_hint: {"center_y": 0.5}
+                    width: dp(200)
+                    radius: dp(10)
+                    MDButtonText:
+                        theme_text_color: "Custom"
+                        text_color: app.theme_cls.onSurfaceVariantColor
+                        text: 'Generate'
+                        halign: 'center'
+                    MDButtonIcon:
+                        icon: "gamepad-square-outline"
+                MDButton:
+                    id: host_button
+                    on_release: app.launcher_screen.host()
+                    pos_hint: {"center_y": 0.5}
+                    width: dp(200)
+                    radius: dp(10)
+                    MDButtonText:
+                        theme_text_color: "Custom"
+                        text_color: app.theme_cls.onSurfaceVariantColor
+                        text: 'Host'
+                        halign: 'center'
+                    MDButtonIcon:
+                        icon: "router-network"
+                Widget:
 
 <LauncherGenerateContent>:
     orientation: 'vertical'

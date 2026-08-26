@@ -1,6 +1,7 @@
 import os
 import logging
 import sys
+import threading
 import typing
 import asynckivy
 from datetime import datetime, UTC
@@ -74,6 +75,68 @@ if sys.platform == "win32":
     Window.opacity = 0
     Window.clearcolor = [0, 0, 0, 0]
     Window.borderless = True
+
+    # Kivy's Windows custom-titlebar support keeps the OS frame (for aero
+    # snap) and relies on a WndProc hook suppressing WM_NCCALCSIZE so the
+    # caption never shows. That scheme breaks for us twice over:
+    #
+    # 1. The hook (_WindowsSysDPIWatch) is installed on GetActiveWindow(),
+    #    but our window starts unfocused (graphics.focus=False above, splash
+    #    owns the foreground), so it lands on NULL.
+    # 2. Even with the hook re-armed, SDL keeps its own cached frame offsets,
+    #    so create_window's SetWindowPos(SWP_FRAMECHANGED) dance is never
+    #    idempotent: every pass moves/shrinks the window, which re-fires
+    #    Kivy's size->create_window binding — an infinite loop that walks the
+    #    window off-screen (and, before SafeEffectWidget, crashed the main
+    #    loop via a zero-width TitleBlur FBO during the reentrant layout).
+    #
+    # So make the initialized re-create path treat the custom titlebar like
+    # plain borderless — exactly what Kivy itself does on non-Windows
+    # platforms. custom_titlebar is not observed by anything (not in Kivy's
+    # _bind_create_window list, no on_custom_titlebar), so toggling it around
+    # the call is side-effect free; borderless=True above supplies the
+    # frameless style, and titlebar dragging still works because
+    # set_custom_titlebar() uses an SDL hit-test, not the WndProc hook.
+    from kivy.core.window.window_sdl2 import WindowSDL as _WindowSDL
+
+    _orig_create_window = _WindowSDL.create_window
+
+    def _create_window_borderless_titlebar(self, *largs):
+        if self.initialized and self.custom_titlebar:
+            self.custom_titlebar = False
+            try:
+                return _orig_create_window(self, *largs)
+            finally:
+                self.custom_titlebar = True
+        return _orig_create_window(self, *largs)
+
+    _WindowSDL.create_window = _create_window_borderless_titlebar
+
+    # Independently of the loop above, re-arm the NULL-hwnd hook on the real
+    # SDL window so its WM_DPICHANGED handling (per-monitor DPI changes)
+    # actually works.
+    def _rearm_dpi_watch_on_sdl_hwnd() -> None:
+        watch = getattr(Window, "_win_dpi_watch", None)
+        if watch is None:
+            return
+        try:
+            sdl_hwnd = Window._win.get_window_info().window
+        except Exception:
+            logging.getLogger("Client").warning(
+                "Could not resolve SDL window handle; DPI-change handling disabled",
+                exc_info=True)
+            return
+        if watch.hwnd == sdl_hwnd:
+            return
+        from kivy.input.providers.wm_common import WNDPROC, \
+            SetWindowLong_WndProc_wrapper
+        watch.stop()
+        watch.hwnd = sdl_hwnd
+        watch.new_windProc = WNDPROC(watch._wnd_proc)
+        watch.old_windProc = SetWindowLong_WndProc_wrapper(
+            watch.hwnd, watch.new_windProc)
+
+    _rearm_dpi_watch_on_sdl_hwnd()
 else:
     Window.clearcolor = [0, 0, 0, 1]
 # Window title is set via MultiMDApp.title — Kivy's App.run() applies that
@@ -89,7 +152,7 @@ from kivymd.uix.floatlayout import MDFloatLayout
 from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.navigationdrawer import MDNavigationLayout
 from kivymd.uix.appbar import MDBottomAppBar
-from kivy.uix.effectwidget import EffectWidget
+from mwgg_gui.components.safe_effect_widget import SafeEffectWidget
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.divider import MDDivider
 from kivymd.uix.screen import MDScreen
@@ -97,6 +160,7 @@ from kivymd.uix.screen import MDScreen
 from NetUtils import KivyMarkupJSONtoTextParser, JSONMessagePart, SlotType, HintStatus, MWGGUIHintStatus
 from Utils import persistent_load
 # from Utils import async_start, get_input_text_from_response
+from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
 
 from mwgg_gui.components.titlebar import Titlebar
@@ -144,6 +208,11 @@ class MultiMDApp(MDApp):
 
     base_title = StringProperty("MultiworldGG")
 
+    # Process role ("launcher" | "client", see mwgg_gui.constants) and the
+    # client-type hint a spawning launcher passed via MWGG_CLIENT_TYPE.
+    role: str
+    client_type_hint: str
+
     title_bar: Titlebar
     main_layout: MainLayout
     navigation_layout: NavLayout
@@ -152,6 +221,8 @@ class MultiMDApp(MDApp):
     screen_manager: MainScreenMgr
 
     console_screen: ConsoleScreen
+    # Duck-typed: the classic variant (kvui.ClassicHintScreen) satisfies the
+    # same surface — update_hints_list() and bottom_appbar.text_input.
     hint_screen: HintScreen
     settings_screen: SettingsScreen
     launcher_screen: LauncherScreen
@@ -165,7 +236,7 @@ class MultiMDApp(MDApp):
 
     theme_mw: DefaultTheme
     top_appbar_menu: MDDropdownMenu
-    pixelate_effect: EffectWidget
+    pixelate_effect: SafeEffectWidget
     ui_console: ObjectProperty
 
     ui_player_data: dict[int, UIPlayerData]
@@ -184,8 +255,16 @@ class MultiMDApp(MDApp):
     # detect a live frontend instance without importing Kivy directly.
     _active_instance: "typing.ClassVar[typing.Optional[MultiMDApp]]" = None
 
-    def __init__(self, ctx: context_type, **kwargs):
+    def __init__(self, ctx: context_type, role: typing.Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
+        # Mirrors the existing MWGG_FRONTEND pattern: an explicit constructor
+        # kwarg wins (for when a future caller passes it directly), otherwise
+        # fall back to the MWGG_ROLE env var Launcher.py/MultiWorld.py assign
+        # (never setdefault) before spawning this process.
+        self.role = role or os.environ.get("MWGG_ROLE", ROLE_LAUNCHER)
+        self.client_type_hint = os.environ.get("MWGG_CLIENT_TYPE", "")
+        if self.role == ROLE_LAUNCHER:
+            self.base_title = "MultiworldGG Launcher"
         # Only claim the singleton slot if no live instance owns it. Phantom
         # subclass instances built post-takeover (so per-game build() side
         # effects like add_client_tab can run) must not clobber the launcher.
@@ -272,7 +351,20 @@ class MultiMDApp(MDApp):
             'primary_palette': 'Purple',
             'font_scale': '1.0',
             'monospace_font': 'Argon',
-            'device_orientation': '0'
+            'device_orientation': '0',
+            # Classic (MAIN-style) hint screen is the migration default; the
+            # new screen is opt-in. Every read must also pass
+            # fallback='classic' -- build_config never runs for a
+            # pre-existing client.ini, so the key may be absent there.
+            'hint_screen': 'classic',
+            # Item-hover progression tooltips in the console. Reads pass
+            # fallback=True for pre-existing client.ini files.
+            'item_tooltips': '1'
+        })
+        # Tool-run suppression uses dynamic per-world keys
+        # (tool_warning_ok_<slug>) read with fallback=False -- no defaults.
+        config.setdefaults('security', {
+            'suppress_apworld_install_warning': '0'
         })
 
     def on_config_change(self, config, section, key, value):
@@ -337,7 +429,13 @@ class MultiMDApp(MDApp):
         # add binding for countdown timer
         self.bind(countdown_timer=self.on_countdown_timer)
 
-        self.change_screen("launcher")
+        if self.role == ROLE_CLIENT:
+            # Client-direct boot: no game-select screen, straight to the
+            # console for the game/patch/URI this process was spawned with.
+            self.client_console_init()
+            self.change_screen("console")
+        else:
+            self.change_screen("launcher")
 
         def on_start(*args):
             self.root.md_bg_color = self.theme_cls.surfaceColor
@@ -350,11 +448,62 @@ class MultiMDApp(MDApp):
 
             self._create_screen("settings")
 
+            if self.role == ROLE_CLIENT:
+                # Stays up until the spawned client's ready_callback (routed
+                # through frontend_protocol) calls hide_loading().
+                self.loading_layout.show_loading(display_logs=True)
+            else:
+                # Launcher role only: app-installer update check, in the
+                # background once the UI is up. Never blocks startup.
+                self._start_update_check()
+
         super().on_start()
         Clock.schedule_once(on_start)
         # Terminate the splash screen after the UI is fully initialized
         Clock.schedule_once(lambda dt: self.terminate_splash_screen_wrapper())
 
+    def _start_update_check(self) -> None:
+        """Launcher role only: check GitHub for a newer app installer in a
+        daemon thread and Clock-marshal an UpdateDialog onto the UI if one is
+        found. Everything is feature-detected: source checkouts (not frozen)
+        and environments without the monorepo's Updater module simply skip,
+        and network errors are swallowed with a log line."""
+        def _check() -> None:
+            try:
+                import Updater
+            except ImportError:
+                logging.getLogger("Client").info(
+                    "Update check skipped: Updater module unavailable")
+                return
+            try:
+                if not Updater.can_check_for_updates():
+                    logging.getLogger("Client").info(
+                        "Update check skipped: not an installed (frozen) build")
+                    return
+                import BaseUtils
+                new_version, download_url, changelog = Updater.get_latest_release_info()
+                current_version = BaseUtils.version_tuple
+                if new_version <= current_version:
+                    logging.getLogger("Client").info(
+                        "No update available (current %s, latest %s)",
+                        current_version, new_version)
+                    return
+            except Exception as e:
+                logging.getLogger("Client").warning("Update check failed: %s", e)
+                return
+
+            def _open_dialog(dt) -> None:
+                from mwgg_gui.components.update_dialog import UpdateDialog
+                UpdateDialog(
+                    current_version=current_version,
+                    new_version=new_version,
+                    changelog=changelog,
+                    download_url=download_url,
+                ).open()
+
+            Clock.schedule_once(_open_dialog)
+
+        threading.Thread(target=_check, name="UpdateCheck", daemon=True).start()
 
     def build(self):
         '''
@@ -380,7 +529,7 @@ class MultiMDApp(MDApp):
         # Layouts and screens are in layer order
         # Root layout - specifically to blur everything during loading
         self.root_layout = MDFloatLayout()
-        self.pixelate_effect = EffectWidget()
+        self.pixelate_effect = SafeEffectWidget()
 
         # Main window layout
         self.main_layout = MainLayout()
@@ -562,11 +711,20 @@ class MultiMDApp(MDApp):
         if item in self.screen_manager.screen_names:
             return
 
+        if item in ("launcher", "yaml") and self.role == ROLE_CLIENT:
+            # Client-direct processes never build a launcher screen -- the
+            # game-select UI (and the YAML creator that hangs off it) lives
+            # exclusively in the launcher process.
+            logging.getLogger("Client").warning(
+                "Refusing to create %r screen in client role", item
+            )
+            return
+
         if item == "settings":
             self.settings_screen = SettingsScreen()
             self.screen_manager.add_widget(self.settings_screen)
         elif item == "hint":
-            self.hint_screen = HintScreen()
+            self.hint_screen = self._build_hint_screen()
             self.screen_manager.add_widget(self.hint_screen)
             self.hint_text_input = self.hint_screen.bottom_appbar.text_input
         elif item == "launcher":
@@ -591,6 +749,57 @@ class MultiMDApp(MDApp):
             self.create_custom_screen(item)
             return
         self._invalidate_top_appbar_menu()
+
+    def _build_hint_screen(self):
+        """Instantiate the hint screen variant selected by the client
+        hint_screen setting: "classic" -> kvui.ClassicHintScreen when the
+        installed core provides it, anything else -> the new HintScreen.
+
+        fallback='classic' is load-bearing: build_config never runs for a
+        pre-existing client.ini, so the key may be missing there."""
+        from mwgg_gui.hint.select import resolve_hint_screen_class
+        style = self.app_config.get('client', 'hint_screen', fallback='classic')
+        cls = resolve_hint_screen_class(style)
+        if cls is not None:
+            try:
+                return cls()
+            except Exception as e:
+                logging.getLogger("Client").warning(
+                    "Failed to build classic hint screen (%s); "
+                    "using the new hint screen", e
+                )
+        return HintScreen()
+
+    def set_hint_screen_style(self, style: str):
+        """Swap the live hint screen to the given style ("new"/"classic").
+
+        Pre-connect (no hint screen yet) this is a no-op: the new style
+        takes effect when on_connect/refresh_hints creates the screen,
+        which also keeps classic hint rows from building without a live
+        ctx."""
+        if "hint" not in self.screen_manager.screen_names:
+            return
+        was_current = self.screen_manager.current == "hint"
+        if was_current:
+            self.screen_manager.current = (
+                "console" if "console" in self.screen_manager.screen_names
+                else self.screen_manager.screen_names[0]
+            )
+        try:
+            self.screen_manager.remove_widget(
+                self.screen_manager.get_screen("hint")
+            )
+        except Exception as e:
+            logging.getLogger("Client").warning(
+                "Failed to remove hint screen on style change: %s", e
+            )
+            return
+        self.hint_screen = None
+        self._invalidate_top_appbar_menu()
+        self._create_screen("hint")
+        self.hint_screen.update_hints_list()
+        if was_current:
+            self.screen_manager.current = "hint"
 
     def _resolve_live_app(self) -> "MultiMDApp":
         """Return the live launcher app instance whose screen_manager is on
@@ -678,6 +887,15 @@ class MultiMDApp(MDApp):
         if hasattr(self, 'loading_layout') and self.loading_layout:
             self.loading_layout.hide_loading()
 
+    def open_connect_dialog(self) -> None:
+        """Open the reconnect dialog (client mode only). No-op in launcher
+        mode -- the launcher process never holds a live ctx.connect() for
+        the dialog to target; that's what spawning a client is for."""
+        if self.role != ROLE_CLIENT:
+            return
+        from mwgg_gui.components.connect_dialog import ConnectDialog
+        ConnectDialog().open()
+
     def show_error_dialog(self, title: str, message: str):
         """FrontendProtocol: open an MDDialog-based MessageBox for the given
         title/message and return it as the handle. Callers (CommonContext.gui_error)
@@ -750,6 +968,13 @@ class MultiMDApp(MDApp):
         if self.top_appbar_menu:
             self.top_appbar_menu.dismiss()
 
+    def _menu_tool_callback(self, entry):
+        """Callback for builtin launcher tool menu items"""
+        # Dismiss first -- activators may open modal dialogs/file pickers.
+        if self.top_appbar_menu:
+            self.top_appbar_menu.dismiss()
+        entry.activate()
+
     def _invalidate_top_appbar_menu(self) -> None:
         """Drop the cached dropdown so the next open() rebuilds it from the
         current screen_manager.screen_names. Always operates on the live
@@ -768,15 +993,33 @@ class MultiMDApp(MDApp):
         """Open dropdown menu to change screens
         when menu button is pressed"""
         if not self.top_appbar_menu:
-            menu_items = []
-            for item in self.screen_manager.screen_names:
-                menu_items.append(self._create_menu_item(item))
-
-            menu_items.sort(key=lambda x: x["text"].lower())
-
-            menu_items.append({"text": "Exit",
-                                "divider": "Full",
-                                "on_release": lambda x=None: self.stop()})
+            if self.role == ROLE_LAUNCHER:
+                # Launcher menu: builtin tool components plus Settings,
+                # nothing else. Website/Discord live in the appbar's
+                # trailing icons.
+                from mwgg_gui.launcher.launcher_components import builtin_menu_entries
+                try:
+                    tool_entries = builtin_menu_entries()
+                except Exception:
+                    logging.getLogger("Client").exception(
+                        "Topappbar menu: builtin components unavailable")
+                    tool_entries = []
+                menu_items = [{
+                    "text": entry.title,
+                    "divider": None,
+                    "on_release": lambda x=None, entry=entry: self._menu_tool_callback(entry),
+                } for entry in tool_entries]
+                settings_item = self._create_menu_item("settings")
+                settings_item["divider"] = "Full"
+                menu_items.append(settings_item)
+            else:
+                menu_items = []
+                for item in self.screen_manager.screen_names:
+                    menu_items.append(self._create_menu_item(item))
+                menu_items.sort(key=lambda x: x["text"].lower())
+                menu_items.append({"text": "Exit",
+                                   "divider": "Full",
+                                   "on_release": lambda x=None: self.stop()})
 
             self.top_appbar_menu = MDDropdownMenu(
                 caller=menu_button,
@@ -823,6 +1066,10 @@ class MultiMDApp(MDApp):
         This function is called when the connection is established.
         It sets up the UI player data and updates the hints.
         '''
+        # Defensive: a reconnect (ConnectDialog, /connect) may leave the
+        # loading overlay up if its own timed hide_loading() already fired
+        # before Connected arrived, or never fires at all on some paths.
+        self.hide_loading()
 
         for slot, name in self.ctx.player_names.items():
             self.ui_hint_data[slot] = {}

@@ -3,9 +3,12 @@ from __future__ import annotations
 TopAppBar class - creates the top app bar that will be added to
 the top of the screen.  Additionally creates helper functions to bind
 to the mouse and window events to display the appropriate icon
+
+TODO: I don't think Launcher needs the topappbar at all.
+
 """
 from kivymd.app import MDApp
-from kivymd.uix.appbar import MDTopAppBar, MDTopAppBarTitle
+from kivymd.uix.appbar import MDTopAppBar, MDTopAppBarTitle, MDActionTopAppBarButton
 from kivymd.uix.tooltip import (
     MDTooltip,
     MDTooltipRich,
@@ -34,6 +37,7 @@ import asyncio
 import urllib.parse
 import asynckivy
 from Utils import persistent_store, persistent_load, format_SI_prefix
+from mwgg_gui.constants import ROLE_LAUNCHER
 
 
 logger = logging.getLogger("MultiWorld")
@@ -75,19 +79,8 @@ Builder.load_string('''
     ClockLabel:
         id: clock_label
         size_hint_x: .15
-    Timer:
-        id: timer
-        size_hint_x: .15
-        text: "00:00:00"
-
     MDTopAppBarTrailingButtonContainer:
-        MDActionTopAppBarButton:
-            id: timer_button
-            icon: "timer-outline"
-            on_release: root.toggle_timer()
-        MDActionTopAppBarButton:
-            icon: "account-circle-outline"
-            on_release: root.open_profile()
+        id: trailing_container
 ''')
 
 class EnergyLinkLabel(MDTopAppBarTitle):
@@ -499,15 +492,37 @@ class TopAppBar(MDTopAppBar):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.app = MDApp.get_running_app()
-        self.timer = self.ids.timer
         self.server_info_label = self.ids.server_info_label
         self.energy_link_label = self.ids.energy_link_label
         self.theme_bg_color = "Custom"
         self.md_bg_color = self.theme_cls.transparentColor
         self.theme_shadow_color = "Custom"
         self.shadow_color = self.theme_cls.transparentColor
-        self.timer_button = self.ids.timer_button
-        self.timer_button.bind(on_long_press=self.reset)
+        # Role switch: the kv rule carries only the common chrome; the
+        # role-specific pieces are constructed here, never pruned after.
+        trailing = self.ids.trailing_container
+        if self.app.role == ROLE_LAUNCHER:
+            # The launcher process never connects (every launch spawns a
+            # separate client process) -- no server text, no timer. The
+            # trailing slots hold the Website/Discord shortcuts instead.
+            self.server_info_label.text = ""
+            self.timer = None
+            self.timer_button = None
+            for icon, component_name in (("web", "MultiworldGG Website"),
+                                         ("discord", "Unofficial AP Discord")):
+                button = MDActionTopAppBarButton(icon=icon)
+                button.bind(on_release=lambda *_a, name=component_name: self._open_builtin(name))
+                trailing.add_widget(button)
+        else:
+            self.timer = Timer(size_hint_x=.15)
+            self.add_widget(self.timer)
+            self.timer_button = MDActionTopAppBarButton(icon="timer-outline")
+            self.timer_button.bind(on_release=lambda *_a: self.toggle_timer(),
+                                   on_long_press=self.reset)
+            trailing.add_widget(self.timer_button)
+        profile_button = MDActionTopAppBarButton(icon="account-circle-outline")
+        profile_button.bind(on_release=lambda *_a: self.open_profile())
+        trailing.add_widget(profile_button)
         asyncio.create_task(self.update_progress_info(), name="ProgressBar")
 
     async def update_progress_info(self):
@@ -533,8 +548,8 @@ class TopAppBar(MDTopAppBar):
 
     def toggle_timer(self):
         """Toggle timer on/off (pause/resume)"""
-        if self.timer.ctx is None:
-            return  # No game session hooked up (launcher/yaml/settings) — no-op
+        if self.timer is None or self.timer.ctx is None:
+            return  # No timer (launcher role) or no game session hooked up
         if self.timer.is_running:
             self.timer.stop()  # Pause
         else:
@@ -545,7 +560,8 @@ class TopAppBar(MDTopAppBar):
         self.timer.reset()
 
     def ui_built(self):
-        self.timer.on_ui_built()
+        if self.timer is not None:
+            self.timer.on_ui_built()
         self.server_info_label.on_ui_built()
     
     def update_server_info(self, ctx):
@@ -559,6 +575,15 @@ class TopAppBar(MDTopAppBar):
     def open_profile(self):
         """Open user profile interface (placeholder implementation)."""
         show_profile()
+
+    def _open_builtin(self, name: str):
+        """Trailing-icon shortcut to a builtin component (Website/Discord).
+        Lazy import: by click time the launcher's background scan has
+        warmed worlds.LauncherComponents."""
+        from worlds.LauncherComponents import find_component
+        component = find_component(name)
+        if component and component.func:
+            component.func()
 
     def enable_energy_link(self):
         self.energy_link_label.text = "Energy Link: Standby"

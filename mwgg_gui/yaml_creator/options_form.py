@@ -14,6 +14,7 @@ The form itself extends `MDList` so the scroll wraps it directly — no
 extra MDBoxLayout in between. Panel construction is heavy (KH2 has
 ~45 options, ALTTP has hundreds of items per `OptionSet`), so the
 form's `populate()` is a coroutine that awaits `asynckivy.sleep(0)`
+NOTE: might need to set this higher than 0; animation is still very choppy
 between each panel. That yields the main thread back to the Clock so
 `app.loading_layout`'s animation keeps rendering while the form
 builds.
@@ -372,6 +373,15 @@ class OptionsForm(MDList):
                 return widget
         return None
 
+    def option_names(self) -> set:
+        """Names of every option the form currently owns a row for. The
+        preview pane uses this to tell real options apart from
+        hand-written game-section keys it must preserve."""
+        names: set = set()
+        for panel in self._panels.values():
+            names.update(panel.row_widgets.keys())
+        return names
+
     def on_change(self, options: dict):
         """Default handler — overridden via `bind(on_change=...)`."""
 
@@ -395,4 +405,4 @@ class WeightedOptionsForm(OptionsForm):
         return [WeightedPrimer()]
 
     def _make_widget(self, descriptor):
-        return weight_widget_for_option(descriptor)
+        return weight_widget_for_option(descriptor, self._world)

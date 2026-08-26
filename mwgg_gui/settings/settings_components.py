@@ -957,6 +957,12 @@ class InterfaceSettings(SettingsScrollBox):
             active=bool(self.app.ctx.all_players_chat),
             on_switch=self.toggle_all_players_chat
         ))
+        layout_section.add_widget(LabeledSwitch(
+            text="Item Tooltips",
+            theme_text_color="Secondary",
+            active=self.app.app_config.getboolean('client', 'item_tooltips', fallback=True),
+            on_switch=self.toggle_item_tooltips
+        ))
 
         scroll_section = SettingsSection(name="scroll_settings", title="Scroll")
         scroll_section.add_widget(LabeledSlider(
@@ -980,12 +986,25 @@ class InterfaceSettings(SettingsScrollBox):
             current_item=age_item,
             on_select=self.on_age_filter_select
         ))
-        
+
+        hint_section = SettingsSection(name="hint_settings", title="Hints")
+        hint_section.add_widget(LabeledDropdown(
+            text="Hint Screen",
+            items=["New", "Classic"],
+            # fallback='classic' matters: build_config never runs for a
+            # pre-existing client.ini, so the key may be absent there.
+            current_item=self.app.app_config.get(
+                'client', 'hint_screen', fallback='classic'
+            ).strip().title(),
+            on_select=self.on_hint_screen_select
+        ))
+
         # Add all sections to the layout
         self.layout.add_widget(display_section)
         self.layout.add_widget(layout_section)
         self.layout.add_widget(scroll_section)
         self.layout.add_widget(age_filter_section)
+        self.layout.add_widget(hint_section)
     
     def toggle_fullscreen(self, instance, value):
         def fullscreen_to_string(value: bool) -> str:
@@ -1012,6 +1031,25 @@ class InterfaceSettings(SettingsScrollBox):
             self.app.ctx.all_players_chat = value
         except Exception as e:
             logger.error(f"Error in toggle_all_players_chat: {e}", exc_info=True)
+
+    def toggle_item_tooltips(self, instance, value):
+        # The hover code re-reads this key on every (throttled) hit-test,
+        # so the switch takes effect immediately -- no rebinding needed.
+        try:
+            self.app.app_config.set('client', 'item_tooltips', str(value))
+            self.app.app_config.write()
+        except Exception as e:
+            logger.error(f"Error in toggle_item_tooltips: {e}", exc_info=True)
+
+    def on_hint_screen_select(self, value):
+        # Direct write, no confirm dialog -- the screen swap is instant.
+        try:
+            style = value.strip().lower()
+            self.app.app_config.set('client', 'hint_screen', style)
+            self.app.app_config.write()
+            self.app.set_hint_screen_style(style)
+        except Exception as e:
+            logger.error(f"Error in on_hint_screen_select: {e}", exc_info=True)
 
     def scroll_lines_change(self, instance, value):
         """Handle scroll lines slider change"""

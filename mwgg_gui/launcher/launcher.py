@@ -18,7 +18,7 @@ __all__ = ('LauncherScreen',
 import asynckivy
 from kivy.clock import Clock
 from kivy.metrics import dp
-from kivy.properties import StringProperty, ObjectProperty, ListProperty
+from kivy.properties import StringProperty, ObjectProperty, ListProperty, NumericProperty
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.floatlayout import MDFloatLayout
@@ -30,7 +30,7 @@ from kivymd.theming import ThemableBehavior
 from kivymd.uix.list import MDList
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.dialog import MDDialog, MDDialogHeadlineText, MDDialogButtonContainer
-from kivymd.uix.button import MDButton, MDButtonText
+from kivymd.uix.button import MDButton, MDButtonIcon, MDButtonText
 from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
 
 
@@ -54,13 +54,13 @@ from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar
 from mwgg_gui.launcher.launcher_favorite_bar import FavoritesScroll, Favorite
 from mwgg_gui.components.dialog import MessageBox
-
-from Utils import (discover_and_launch_module,
-                   get_available_worlds,
+import Utils
+from Utils import (get_available_worlds,
                    user_path,
                    local_path,
                    is_frozen,
-                   is_windows)
+                   is_windows,
+                   persistent_store)
 from frontend_protocol import verify_slot, SlotVerifyResult
 
 from FileUtils import FileUtils
@@ -89,6 +89,18 @@ def _needs_game_validation(game_module: str, game_label: str) -> bool:
         return False
     return True
 
+
+def _players_dir() -> str:
+    """Settings-resolved Players directory (settings.generator.
+    player_files_path) — the dir Generate itself scans. `Utils.players_path`
+    needs a beta core new enough to ship it; older cores fall back to the
+    user_path default."""
+    players_path = getattr(Utils, "players_path", None)
+    if players_path is not None:
+        return players_path()
+    return user_path("Players")
+
+
 with open(os.path.join(os.path.dirname(__file__), "launcher.kv"), encoding="utf-8") as kv_file:
     Builder.load_string(kv_file.read())
 
@@ -103,6 +115,9 @@ class LauncherView(MDBoxLayout):
         "Game not set, connecting using Text Client. "
         "Switch to Universal Tracker or set your game."
     )
+    # Number of manifest components the selected game declares; the play
+    # page's component strip collapses to zero height when it's 0.
+    game_component_count = NumericProperty(0)
 
 class LauncherAuthTextField(MDTextField):
     pass
@@ -132,13 +147,24 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     game_tag_filter: StringProperty
     bottom_appbar: BottomAppBar
     selected_game: tuple[str, str] = ("", "")
-    client_type: str = "text"
+    # "game" = launch the selected game's client (or the text client when no
+    # game is selected). The three radio checkboxes override it with an
+    # explicit "text"/"universal_tracker"/"manual" choice.
+    client_type: str = "game"
     highlighted_favorite: ObjectProperty(None, allownone=True)
     app: MDApp
     result: Any
     favorite_games: ListProperty = ListProperty([])
     saved_games: ListProperty = ListProperty([])
     _password_as_text: bool = False # True to show password as text, False to show password as asterisks
+
+    # Launch button label/icon per client_type, see update_connect_button_text.
+    _CLIENT_TYPE_LABELS = {
+        "game": ("Launch & Play", "rocket-launch"),
+        "text": ("Launch Text Client", "console-line"),
+        "universal_tracker": ("Launch Tracker", "map-marker-radius"),
+        "manual": ("Launch Manual Client", "book-open-variant"),
+    }
 
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
@@ -149,8 +175,17 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.highlighted_favorite = None
         self.app = MDApp.get_running_app()
         self.available_games = []
+        # None until the first manifest scan lands (module -> WorldTool list).
+        self._world_components: dict[str, list] | None = None
+        self._component_buttons: list[MDButton] = []
         # Load favorite games from config
 
+        # Built (for its .text_input, which app._create_screen reaches into)
+        # but never attached to the widget tree -- the Play pane's "Launch &
+        # Play" button already covers the bar's one action, and the bar's
+        # chat FAB has no command processor to talk to on this screen (see
+        # LauncherLayout's kv rule, which no longer reserves bottom-bar
+        # clearance either).
         self.bottom_appbar = BottomAppBar(screen_name="launcher")
         self.important_appbar = LauncherSliverAppbar()
         self.launcher_view = LauncherView()
@@ -174,7 +209,6 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.launchergrid = LauncherLayout()
 
         self.add_widget(self.launchergrid)
-        self.add_widget(self.bottom_appbar)
 
         self.important_appbar.size_hint_x = 260/Window.width
         self.important_appbar.size_hint_y=1
@@ -204,6 +238,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         Clock.schedule_once(lambda dt: self.populate_favorites(), 0.2)
         # Start game list population after available_games is populated
         asynckivy.start(self.set_game_list())
+        # Warm the per-game component cache so the first game selection
+        # usually finds it already loaded.
+        self.refresh_world_components()
 
     def on_fallback_status_changed(self, instance, value):
         """Update the padding of the launcher view based on the fallback status"""
@@ -238,11 +275,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.launcher_view.module_name = game_info[0]
         # Update button text based on context
         self.update_connect_button_text()
-
-        # Selecting a game gates the YAML creator button.
-        yaml_button = self.launcher_view.ids.get("game_yaml_button")
-        if yaml_button is not None:
-            yaml_button.disabled = False
+        self._update_component_strip()
 
         if not self.is_favorite(game_info[0]):
             self.add_to_favorite_bar(game_info[0])
@@ -259,19 +292,15 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.game_filter = [(self.game_tag_filter.text, tag) for tag in GameIndex.search(self.game_tag_filter.text)]
 
     def update_connect_button_text(self):
-        """Update the connect button text based on current context"""
-        current_ctx = self.app.ctx
+        """Update the launch button label/icon to match the selected client type.
+
+        The launcher never becomes a client itself (every launch spawns a
+        separate process), so there's no reconnect state to distinguish here
+        -- just the client_type radio selection."""
         connect_button = self.launcher_view.ids.connect_button
-        
-        # Check if we're in initial state by checking if ctx has a 'game' attribute
-        if not hasattr(current_ctx, 'game'):
-            # Initial state - launch new game
-            connect_button._button_text.text = 'Connect & Play'
-            connect_button._button_icon.icon = 'play-network'
-        else:
-            # Game context - reconnect
-            connect_button._button_text.text = f'Reconnect'
-            connect_button._button_icon.icon = 'refresh'
+        text, icon = self._CLIENT_TYPE_LABELS.get(self.client_type, self._CLIENT_TYPE_LABELS["game"])
+        connect_button._button_text.text = text
+        connect_button._button_icon.icon = icon
 
     def set_client_type(self, client_type: str):
         """Set the client type"""
@@ -421,7 +450,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             title="Select Generation Files (.zip/.yaml)",
             filetypes=[("YAML Files", ["*.yaml", "*.yml"]), ("ZIP Files", ["*.zip"]), ("All Supported", ["*.yaml", "*.yml", "*.zip"])],
             multiple=True,
-            suggest=user_path("Players")
+            suggest=_players_dir()
         )
         
         if not result:
@@ -503,10 +532,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             self.show_snackbar("Seed must be a number or empty for random", is_error=True)
             return
             
+        # Blank output field -> omit --outputpath entirely so Generate's own
+        # settings-backed default (general_options.output_path) applies,
+        # instead of forcing an `output` dir under the launcher's cwd.
         output_path = output_field.text.strip()
-        if not output_path:
-            output_path = os.path.join(os.getcwd(), 'output')
-            
+
         self._generation_result = {
             'seed': seed_value,
             'output_path': output_path
@@ -527,24 +557,25 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self._execute_generation(self._generation_temp_dir, self._generation_result)
 
     def _execute_generation(self, temp_dir, options):
-        """Execute MultiworldGGGenerate.exe with options in background thread"""
-        from BaseUtils import is_frozen, local_path, is_windows
-        
-        # Build command
-        if is_frozen():
-            exe_path = local_path("MultiworldGGGenerate.exe") if is_windows else local_path("MultiworldGGGenerate")
-            cmd = [str(exe_path), "--player-files-path", temp_dir]
-            cwd = os.path.dirname(exe_path)
-            env = None
-        else:
-            exe_path = Path(sys.executable)
-            file_path = Path(local_path("Generate.py"))
-            cmd = [str(exe_path), str(file_path), "--player-files-path", temp_dir]
-            cwd = os.path.dirname(file_path)
-            # Also set KIVY_NO_ARGS to disable Kivy's argument parser
-            env = os.environ.copy()
-            env['KIVY_NO_ARGS'] = '1'
-        
+        """Execute the Generate component with options in a background thread"""
+        from BaseUtils import is_frozen
+        from worlds.LauncherComponents import find_component, get_exe
+
+        # base_cmd is [exe_path] frozen, or [sys.executable, script_path] from source --
+        # resolved through LauncherComponents so this can't drift from the
+        # actual built exe name (see BaseUtils.FROZEN_TARGETS).
+        base_cmd = get_exe(find_component("Generate"))
+        cmd = [*base_cmd, "--player-files-path", temp_dir]
+        cwd = os.path.dirname(base_cmd[-1])
+        # Also set KIVY_NO_ARGS to disable Kivy's argument parser when running from source
+        env = None if is_frozen() else {**os.environ, 'KIVY_NO_ARGS': '1'}
+        # Generate is a console-subsystem exe -- suppress the console window
+        # that would otherwise flash over the GUI on frozen Windows (its
+        # output streams to the logger regardless).
+        popen_kwargs = {}
+        if is_windows:
+            popen_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
         if options.get('seed'):
             cmd.extend(["--seed", str(options['seed'])])
             
@@ -575,9 +606,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     cwd=cwd,
                     bufsize=1,  # Line buffered
                     universal_newlines=True,
-                    env=env
+                    env=env,
+                    **popen_kwargs
                 )
-                
+
                 # Stream stdout
                 for line in process.stdout:
                     line = line.rstrip()
@@ -619,12 +651,12 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
                 def show_restart_dialog(dt):
                     self.app.loading_layout.hide_loading()
-                    MessageBox("Restart Required", 
+                    MessageBox("Restart Required",
                                "You will need to restart the launcher to apply updates.",
-                               error=True, 
+                               is_error=True,
                                callback=lambda x: self.restart_launcher()).open()
 
-                
+
                 if process.returncode == 0:
                     Clock.schedule_once(show_success_dialog, 0)
                     logger.info("Generation completed successfully")
@@ -655,38 +687,34 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         thread = threading.Thread(target=run_generation, daemon=True)
         thread.start()
 
-    def _prepare_connect_args(self, game_module, server_address=None):
-        """Prepare command line arguments for reconnecting after restart"""
-        args = sys.argv.copy()
-        
-        # Add game module argument
-        game_arg = f"--game={game_module}"
-        if game_arg not in args:
-            args.append(game_arg)
-        
-        # Add connection parameters using standard argument formats
-        if server_address not in args and server_address:
-            args.append(f"--server-address={server_address}")
-            
-        return args
-
-    def restart_launcher(self, connect_args=None):
-        """Restart the launcher with the same arguments, optionally with connection args"""
+    def restart_launcher(self):
+        """Restart the launcher with the same arguments (used after a
+        Generate/Patch environment-refresh exit code)."""
         logger.info("Restarting launcher due to environment refresh...")
-        
-        # Use connect_args if provided, otherwise use sys.argv
-        restart_args = connect_args if connect_args else sys.argv
-        
-        # Ensure the new process is fully detached from the parent
-        if is_windows():
+
+        # In frozen (cx_Freeze) builds sys.argv[0] IS the exe path, same as
+        # sys.executable -- spawning [sys.executable, *sys.argv] duplicates
+        # it as MultiWorld.py's launch_file positional. Strip it there; in
+        # dev mode sys.argv[0] is the script path python.exe still needs.
+        restart_args = sys.argv[1:] if is_frozen() else sys.argv
+
+        # Ensure the new process is fully detached from the parent. `is_windows`
+        # is a bool (BaseUtils/Utils), not a function -- calling it as one
+        # (the previous `if is_windows():` here) raised TypeError and skipped
+        # this whole branch, silently dropping the respawn on every platform.
+        if is_windows:
             subprocess.Popen([sys.executable] + restart_args,
                            cwd=os.getcwd(),
                            creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_CONSOLE)
-        
+        else:
+            subprocess.Popen([sys.executable] + restart_args,
+                           cwd=os.getcwd(),
+                           start_new_session=True)
+
         # Flush all logging handlers to ensure messages are displayed
         for handler in logging.root.handlers:
             handler.flush()
-        
+
         # Use sys.exit to bypass cleanup and immediately terminate
         sys.exit(10)
 
@@ -759,22 +787,14 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self._execute_host(self._host_result)
 
     def _execute_host(self, options):
-        """Execute MultiworldGGServer with options - detached from client"""
-        # Build command
-        if is_frozen():
-            exe_path = local_path("MultiWorldGGServer.exe") if is_windows else local_path("MultiWorldGGServer")
-            cmd = [str(exe_path)]
-            cwd = os.path.dirname(exe_path)
-            env = None
-        else:
-            exe_path = Path(sys.executable)
-            file_path = Path(local_path("MultiServer.py"))
-            cmd = [str(exe_path), str(file_path)]
-            cwd = os.path.dirname(file_path)
-            # Also set KIVY_NO_ARGS to disable Kivy's argument parser
-            env = os.environ.copy()
-            env['KIVY_NO_ARGS'] = '1'
-        
+        """Execute the Host component with options - detached from client"""
+        from worlds.LauncherComponents import find_component, get_exe
+
+        base_cmd = get_exe(find_component("Host"))
+        cmd = list(base_cmd)
+        cwd = os.path.dirname(base_cmd[-1])
+        env = None if is_frozen() else {**os.environ, 'KIVY_NO_ARGS': '1'}
+
         if options.get('port'):
             cmd.extend(["--port", str(options['port'])])
             
@@ -881,10 +901,20 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self._execute_patch(self._patch_file, self._patch_result)
 
     def _execute_patch(self, patch_file, options):
-        """Execute MultiworldGGPatch with options in background thread"""
-        # Build command
+        """Execute the Patch script with options in background thread.
+
+        No LauncherComponents component wraps a standalone Patch exe (only
+        "Open Patch", which routes through spawn_client), so this resolves
+        the frozen name directly against BaseUtils.FROZEN_TARGETS -- the
+        single source of truth for built exe names -- rather than the
+        literal "MultiworldGGPatch.exe" this used to hardcode (wrong case:
+        the built exe is MultiWorldGGPatch.exe).
+        """
+        from BaseUtils import FROZEN_TARGETS
+
         if is_frozen():
-            exe_path = local_path("MultiworldGGPatch.exe") if is_windows else local_path("MultiworldGGPatch")
+            suffix = ".exe" if is_windows else ""
+            exe_path = local_path(f"{FROZEN_TARGETS['Patch']}{suffix}")
             cmd = [str(exe_path), patch_file]
             cwd = os.path.dirname(exe_path)
             env = None
@@ -896,10 +926,16 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             # Also set KIVY_NO_ARGS to disable Kivy's argument parser
             env = os.environ.copy()
             env['KIVY_NO_ARGS'] = '1'
-        
+
         if options.get('output_path'):
             cmd.extend(["--outputpath", options['output_path']])
-        
+
+        # Same console-window suppression as the generation flow: Patch is a
+        # console-subsystem exe on frozen Windows.
+        popen_kwargs = {}
+        if is_windows:
+            popen_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+
         logger.info(f"Starting patch with command: {' '.join(cmd)}")
         
         # Show loading screen
@@ -916,9 +952,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     cwd=cwd,
                     bufsize=1,  # Line buffered
                     universal_newlines=True,
-                    env=env
+                    env=env,
+                    **popen_kwargs
                 )
-                
+
                 # Stream stdout
                 for line in process.stdout:
                     line = line.rstrip()
@@ -957,11 +994,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
                 def show_restart_dialog(dt):
                     self.app.loading_layout.hide_loading()
-                    MessageBox("Restart Required", 
+                    MessageBox("Restart Required",
                                "You will need to restart the launcher to apply updates.",
-                               error=True, 
+                               is_error=True,
                                callback=lambda x: self.restart_launcher()).open()
-                
+
                 if process.returncode == 0:
                     Clock.schedule_once(show_success_dialog, 0)
                     logger.info("Patch completed successfully")
@@ -1022,6 +1059,130 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 is_error=True,
             ).open()
 
+    # Per-game component strip (play page): the selected game's manifest
+    # components. Clients spawn a separate client-role process; tools and
+    # adjusters run in-process behind the arbitrary-code warning.
+    _COMPONENT_TYPE_ICONS = {"client": "play-network", "tool": "wrench", "adjuster": "tune"}
+
+    def refresh_world_components(self):
+        """One background manifest scan, cached per-module for the play strip.
+        Import + scan on a worker thread; widgets touched only via Clock.
+        Called at startup and again after an APWorld install."""
+        def _load():
+            try:
+                import worlds.LauncherComponents as launcher_components
+            except Exception:
+                logger.exception("World component scan: core import failed")
+                return
+            # Claim the post-Install-APWorld refresh hook. Reclaimed on
+            # every rescan, which is harmless.
+            launcher_components._rebuild_launcher_ui = (
+                lambda *a: Clock.schedule_once(self._on_apworld_installed))
+            scan = getattr(launcher_components, "world_manifest_components", None)
+            # Older core: only tool/adjuster entries exist, so no client
+            # buttons -- matching its spawn_client, which has no component=.
+            fallback = getattr(launcher_components, "world_tool_entries", None)
+            try:
+                if scan is not None:
+                    tools = scan()
+                elif fallback is not None:
+                    tools = fallback()
+                else:
+                    tools = []
+            except Exception:
+                logger.exception("World component scan failed")
+                tools = []
+            index: dict[str, list] = {}
+            for tool in tools:
+                index.setdefault(tool.module, []).append(tool)
+            Clock.schedule_once(lambda dt: self._on_world_components_loaded(index))
+
+        threading.Thread(target=_load, name="mwgg-world-components-scan", daemon=True).start()
+
+    def _on_world_components_loaded(self, index: dict[str, list]):
+        self._world_components = index
+        # Repaint for whatever is selected now -- a game picked before the
+        # scan landed gets its strip filled in here.
+        self._update_component_strip()
+
+    def _on_apworld_installed(self, *_args):
+        """`LauncherComponents._rebuild_launcher_ui` hook, claimed by the
+        scan worker: repaint everything an install changes.
+        TODO: expose as a manual refresh too -- users can drop worlds into
+        custom_worlds/ by hand and the launcher should catch up."""
+        self.refresh_world_components()
+        self.available_games = get_available_worlds()
+        asynckivy.start(self.set_game_list())
+
+    def _update_component_strip(self):
+        view = self.launcher_view
+        box = view.ids.game_components_box
+        # Only the strip's own buttons are dynamic -- clear_widgets() here
+        # would also wipe any static siblings sharing the row.
+        for button in self._component_buttons:
+            box.remove_widget(button)
+        # selected_game is "" until the first selection despite the tuple
+        # annotation -- never index it without the truthiness guard.
+        module = self.selected_game[0] if self.selected_game else ""
+        tools = (self._world_components or {}).get(module, [])
+        view.game_component_count = len(tools)
+        self._component_buttons = [self._make_component_button(tool) for tool in tools]
+        for button in self._component_buttons:
+            box.add_widget(button)
+
+    def _make_component_button(self, tool) -> MDButton:
+        button = MDButton(
+            MDButtonIcon(icon=self._COMPONENT_TYPE_ICONS.get(tool.type, "wrench")),
+            MDButtonText(text=tool.name),
+            style="tonal",
+            size_hint_x=1,
+        )
+        button.bind(on_release=lambda *_args, t=tool: self._activate_world_component(t))
+        return button
+
+    def _activate_world_component(self, tool):
+        if getattr(tool, "type", "tool") == "client":
+            self._spawn_component_client(tool)
+            return
+        import worlds.LauncherComponents as launcher_components
+        run_fn = getattr(launcher_components, "run_world_tool", None)
+        if run_fn is None:
+            MessageBox("World Tool", "This core version cannot run world tools.", is_error=True).open()
+            return
+        from mwgg_gui.launcher.launcher_components import world_tool_activator
+        # Same semantics as the tools-grid cards had: per-world suppressible
+        # warning, worker thread, Clock-hopped MessageBox on failure.
+        world_tool_activator(run_fn, tool)()
+
+    def _spawn_component_client(self, tool):
+        """Named-client twin of _spawn_client: same field reads, persist and
+        health check; spawn_client stays the only spawn path. No pre-flight
+        verify -- named components are often trackers/map clients whose game
+        need not match the server slot. The client-type radios don't apply:
+        a named component already picks which client to boot."""
+        port_error = self._validate_port_input()
+        if port_error:
+            MessageBox("Invalid Port", port_error, is_error=True).open()
+            return
+        from worlds.LauncherComponents import spawn_client
+
+        host_port, slot_name, password = self._raw_connect_inputs()
+        try:
+            process = spawn_client(
+                game=tool.module,
+                server_address=host_port or None,
+                slot_name=slot_name or None,
+                password=password or None,
+                client_type="game",
+                component=tool.name,
+            )
+        except Exception as e:
+            logger.error(f"Failed to launch {tool.name}: {e}")
+            MessageBox("Launch Error", f"Failed to launch {tool.name}: {str(e)}", is_error=True).open()
+            return
+        self._persist_last_connect(host_port, slot_name)
+        self._check_spawn_health(process, tool.name)
+
     def get_current_game(self) -> tuple[str, str] | None:
         """Return the currently selected (module_name, display_name) tuple,
         or None if nothing is selected. Used by the YAML creator package."""
@@ -1069,56 +1230,110 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         host_port = f"{server_text}:{port_text}" if server_text and port_text else server_text
         return host_port, slot_name, password
 
-    def _launch_module(self, game_module: str, game_label: str) -> None:
-        """Show loading, set up ready/error callbacks, and dispatch into the
-        per-game client. The pre-flight verify path and the skip path both
-        funnel through here.
+    def _spawn_client(self, game_module: str, game_label: str) -> None:
+        """Spawn a detached per-game client process and return to the idle
+        launcher screen. `worlds.LauncherComponents.spawn_client` owns exe
+        resolution, argv flags, child env, and OS-level detachment -- the
+        launcher only supplies the raw connect inputs, never builds argv
+        itself. The pre-flight verify path and the skip path both funnel
+        through here.
         """
+        from worlds.LauncherComponents import spawn_client
+
+        host_port, slot_name, password = self._raw_connect_inputs()
+        connect_button = self.launcher_view.ids.connect_button
+
+        # MultiWorld.py's run_client only routes the no-game case when
+        # client_type == "text" -- "game" with no module falls through every
+        # routing branch and leaves the child stuck on a dead client GUI.
+        # Universal Tracker / Manual with no game selected are a separate,
+        # not-yet-defined no-game contract (Phase 2, monorepo-side).
+        client_type = self.client_type
+        if not game_module and client_type == "game":
+            client_type = "text"
+
         try:
-            Clock.schedule_once(lambda dt: self.app.loading_layout.show_loading(display_logs=True), 0)
-
-            def ready_callback(dt: float = 0):
-                Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
-                # Slot data has resolved ctx.game by now (TextContext.on_package); refresh branding.
-                resolved_game = getattr(self.app.ctx, "game", None)
-                if not self.selected_game and resolved_game:
-                    cover_url = GameIndex.get_game(resolved_game).get("cover_url", None) if resolved_game else None
-                    if cover_url:
-                        self.app.logo_png = cover_url
-                Clock.schedule_once(lambda x: self.app.console_init())
-                Clock.schedule_once(lambda x: self.app.change_screen("console"))
-
-            def error_callback(restart_callback=None):
-                Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
-                if restart_callback:
-                    connect_args = self._prepare_connect_args(
-                        game_module=game_module,
-                        server_address=self.server_address,
-                    )
-                    MessageBox("Restart Required",
-                               "You will need to restart the launcher to apply updates.",
-                               error=True,
-                               callback=lambda x: self.restart_launcher(connect_args)).open()
-                # else: stay on launcher; handle_connection_loss surfaces the error
-
-            self.app.client_console_init()
-
-            _, slot_name, _ = self._raw_connect_inputs()
-            discover_and_launch_module(
-                game_module, server_address=self.server_address,
+            process = spawn_client(
+                game=game_module or None,
+                server_address=host_port or None,
                 slot_name=slot_name or None,
-                ready_callback=ready_callback, error_callback=error_callback,
-                client_type=self.client_type,
+                password=password or None,
+                client_type=client_type,
             )
         except Exception as e:
-            logger.error(f"Failed to launch {game_label} module: {e}")
-            Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
+            logger.error(f"Failed to launch {game_label}: {e}")
             MessageBox("Launch Error", f"Failed to launch {game_label}: {str(e)}", is_error=True).open()
+            return
+
+        self._persist_last_connect(host_port, slot_name)
+
+        connect_button.disabled = True
+        self._check_spawn_health(process, game_label, on_settle=lambda: setattr(connect_button, "disabled", False))
+
+    def spawn_text_client(self) -> None:
+        """Tools-card entry point: spawn a Text Client independent of the
+        Play tab's game selection/client-type radios."""
+        from worlds.LauncherComponents import spawn_client
+
+        host_port, slot_name, password = self._raw_connect_inputs()
+
+        try:
+            process = spawn_client(
+                server_address=host_port or None,
+                slot_name=slot_name or None,
+                password=password or None,
+                client_type="text",
+            )
+        except Exception as e:
+            logger.error(f"Failed to launch Text Client: {e}")
+            MessageBox("Launch Error", f"Failed to launch Text Client: {str(e)}", is_error=True).open()
+            return
+
+        self._persist_last_connect(host_port, slot_name)
+        self._check_spawn_health(process, "Text Client")
+
+    def _check_spawn_health(self, process: subprocess.Popen, game_label: str, on_settle=None) -> None:
+        """~3s after spawning, check whether the child exited immediately
+        (bad exe path, import crash, etc.) and surface a MessageBox if so.
+        `on_settle`, if given, always runs once the poll completes -- e.g.
+        re-enabling the launch button regardless of outcome; the launcher
+        never blocks on the spawned client's lifetime."""
+
+        def _poll(dt):
+            if on_settle is not None:
+                on_settle()
+            returncode = process.poll()
+            if returncode is not None and returncode != 0:
+                MessageBox(
+                    "Launch Failed",
+                    f"{game_label} exited immediately (code {returncode}). "
+                    "Check the launcher log for details.",
+                    is_error=True,
+                ).open()
+
+        Clock.schedule_once(_poll, 3)
+
+    def _persist_last_connect(self, host_port: str, slot_name: str) -> None:
+        """Persist last-used hostname/port/username so the next launcher
+        session (and a freshly-spawned client's InitContext defaults) picks
+        them up. In-process connect used to do this as a side effect of
+        ctx.hostname/username's property setters; the spawned client is a
+        separate process with its own InitContext, so the launcher persists
+        explicitly instead."""
+        host, _, port = host_port.rpartition(":") if host_port else ("", "", "")
+        if host and port:
+            persistent_store("client", "last_server_hostname", host)
+            try:
+                persistent_store("client", "last_server_port", int(port))
+            except ValueError:
+                pass
+        if slot_name:
+            persistent_store("client", "last_username", slot_name)
 
     def _verify_then_launch(self, game_module: str, game_label: str) -> None:
         """Pre-flight a Connect handshake against the server to confirm it
         expects `game_label` for the entered slot. On success, hand off to
-        `_launch_module`. On failure, show a modal error and stay on the
+        `_spawn_client`. On failure, show a modal error and stay on the
         launcher — the user can correct their selection without losing the
         launcher entirely.
 
@@ -1173,7 +1388,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
         if result.ok:
             logger.info(f"Slot verification passed for {slot_name!r} / {game_label!r}")
-            self._launch_module(game_module, game_label)
+            self._spawn_client(game_module, game_label)
             return
 
         if "InvalidGame" in result.errors:
@@ -1223,7 +1438,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         ).open()
 
     def connect(self):
-        """Connect to server and launch the selected game module"""
+        """Validate the launch settings and spawn the selected game's client
+        as a separate process. The launcher never becomes a client itself --
+        it always stays up and spawns; see `_spawn_client`."""
         logger.info("Connect method called!")
 
         port_error = self._validate_port_input()
@@ -1231,66 +1448,25 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             MessageBox("Invalid Port", port_error, is_error=True).open()
             return
 
-        # Get the current app context
-        current_ctx = self.app.ctx
+        game_module = self.selected_game[0] if self.selected_game else ""
+        game_label = self.selected_game[1] if self.selected_game else "Text Client"
 
-        self._password_as_text = False
-        server_address = "".join(self.server_address) if self.server_address else None
-        self._password_as_text = True
-
-        # Check if we're in initial state by checking if ctx has a 'game' attribute
-        if not hasattr(current_ctx, 'game'):
-            game_module = self.selected_game[0] if self.selected_game else ""
-            game_label = self.selected_game[1] if self.selected_game else "Text Client"
-
-            if self.selected_game:
-                self.app.logo_png = GameIndex.get_game(game_module).get("cover_url", None)
-                logger.info(f"Attempting to launch module: {game_label}")
-            else:
-                logger.info("No game selected; falling back to Text Client.")
-            logger.info(f"Server: {server_address}")
-
-            if _needs_game_validation(game_module, game_label):
-                self._verify_then_launch(game_module, game_label)
-            else:
-                logger.debug(
-                    "Skipping pre-flight game verification for module=%r (game-agnostic client).",
-                    game_module,
-                )
-                self._launch_module(game_module, game_label)
-        
+        if self.selected_game:
+            self.app.logo_png = GameIndex.get_game(game_module).get("cover_url", None)
+            logger.info(f"Attempting to launch module: {game_label}")
         else:
-            # We're in a game context, check if the selected game matches the current context
-            # TODO: Use a list for tracker/_sni/_bizhawk/"" and allow for those "game"s (empty is text client)
-            selected_game_label = self.selected_game[1] if self.selected_game else ""
-            if (hasattr(current_ctx, 'game') and current_ctx.game
-                    and selected_game_label and current_ctx.game != selected_game_label):
-                # Game mismatch - need to rebuild to InitContext first
-                logger.info(f"Game mismatch: current={current_ctx.game}, selected={selected_game_label}")
-                MessageBox("Game Mismatch",
-                                f"Current game ({current_ctx.game}) doesn't match selected game ({selected_game_label}). "
-                                "Please restart the client to change games.", is_error=True).open()
-                return
-            
-            # Game matches, try to connect using the current context
-            try:
-                if not self.server_address:
-                    MessageBox("Connection Error", "Please enter a valid server address and port.", is_error=True).open()
-                    return
-                
-                logger.info(f"Attempting to connect to: {server_address}")
-                
-                # Show loading screen
-                Clock.schedule_once(lambda dt: self.app.loading_layout.show_loading(), 0)
-                
-                # Use the context's connect method
-                import asyncio
-                asyncio.create_task(current_ctx.connect(self.server_address))
-                
-                # Hide loading screen after a short delay (connection will handle its own UI updates)
-                Clock.schedule_once(lambda dt: self.app.loading_layout.hide_loading(), 2)
-                
-            except Exception as e:
-                logger.error(f"Failed to connect: {e}")
-                Clock.schedule_once(lambda x: self.app.loading_layout.hide_loading(), 0)
-                MessageBox("Connection Error", f"Failed to connect: {str(e)}", is_error=True).open()
+            logger.info("No game selected; falling back to Text Client.")
+
+        # Masked logging only -- never used to build spawn argv, which reads
+        # the raw fields via _raw_connect_inputs() instead.
+        self._password_as_text = False
+        logger.info(f"Server: {self.server_address}")
+
+        if _needs_game_validation(game_module, game_label):
+            self._verify_then_launch(game_module, game_label)
+        else:
+            logger.debug(
+                "Skipping pre-flight game verification for module=%r (game-agnostic client).",
+                game_module,
+            )
+            self._spawn_client(game_module, game_label)

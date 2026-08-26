@@ -24,6 +24,7 @@ from kivymd.theming import ThemableBehavior
 
 from mwgg_gui.overrides.expansionlist import *
 from mwgg_gui.components.bottomappbar import BottomAppBar
+from mwgg_gui.components.columns import ColumnSortMixin, ColumnFilterMixin
 from mwgg_gui.components.mw_theme import AutoAdjustHeightBehavior
 
 import asynckivy
@@ -82,7 +83,10 @@ class ConsoleLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
         super().__init__(**kwargs)
         self.size_hint_x = 1
 
-class ConsoleSliverAppbar(MDSliverAppbar):
+class ConsoleSliverAppbar(MDSliverAppbar, ColumnSortMixin, ColumnFilterMixin):
+    # This class is kvui.HintLog in the monorepo, and world code (the Universal
+    # Tracker's on_kv_post patch) registers ColumnSorter/ColumnFilter instances
+    # on it. The hint screen reads those registrations to build its chips.
     content: MDSliverAppbarContent
     app: MDApp
     deafened_icon: StringProperty
@@ -94,14 +98,26 @@ class ConsoleSliverAppbar(MDSliverAppbar):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        # The cooperative __init__ chain normally reaches the mixins; keep the
+        # registration lists present even if a base class breaks the chain.
+        if not hasattr(self, "column_sorters"):
+            self.column_sorters = []
+        if not hasattr(self, "column_filters"):
+            self.column_filters = []
         self.app = MDApp.get_running_app()
         self.content = MDSliverAppbarContent(orientation="vertical")
         self.content.id = "content"
         self.add_widget(self.content)
 
-        # Determine tracker mode from the launcher's client_type selection
+        # Determine tracker mode from the launcher's client_type selection.
+        # Client-direct processes never build a launcher screen (see
+        # app.py._create_screen's client-role guard), so fall back to the
+        # MWGG_CLIENT_TYPE env var the launcher spawned this process with.
         launcher = getattr(self.app, "launcher_screen", None)
-        self.tracker_mode = bool(launcher and getattr(launcher, "client_type", "") == "universal_tracker")
+        if launcher is not None:
+            self.tracker_mode = getattr(launcher, "client_type", "") == "universal_tracker"
+        else:
+            self.tracker_mode = getattr(self.app, "client_type_hint", "") == "universal_tracker"
 
         self.screen_manager = MDScreenManager(size_hint_y=None, height=dp(48))
         self.players_screen = MDScreen(name="players", size_hint_y=None, height=dp(48))
@@ -214,6 +230,19 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
 
         Clock.schedule_once(lambda x: self.init_important())
 
+    def on_enter(self, *args):
+        """Arm the console hover tooltip whenever this screen is shown.
+        getattr-guarded: the first on_enter fires at startup before the
+        Clock-deferred init_important has created ui_console."""
+        console = getattr(self, "ui_console", None)
+        if console is not None:
+            console.text_console.start_hover_tracking()
+
+    def on_leave(self, *args):
+        console = getattr(self, "ui_console", None)
+        if console is not None:
+            console.text_console.stop_hover_tracking()
+
     def update_slots_list(self):
         """Update the slots list when hints data becomes available"""
         asynckivy.start(self.set_slots_list())
@@ -267,6 +296,13 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         # If tracker mode is active, seed the locations list now that ctx exists.
         if self.important_appbar.tracker_mode:
             Clock.schedule_once(lambda dt: self.update_tracker_locations(), 0.5)
+
+        # on_enter already fired (once, at startup) before this deferred
+        # build created ui_console, so re-arm hover tracking if the console
+        # is the visible screen. start_hover_tracking is idempotent, so the
+        # normal on_enter/on_leave flow stays correct on later switches.
+        if self.manager and self.manager.current == self.name:
+            self.ui_console.text_console.start_hover_tracking()
 
     def _get_slot_priority(self, slot_data) -> tuple[bool, int]:
         """

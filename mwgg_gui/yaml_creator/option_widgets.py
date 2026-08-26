@@ -1,9 +1,9 @@
 """
 Per-option-type row widgets for the Player Options form.
 
-Each widget takes a *descriptor dict* (produced by `worker.py`), not a
-class object — the GUI process never imports the world's Options
-module. Descriptor shape per type is documented in `worker.py`.
+Each widget takes a *descriptor dict* (produced by `world_data.py`), not
+a class object — the GUI process never imports the world's Options
+module. Descriptor shape per type is documented in `world_data.py`.
 
 Every widget extends `OptionRow` and exposes:
   - `option_name` : str
@@ -541,7 +541,8 @@ class FreeTextRow(OptionRow):
 
 
 class _ChipMultiSelect(OptionRow):
-    """Wrap of filter chips, one per key."""
+    """Wrap of filter chips, one per key.
+    TODO:  This is broken, the interface expands to a very large size with blank space."""
 
     def __init__(self, descriptor, keys, default_selected=None, **kwargs):
         super().__init__(descriptor, **kwargs)

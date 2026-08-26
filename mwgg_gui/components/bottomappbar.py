@@ -219,6 +219,7 @@ class BottomAppBar(MDBottomAppBar):
 
     def __init__(self, screen_name: str, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.app = MDApp.get_running_app()
         self.screen_name = screen_name  # Store screen_name for later use
         # Per-world tabs (Tracker, Manual, ...) come through CustomScreen with
         # arbitrary screen names. Default to no fab actions for those so we
@@ -231,12 +232,19 @@ class BottomAppBar(MDBottomAppBar):
         action_items = []
         text_inputs = []
         for item in actions:
-            button = MDActionBottomAppBarButton(id=item["id"], 
+            button = MDActionBottomAppBarButton(id=item["id"],
                                                 icon=item["icon"])
             button.bind(on_release=lambda instance: self.on_bar_action(instance))
             action_items.append(button)
         self.text_input = BottomBarTextInput(id=f'{screen_name}_text_input')
         self.ids.console_text_input_fab.id = "console_fab_button"
+        # Note: the launcher screen never attaches this bar to its widget
+        # tree at all (see LauncherScreen.init_important) -- the Play pane's
+        # "Launch & Play" button already covers the bar's one action, and the
+        # chat FAB has no command processor to talk to on that screen. An
+        # opacity/disabled toggle used to try to hide the FAB here instead;
+        # that left it visibly dimmed rather than gone, so not attaching the
+        # bar is the actual fix.
         Clock.schedule_once(lambda dt: self.set_actions(action_items), 0)
 
     def set_actions(self, action_items: list[MDActionBottomAppBarButton]):
@@ -251,6 +259,20 @@ class BottomAppBar(MDBottomAppBar):
             super().add_widget(widget, index, canvas)
 
     def on_bar_action(self, instance):
+        # 'launch' (launcher screen) and 'connect' (console screen) open a
+        # dialog / call straight into the screen instead of animating the
+        # bottom-bar text input -- neither has a command processor to send
+        # prefilled text to.
+        if instance.id == "launch" and self.screen_name == "launcher":
+            if getattr(self.app, "launcher_screen", None) is not None:
+                self.app.launcher_screen.connect()
+            return
+        if instance.id == "connect":
+            # 'connect' is a CONSOLE_ACTIONS entry shared by the console and
+            # hint screens (see constants.py); the dialog itself only needs
+            # app.ctx, so it's safe to open from either.
+            self.app.open_connect_dialog()
+            return
         # Toggle: if text input is already visible, hide it. Otherwise, show it.
         if self.text_input.parent and self.text_input.y > -50 and "fab" in instance.id:
             self.hide_text_input()

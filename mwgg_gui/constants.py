@@ -6,6 +6,8 @@ Contains the actions for the console and launcher.
 """
 
 __all__ = (
+    "ROLE_LAUNCHER",
+    "ROLE_CLIENT",
     "CONSOLE_ACTIONS",
     "LAUNCHER_ACTIONS",
     "MWGG_WEBHOST_BASE",
@@ -14,6 +16,13 @@ __all__ = (
     "AVATAR_UPLOAD_URL",
     "AVATAR_FILE_EXTENSIONS",
 )
+
+# Process roles, mirrored from the MWGG_ROLE env var set by the monorepo's
+# MultiWorld.py/Launcher.py (see MultiMDApp.__init__). "launcher" shows the
+# game list and spawns clients as separate processes; "client" boots
+# straight to the console screen for one already-selected game.
+ROLE_LAUNCHER = "launcher"
+ROLE_CLIENT = "client"
 
 # Host that mints upload tokens and serves uploaded avatars. Will move to
 # https://multiworld.gg once the uploader is rolled out there.
@@ -56,16 +65,32 @@ CONSOLE_ACTIONS = [
     "label":        "Host Administration",
     "indicator":    "server-network",
     "type":         "assist",
-}]
-
-
-LAUNCHER_ACTIONS = [
+},
 {
+    # Reconnect UI for client-direct processes, which never build a
+    # launcher screen (see components/connect_dialog.py). Special-cased in
+    # BottomAppBar.on_bar_action to open the dialog instead of animating
+    # the text input like the other entries.
     "id":           "connect",
     "buttonicon":   "lan-connect",
     "icon":         "lan-connect",
     "prefill":      "",
     "label":        "Connect",
+    "indicator":    "blank",
+    "type":         "assist",
+}]
+
+
+LAUNCHER_ACTIONS = [
+{
+    # Special-cased in BottomAppBar.on_bar_action to call the launcher
+    # screen's connect() directly instead of animating the text input --
+    # the launcher's command processor has no live connection to talk to.
+    "id":           "launch",
+    "buttonicon":   "rocket-launch",
+    "icon":         "rocket-launch",
+    "prefill":      "",
+    "label":        "Launch",
     "indicator":    "blank",
     "type":         "assist",
 },

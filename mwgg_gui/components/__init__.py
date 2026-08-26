@@ -6,7 +6,12 @@ from .bottomappbar import (
 )
 from .dialog import (
     MessageBox,
+    CodeWarningBox,
     ConsoleBox,
+    confirm_arbitrary_code,
+)
+from .connect_dialog import (
+    ConnectDialog,
 )
 from .guidataclasses import (
     UIHint,
@@ -35,4 +40,7 @@ from .profile import (
 )
 from .progress_overlay import (
     ProgressOverlay,
+)
+from .safe_effect_widget import (
+    SafeEffectWidget,
 )

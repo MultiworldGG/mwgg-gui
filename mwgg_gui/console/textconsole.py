@@ -23,6 +23,7 @@ from multiprocessing.queues import Empty
 from kivy.utils import get_hex_from_color
 from mwgg_gui.overrides.markuptextfield import MarkupTextField
 from mwgg_gui.components.guidataclasses import MarkupPair
+from mwgg_gui.console.console_tooltip import ConsoleHoverBehavior
 
 from NetUtils import TEXT_COLORS
 
@@ -47,7 +48,11 @@ class ConsoleFilter(logging.Filter):
             return True
         return False
 
-class TextConsole(MarkupTextField, ThemableBehavior):
+class TextConsole(ConsoleHoverBehavior, MarkupTextField, ThemableBehavior):
+    # Mixin FIRST: its on_touch_down dismisses the hover tooltip before the
+    # text field's selection handling runs. Hover reads the
+    # client.item_tooltips setting (fallback=True) the same way
+    # all_players_chat is consumed below.
     text_buffer: Queue
     app: MDApp
 
