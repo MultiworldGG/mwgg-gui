@@ -79,20 +79,8 @@ Builder.load_string('''
     ClockLabel:
         id: clock_label
         size_hint_x: .15
-    Timer:
-        id: timer
-        size_hint_x: .15
-        text: "00:00:00"
-
     MDTopAppBarTrailingButtonContainer:
-        MDActionTopAppBarButton:
-            id: timer_button
-            icon: "timer-outline"
-            on_release: root.toggle_timer()
-        MDActionTopAppBarButton:
-            id: profile_button
-            icon: "account-circle-outline"
-            on_release: root.open_profile()
+        id: trailing_container
 ''')
 
 class EnergyLinkLabel(MDTopAppBarTitle):
@@ -504,44 +492,38 @@ class TopAppBar(MDTopAppBar):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.app = MDApp.get_running_app()
-        self.timer = self.ids.timer
         self.server_info_label = self.ids.server_info_label
-        # The launcher process never connects (every launch spawns a
-        # separate client process) -- "Not Connected" is meaningless there.
-        # Client-role processes keep the label; on_connect/on_disconnect
-        # (never fired in launcher role) are the only other writers of
-        # server_info_label.text.
-        if self.app.role == ROLE_LAUNCHER:
-            self.server_info_label.text = ""
         self.energy_link_label = self.ids.energy_link_label
         self.theme_bg_color = "Custom"
         self.md_bg_color = self.theme_cls.transparentColor
         self.theme_shadow_color = "Custom"
         self.shadow_color = self.theme_cls.transparentColor
-        self.timer_button = self.ids.timer_button
-        self.timer_button.bind(on_long_press=self.reset)
+        # Role switch: the kv rule carries only the common chrome; the
+        # role-specific pieces are constructed here, never pruned after.
+        trailing = self.ids.trailing_container
         if self.app.role == ROLE_LAUNCHER:
-            # Deferred a tick: MDTopAppBar re-parents its kv children via
-            # Clock, so the title widgets have no parent yet during __init__.
-            Clock.schedule_once(self._setup_launcher_trailing)
+            # The launcher process never connects (every launch spawns a
+            # separate client process) -- no server text, no timer. The
+            # trailing slots hold the Website/Discord shortcuts instead.
+            self.server_info_label.text = ""
+            self.timer = None
+            self.timer_button = None
+            for icon, component_name in (("web", "MultiworldGG Website"),
+                                         ("discord", "Unofficial AP Discord")):
+                button = MDActionTopAppBarButton(icon=icon)
+                button.bind(on_release=lambda *_a, name=component_name: self._open_builtin(name))
+                trailing.add_widget(button)
+        else:
+            self.timer = Timer(size_hint_x=.15)
+            self.add_widget(self.timer)
+            self.timer_button = MDActionTopAppBarButton(icon="timer-outline")
+            self.timer_button.bind(on_release=lambda *_a: self.toggle_timer(),
+                                   on_long_press=self.reset)
+            trailing.add_widget(self.timer_button)
+        profile_button = MDActionTopAppBarButton(icon="account-circle-outline")
+        profile_button.bind(on_release=lambda *_a: self.open_profile())
+        trailing.add_widget(profile_button)
         asyncio.create_task(self.update_progress_info(), name="ProgressBar")
-
-    def _setup_launcher_trailing(self, *_args):
-        """No game session in the launcher, so no timer; its trailing slot
-        holds the Website/Discord shortcuts instead, with profile kept last.
-        Rebuilds the container order explicitly -- its add_widget override
-        drops the index argument."""
-        self.timer.parent.remove_widget(self.timer)
-        container = self.timer_button.parent
-        profile_button = self.ids.profile_button
-        container.remove_widget(self.timer_button)
-        container.remove_widget(profile_button)
-        for icon, component_name in (("web", "MultiworldGG Website"),
-                                     ("discord", "Unofficial AP Discord")):
-            button = MDActionTopAppBarButton(icon=icon)
-            button.bind(on_release=lambda *_a, name=component_name: self._open_builtin(name))
-            container.add_widget(button)
-        container.add_widget(profile_button)
 
     async def update_progress_info(self):
         """
@@ -566,8 +548,8 @@ class TopAppBar(MDTopAppBar):
 
     def toggle_timer(self):
         """Toggle timer on/off (pause/resume)"""
-        if self.timer.ctx is None:
-            return  # No game session hooked up (launcher/yaml/settings) — no-op
+        if self.timer is None or self.timer.ctx is None:
+            return  # No timer (launcher role) or no game session hooked up
         if self.timer.is_running:
             self.timer.stop()  # Pause
         else:
@@ -578,7 +560,8 @@ class TopAppBar(MDTopAppBar):
         self.timer.reset()
 
     def ui_built(self):
-        self.timer.on_ui_built()
+        if self.timer is not None:
+            self.timer.on_ui_built()
         self.server_info_label.on_ui_built()
     
     def update_server_info(self, ctx):
