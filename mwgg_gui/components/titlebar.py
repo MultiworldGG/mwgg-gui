@@ -17,8 +17,8 @@ from kivy.core.window import Window
 from kivy.properties import ObjectProperty
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivy.uix.effectwidget import EffectWidget
 from kivy.uix.effectwidget import HorizontalBlurEffect, VerticalBlurEffect
+from mwgg_gui.components.safe_effect_widget import SafeEffectWidget
 from kivymd.uix.button import MDIconButton 
 from kivy.lang import Builder
 
@@ -94,7 +94,7 @@ KV = '''
 
 '''
 
-class TitleBlur(EffectWidget):
+class TitleBlur(SafeEffectWidget):
     effects = [VerticalBlurEffect(size=3), HorizontalBlurEffect(size=3)]
 
 class TitleBarButton(MDIconButton):

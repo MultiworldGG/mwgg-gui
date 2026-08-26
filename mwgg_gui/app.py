@@ -75,6 +75,68 @@ if sys.platform == "win32":
     Window.opacity = 0
     Window.clearcolor = [0, 0, 0, 0]
     Window.borderless = True
+
+    # Kivy's Windows custom-titlebar support keeps the OS frame (for aero
+    # snap) and relies on a WndProc hook suppressing WM_NCCALCSIZE so the
+    # caption never shows. That scheme breaks for us twice over:
+    #
+    # 1. The hook (_WindowsSysDPIWatch) is installed on GetActiveWindow(),
+    #    but our window starts unfocused (graphics.focus=False above, splash
+    #    owns the foreground), so it lands on NULL.
+    # 2. Even with the hook re-armed, SDL keeps its own cached frame offsets,
+    #    so create_window's SetWindowPos(SWP_FRAMECHANGED) dance is never
+    #    idempotent: every pass moves/shrinks the window, which re-fires
+    #    Kivy's size->create_window binding — an infinite loop that walks the
+    #    window off-screen (and, before SafeEffectWidget, crashed the main
+    #    loop via a zero-width TitleBlur FBO during the reentrant layout).
+    #
+    # So make the initialized re-create path treat the custom titlebar like
+    # plain borderless — exactly what Kivy itself does on non-Windows
+    # platforms. custom_titlebar is not observed by anything (not in Kivy's
+    # _bind_create_window list, no on_custom_titlebar), so toggling it around
+    # the call is side-effect free; borderless=True above supplies the
+    # frameless style, and titlebar dragging still works because
+    # set_custom_titlebar() uses an SDL hit-test, not the WndProc hook.
+    from kivy.core.window.window_sdl2 import WindowSDL as _WindowSDL
+
+    _orig_create_window = _WindowSDL.create_window
+
+    def _create_window_borderless_titlebar(self, *largs):
+        if self.initialized and self.custom_titlebar:
+            self.custom_titlebar = False
+            try:
+                return _orig_create_window(self, *largs)
+            finally:
+                self.custom_titlebar = True
+        return _orig_create_window(self, *largs)
+
+    _WindowSDL.create_window = _create_window_borderless_titlebar
+
+    # Independently of the loop above, re-arm the NULL-hwnd hook on the real
+    # SDL window so its WM_DPICHANGED handling (per-monitor DPI changes)
+    # actually works.
+    def _rearm_dpi_watch_on_sdl_hwnd() -> None:
+        watch = getattr(Window, "_win_dpi_watch", None)
+        if watch is None:
+            return
+        try:
+            sdl_hwnd = Window._win.get_window_info().window
+        except Exception:
+            logging.getLogger("Client").warning(
+                "Could not resolve SDL window handle; DPI-change handling disabled",
+                exc_info=True)
+            return
+        if watch.hwnd == sdl_hwnd:
+            return
+        from kivy.input.providers.wm_common import WNDPROC, \
+            SetWindowLong_WndProc_wrapper
+        watch.stop()
+        watch.hwnd = sdl_hwnd
+        watch.new_windProc = WNDPROC(watch._wnd_proc)
+        watch.old_windProc = SetWindowLong_WndProc_wrapper(
+            watch.hwnd, watch.new_windProc)
+
+    _rearm_dpi_watch_on_sdl_hwnd()
 else:
     Window.clearcolor = [0, 0, 0, 1]
 # Window title is set via MultiMDApp.title — Kivy's App.run() applies that
@@ -90,7 +152,7 @@ from kivymd.uix.floatlayout import MDFloatLayout
 from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.navigationdrawer import MDNavigationLayout
 from kivymd.uix.appbar import MDBottomAppBar
-from kivy.uix.effectwidget import EffectWidget
+from mwgg_gui.components.safe_effect_widget import SafeEffectWidget
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.divider import MDDivider
 from kivymd.uix.screen import MDScreen
@@ -174,7 +236,7 @@ class MultiMDApp(MDApp):
 
     theme_mw: DefaultTheme
     top_appbar_menu: MDDropdownMenu
-    pixelate_effect: EffectWidget
+    pixelate_effect: SafeEffectWidget
     ui_console: ObjectProperty
 
     ui_player_data: dict[int, UIPlayerData]
@@ -467,7 +529,7 @@ class MultiMDApp(MDApp):
         # Layouts and screens are in layer order
         # Root layout - specifically to blur everything during loading
         self.root_layout = MDFloatLayout()
-        self.pixelate_effect = EffectWidget()
+        self.pixelate_effect = SafeEffectWidget()
 
         # Main window layout
         self.main_layout = MainLayout()
