@@ -1,4 +1,8 @@
 """
+
+TODO: probably pull this out - users have /connect & we can make a reconnect
+button rather than a whole ass dialog.
+
 ConnectDialog -- reconnect UI for client-direct processes.
 
 Client processes never build a launcher screen (see app.py's `_create_screen`

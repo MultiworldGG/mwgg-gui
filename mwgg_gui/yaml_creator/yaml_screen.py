@@ -417,7 +417,7 @@ class YamlScreen(InnerMDScreen):
             return
         player_name = (self._header.ids.player_name.text or "Player").strip()
         description = (self._header.ids.description.text or "").strip()
-        collected = self._form.collect()
+        collected = self._form.collect() #TODO: This isn't working - form changes aren't being propogated to the preview pane.
         logger.info("yaml_creator: _push_to_preview, collected=%r", collected)
         text = form_state_to_yaml(
             player_name=player_name,

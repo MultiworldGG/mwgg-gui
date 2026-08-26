@@ -541,7 +541,8 @@ class FreeTextRow(OptionRow):
 
 
 class _ChipMultiSelect(OptionRow):
-    """Wrap of filter chips, one per key."""
+    """Wrap of filter chips, one per key.
+    TODO:  This is broken, the interface expands to a very large size with blank space."""
 
     def __init__(self, descriptor, keys, default_selected=None, **kwargs):
         super().__init__(descriptor, **kwargs)

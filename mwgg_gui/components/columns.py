@@ -1,15 +1,11 @@
-"""Column sort/filter registry shared with the monorepo's kvui module.
+"""Emily's Column sort/filter registry mixins.
 
-The MultiworldGG monorepo ships upstream Archipelago's column machinery in
-kvui.py (ColumnSorter / ColumnFilter and their mixins). World code such as the
+Moving ColumnSorter / ColumnFilter and their mixins out of kvui.py (might change 
+my mind on this). World code such as the
 Universal Tracker registers sorters and filters against ``kvui.HintLog`` — an
 alias for this package's ConsoleSliverAppbar. These classes mirror the kvui
 interface so that registration works against our widgets; consumers must stay
 duck-typed because registrants hand over kvui's instances, not ours.
-
-Import-light on purpose: no kivy imports, so unit tests can load it by path.
-The dropdown UI half of upstream's ColumnFilter is intentionally absent — the
-hint screen surfaces filter options through its native chip row instead.
 """
 from __future__ import annotations
 

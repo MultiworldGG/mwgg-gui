@@ -14,6 +14,7 @@ The form itself extends `MDList` so the scroll wraps it directly — no
 extra MDBoxLayout in between. Panel construction is heavy (KH2 has
 ~45 options, ALTTP has hundreds of items per `OptionSet`), so the
 form's `populate()` is a coroutine that awaits `asynckivy.sleep(0)`
+NOTE: might need to set this higher than 0; animation is still very choppy
 between each panel. That yields the main thread back to the Clock so
 `app.loading_layout`'s animation keeps rendering while the form
 builds.
