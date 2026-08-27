@@ -64,26 +64,25 @@ def world_tool_activator(run_fn, tool) -> Callable[[], None]:
     )
 
 
-# Builtins the play pane already surfaces: Generate and Host have their own
-# buttons, Text Client is a client-type radio, Open Patch is the play pane's
-# patch button.
-_PLAY_PANE_COMPONENTS = frozenset({"Generate", "Host", "Text Client", "Open Patch"})
+# Builtins with a static surface elsewhere: Generate/Host/Open Patch are the
+# nav drawer's own Host/Generate/Patch items, Text Client is a play-pane
+# client-type radio.
+_STATIC_SURFACE_COMPONENTS = frozenset({"Generate", "Host", "Text Client", "Open Patch"})
 
-# Builtins surfaced as topappbar trailing icons rather than menu items.
+# Builtins surfaced as topappbar trailing icons rather than drawer items.
 _APPBAR_ICON_COMPONENTS = frozenset({"MultiworldGG Website", "Unofficial AP Discord"})
 
 
 def builtin_menu_entries() -> list[LauncherComponentData]:
-    """Builtin tool components for the topappbar menu, excluding what the
-    play pane already surfaces. The import is a sys.modules hit once the
-    launcher's background component scan has run."""
-    import worlds.LauncherComponents as launcher_components
+    """Builtin tool components for the launcher's nav drawer, excluding
+    what already has a surface of its own."""
+    import LauncherComponents as launcher_components
 
     entries: list[LauncherComponentData] = []
     for component in launcher_components.builtin_components():
         if component.type is launcher_components.Type.HIDDEN:
             continue
-        if component.display_name in _PLAY_PANE_COMPONENTS | _APPBAR_ICON_COMPONENTS:
+        if component.display_name in _STATIC_SURFACE_COMPONENTS | _APPBAR_ICON_COMPONENTS:
             continue
         activate = component.func or partial(launcher_components.run_component, component)
         if component.display_name == "Install APWorld":

@@ -691,15 +691,10 @@ class MultiMDApp(MDApp):
         It updates the current screen and dismisses menu
         with the screen names.
         '''
-        if item in self.screen_manager.screen_names:
-            self.screen_manager.current = item
-            if self.top_appbar_menu:
-                self.top_appbar_menu.dismiss()
-        else:
+        if item not in self.screen_manager.screen_names:
             self._create_screen(item)
-            self.screen_manager.current = item
-            if self.top_appbar_menu:
-                self.top_appbar_menu.dismiss()
+        self.screen_manager.current = item
+        self._invalidate_top_appbar_menu()
 
     def _create_screen(self, item: str):
         '''
@@ -968,13 +963,6 @@ class MultiMDApp(MDApp):
         if self.top_appbar_menu:
             self.top_appbar_menu.dismiss()
 
-    def _menu_tool_callback(self, entry):
-        """Callback for builtin launcher tool menu items"""
-        # Dismiss first -- activators may open modal dialogs/file pickers.
-        if self.top_appbar_menu:
-            self.top_appbar_menu.dismiss()
-        entry.activate()
-
     def _invalidate_top_appbar_menu(self) -> None:
         """Drop the cached dropdown so the next open() rebuilds it from the
         current screen_manager.screen_names. Always operates on the live
@@ -990,36 +978,28 @@ class MultiMDApp(MDApp):
             live.top_appbar_menu = None
 
     def open_top_appbar_menu(self, menu_button):
-        """Open dropdown menu to change screens
-        when menu button is pressed"""
-        if not self.top_appbar_menu:
-            if self.role == ROLE_LAUNCHER:
-                # Launcher menu: builtin tool components plus Settings,
-                # nothing else. Website/Discord live in the appbar's
-                # trailing icons.
-                from mwgg_gui.launcher.launcher_components import builtin_menu_entries
-                try:
-                    tool_entries = builtin_menu_entries()
-                except Exception:
-                    logging.getLogger("Client").exception(
-                        "Topappbar menu: builtin components unavailable")
-                    tool_entries = []
-                menu_items = [{
-                    "text": entry.title,
-                    "divider": None,
-                    "on_release": lambda x=None, entry=entry: self._menu_tool_callback(entry),
-                } for entry in tool_entries]
-                settings_item = self._create_menu_item("settings")
-                settings_item["divider"] = "Full"
-                menu_items.append(settings_item)
+        """Appbar hamburger hook. Launcher role: the nav drawer replaced the
+        dropdown menu -- toggle it, first walking back to the launcher screen
+        when some other screen is up (the drawer carries the way back, like
+        the old menu's back item did). Client role: dropdown of screen names.
+        """
+        if self.role == ROLE_LAUNCHER:
+            nav_drawer = self.launcher_screen.nav_drawer
+            if self.screen_manager.current != "launcher":
+                self.change_screen("launcher")
+                nav_drawer.set_state("open")
             else:
-                menu_items = []
-                for item in self.screen_manager.screen_names:
-                    menu_items.append(self._create_menu_item(item))
-                menu_items.sort(key=lambda x: x["text"].lower())
-                menu_items.append({"text": "Exit",
-                                   "divider": "Full",
-                                   "on_release": lambda x=None: self.stop()})
+                nav_drawer.set_state("toggle")
+            return
+
+        if not self.top_appbar_menu:
+            menu_items = []
+            for item in self.screen_manager.screen_names:
+                menu_items.append(self._create_menu_item(item))
+            menu_items.sort(key=lambda x: x["text"].lower())
+            menu_items.append({"text": "Exit",
+                               "divider": "Full",
+                               "on_release": lambda x=None: self.stop()})
 
             self.top_appbar_menu = MDDropdownMenu(
                 caller=menu_button,
