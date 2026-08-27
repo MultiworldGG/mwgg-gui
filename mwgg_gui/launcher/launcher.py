@@ -221,6 +221,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.available_games = []
         # None until the first manifest scan lands (module -> WorldTool list).
         self._world_components: dict[str, list] | None = None
+        # Modules explicitly installed into custom_worlds/ (Install APWorld),
+        # captured by the same scan.
+        self._custom_world_modules: set[str] = set()
         self._component_buttons: list[LauncherComponentButton] = []
         # Python-built nav drawer widgets (everything below the static
         # Host/Generate/Patch items), replaced wholesale on each rebuild.
@@ -1157,12 +1160,23 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             index: dict[str, list] = {}
             for tool in tools:
                 index.setdefault(tool.module, []).append(tool)
-            Clock.schedule_once(lambda dt: self._on_world_components_loaded(index))
+            # Idempotent (the manifest scan already ran it); repeated here
+            # only to learn WHICH modules are custom installs.
+            register = getattr(Utils, "register_custom_worlds", None)
+            try:
+                custom_modules = set(register()) if register is not None else set()
+            except Exception:
+                logger.exception("Custom world scan failed")
+                custom_modules = set()
+            Clock.schedule_once(
+                lambda dt: self._on_world_components_loaded(index, custom_modules))
 
         threading.Thread(target=_load, name="mwgg-world-components-scan", daemon=True).start()
 
-    def _on_world_components_loaded(self, index: dict[str, list]):
+    def _on_world_components_loaded(self, index: dict[str, list],
+                                    custom_modules: set[str]):
         self._world_components = index
+        self._custom_world_modules = custom_modules
         # Repaint for whatever is selected now -- a game picked before the
         # scan landed gets its strip filled in here.
         self._update_component_strip()
@@ -1298,11 +1312,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 button.bind(on_release=lambda *_a, entry=entry: entry.activate())
                 _add(button)
 
-        world_tools = self._clientless_world_tools()
-        if world_tools:
+        installed_tools = self._installed_tools()
+        if installed_tools:
             _add(MDNavigationDrawerDivider())
-            _add(NavDrawerLabel(text="World Tools"))
-            for tool in world_tools:
+            _add(NavDrawerLabel(text="Installed Tools"))
+            for tool in installed_tools:
                 button = LauncherNavDrawerButton(
                     icon=self._COMPONENT_TYPE_ICONS.get(tool.type, "wrench"),
                     text=tool.name)
@@ -1314,14 +1328,16 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         settings_button.bind(on_release=lambda *_a: self.app.change_screen("settings"))
         _add(settings_button)
 
-    def _clientless_world_tools(self) -> list:
-        """Tools/adjusters from installed worlds that declare no client
-        component. Such worlds never show up in the game list, so the nav
-        drawer is their only surface. Reaching the manifest scan requires an
-        actual install (Install APWorld / custom_worlds) -- deliberately no
-        looser autodetection for something that runs arbitrary code."""
+    def _installed_tools(self) -> list:
+        """Tools/adjusters from explicitly installed (Install APWorld ->
+        custom_worlds/) APWorlds that declare no client component. A world
+        with a client surfaces its tools on the play strip when selected,
+        and a bundled tool-only world stays off the drawer entirely --
+        explicit installation is the opt-in for something that runs
+        arbitrary code."""
         tools = []
-        for module in sorted(self._world_components or {}):
+        for module in sorted(self._custom_world_modules
+                             & set(self._world_components or {})):
             components = self._world_components[module]
             if any(getattr(c, "type", "") == "client" for c in components):
                 continue
