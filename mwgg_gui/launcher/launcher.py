@@ -18,7 +18,7 @@ __all__ = ('LauncherScreen',
 import asynckivy
 from kivy.clock import Clock
 from kivy.metrics import dp
-from kivy.properties import StringProperty, ObjectProperty, ListProperty, NumericProperty
+from kivy.properties import StringProperty, ObjectProperty, ListProperty
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.floatlayout import MDFloatLayout
@@ -28,13 +28,18 @@ from kivy.properties import ObjectProperty
 from kivymd.uix.sliverappbar import MDSliverAppbar
 from kivymd.theming import ThemableBehavior
 from kivymd.uix.list import MDList
+from kivymd.uix.navigationdrawer import (MDNavigationLayout,
+                                         MDNavigationDrawer,
+                                         MDNavigationDrawerDivider)
+from kivymd.uix.navigationdrawer.navigationdrawer import MDNavigationDrawerItem
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.dialog import MDDialog, MDDialogHeadlineText, MDDialogButtonContainer
-from kivymd.uix.button import MDButton, MDButtonIcon, MDButtonText
+from kivymd.uix.button import MDButton, MDButtonText
 from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
 
 
 import logging
+from dataclasses import dataclass
 from typing import Any
 import tempfile
 import shutil
@@ -51,6 +56,7 @@ from mwgg_igdb import GameIndex
 
 from mwgg_gui.overrides.expansionlist import *
 from mwgg_gui.components.bottomappbar import BottomAppBar
+from mwgg_gui.components.nav_drawer import NavDrawerMenu, NavDrawerLabel
 from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar
 from mwgg_gui.launcher.launcher_favorite_bar import FavoritesScroll, Favorite
 from mwgg_gui.components.dialog import MessageBox
@@ -104,7 +110,7 @@ def _players_dir() -> str:
 with open(os.path.join(os.path.dirname(__file__), "launcher.kv"), encoding="utf-8") as kv_file:
     Builder.load_string(kv_file.read())
 
-class LauncherLayout(MDFloatLayout):
+class LauncherLayout(MDNavigationLayout):
     pass
 
 class LauncherView(MDBoxLayout):
@@ -115,9 +121,6 @@ class LauncherView(MDBoxLayout):
         "Game not set, connecting using Text Client. "
         "Switch to Universal Tracker or set your game."
     )
-    # Number of manifest components the selected game declares; the play
-    # page's component strip collapses to zero height when it's 0.
-    game_component_count = NumericProperty(0)
 
 class LauncherAuthTextField(MDTextField):
     pass
@@ -131,6 +134,45 @@ class LauncherHostContent(MDBoxLayout):
 class LauncherPatchContent(MDBoxLayout):
     pass
 
+@dataclass(frozen=True)
+class YamlComponent:
+    """Synthetic strip entry for the YAML creator.
+
+    Not a world-declared component: it applies to whichever game is selected,
+    so it's appended to every selected game's strip instead of coming from the
+    manifest scan. Duck-types WorldTool where the strip reads it."""
+    module: str
+    name: str = "Create YAML"
+    type: str = "yaml"
+    description: str = ""
+
+
+class LauncherComponentButton(MDButton):
+    text = ""
+    icon = "wrench"
+
+    def __init__(self, **kwargs):
+        self.text = kwargs.pop("text", "")
+        self.icon = kwargs.pop("icon", "wrench")
+        super().__init__(**kwargs)
+
+class LauncherNavDrawerButton(MDNavigationDrawerItem):
+    """Nav drawer action item. Unlike a navigation item it tracks no
+    selection, and it puts the drawer away on release so the drawer isn't
+    left hanging under whatever dialog the action opens."""
+    icon = StringProperty("")
+    text = StringProperty("")
+    trailing_text = StringProperty("")
+
+    def on_release(self, *args):
+        # Runs after any bound action callbacks (default handlers dispatch
+        # last), replacing MDNavigationDrawerItem's selection bookkeeping.
+        widget = self.parent
+        while widget is not None and not isinstance(widget, MDNavigationDrawer):
+            widget = widget.parent
+        if widget is not None:
+            widget.set_state("close")
+
 class LauncherScreen(MDScreen, ThemableBehavior):
     '''
     This is the main screen for the launcher.
@@ -140,6 +182,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     '''
     name = "launcher"
     launchergrid: LauncherLayout
+    nav_drawer: MDNavigationDrawer
+    nav_menu: NavDrawerMenu
     important_appbar: MDSliverAppbar
     launcher_view: LauncherView
     game_filter: list
@@ -177,7 +221,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.available_games = []
         # None until the first manifest scan lands (module -> WorldTool list).
         self._world_components: dict[str, list] | None = None
-        self._component_buttons: list[MDButton] = []
+        self._component_buttons: list[LauncherComponentButton] = []
+        # Python-built nav drawer widgets (everything below the static
+        # Host/Generate/Patch items), replaced wholesale on each rebuild.
+        self._drawer_widgets: list = []
         # Load favorite games from config
 
         # Built (for its .text_input, which app._create_screen reaches into)
@@ -220,9 +267,20 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
         self.important_appbar.content.add_widget(self.games_mdlist)
 
-        self.launchergrid.add_widget(self.important_appbar)
+        # LauncherLayout is an MDNavigationLayout: it only accepts the screen
+        # manager and the drawer, so the actual launcher UI lands on the
+        # content screen inside the manager. The drawer then slides over it
+        # (the sliver appbar included) as a modal overlay.
+        content_screen = self.launchergrid.ids.launcher_content
+        content_screen.add_widget(self.important_appbar)
         self.launcher_view.pos_hint={"y": 0, "x": 260/Window.width}
-        self.launchergrid.add_widget(self.launcher_view)
+        content_screen.add_widget(self.launcher_view)
+
+        self.nav_drawer = self.launchergrid.ids.launcher_nav_drawer
+        self.nav_menu = self.launchergrid.ids.launcher_nav_menu
+        # One frame late so the menu width fix reads a laid-out width.
+        Clock.schedule_once(lambda dt: self.nav_menu.on_start())
+        self._rebuild_nav_drawer_menu()
 
         fave_scroll = FavoritesScroll()
         self.favorites_layout = fave_scroll.favorites
@@ -292,15 +350,25 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.game_filter = [(self.game_tag_filter.text, tag) for tag in GameIndex.search(self.game_tag_filter.text)]
 
     def update_connect_button_text(self):
-        """Update the launch button label/icon to match the selected client type.
-
-        The launcher never becomes a client itself (every launch spawns a
-        separate process), so there's no reconnect state to distinguish here
-        -- just the client_type radio selection."""
+        """Update the launch button label/icon to match the selected client type."""
         connect_button = self.launcher_view.ids.connect_button
         text, icon = self._CLIENT_TYPE_LABELS.get(self.client_type, self._CLIENT_TYPE_LABELS["game"])
+        if self.client_type == "game":
+            client = self._selected_game_client()
+            if client is not None:
+                text = client.name
         connect_button._button_text.text = text
         connect_button._button_icon.icon = icon
+
+    def _selected_game_client(self) -> Any | None:
+        """The selected world's declared client component, or None."""
+        module = self.selected_game[0] if self.selected_game else ""
+        if not module:
+            return None
+        for component in (self._world_components or {}).get(module, []):
+            if getattr(component, "type", "") == "client":
+                return component
+        return None
 
     def set_client_type(self, client_type: str):
         """Set the client type"""
@@ -559,7 +627,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     def _execute_generation(self, temp_dir, options):
         """Execute the Generate component with options in a background thread"""
         from BaseUtils import is_frozen
-        from worlds.LauncherComponents import find_component, get_exe
+        from LauncherComponents import find_component, get_exe
 
         # base_cmd is [exe_path] frozen, or [sys.executable, script_path] from source --
         # resolved through LauncherComponents so this can't drift from the
@@ -788,7 +856,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
     def _execute_host(self, options):
         """Execute the Host component with options - detached from client"""
-        from worlds.LauncherComponents import find_component, get_exe
+        from LauncherComponents import find_component, get_exe
 
         base_cmd = get_exe(find_component("Host"))
         cmd = list(base_cmd)
@@ -1059,10 +1127,12 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 is_error=True,
             ).open()
 
-    # Per-game component strip (play page): the selected game's manifest
-    # components. Clients spawn a separate client-role process; tools and
-    # adjusters run in-process behind the arbitrary-code warning.
-    _COMPONENT_TYPE_ICONS = {"client": "play-network", "tool": "wrench", "adjuster": "tune"}
+    # Per-game component strip (play page): the selected game's manifest tools
+    # and adjusters, run in-process behind the arbitrary-code warning. The
+    # world's declared client is not a strip button -- it names the Play button
+    # instead (see update_connect_button_text), since launching it is what Play
+    # already does.
+    _COMPONENT_TYPE_ICONS = {"client": "play-network", "tool": "wrench", "adjuster": "tune", "yaml": "file-document-edit-outline"}
 
     def refresh_world_components(self):
         """One background manifest scan, cached per-module for the play strip.
@@ -1070,7 +1140,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         Called at startup and again after an APWorld install."""
         def _load():
             try:
-                import worlds.LauncherComponents as launcher_components
+                import LauncherComponents as launcher_components
             except Exception:
                 logger.exception("World component scan: core import failed")
                 return
@@ -1079,16 +1149,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             launcher_components._rebuild_launcher_ui = (
                 lambda *a: Clock.schedule_once(self._on_apworld_installed))
             scan = getattr(launcher_components, "world_manifest_components", None)
-            # Older core: only tool/adjuster entries exist, so no client
-            # buttons -- matching its spawn_client, which has no component=.
-            fallback = getattr(launcher_components, "world_tool_entries", None)
             try:
-                if scan is not None:
-                    tools = scan()
-                elif fallback is not None:
-                    tools = fallback()
-                else:
-                    tools = []
+                tools = scan() if scan is not None else []
             except Exception:
                 logger.exception("World component scan failed")
                 tools = []
@@ -1104,6 +1166,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         # Repaint for whatever is selected now -- a game picked before the
         # scan landed gets its strip filled in here.
         self._update_component_strip()
+        self._rebuild_nav_drawer_menu()
 
     def _on_apworld_installed(self, *_args):
         """`LauncherComponents._rebuild_launcher_ui` hook, claimed by the
@@ -1124,27 +1187,36 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         # selected_game is "" until the first selection despite the tuple
         # annotation -- never index it without the truthiness guard.
         module = self.selected_game[0] if self.selected_game else ""
-        tools = (self._world_components or {}).get(module, [])
-        view.game_component_count = len(tools)
+        components = (self._world_components or {}).get(module, [])
+        # The primary client names the Play button, so it gets no strip button
+        # of its own; everything else a world declares does -- including a
+        # second client such as a map tracker.
+        primary_client = self._selected_game_client()
+        tools = [c for c in components if c is not primary_client]
+        # The YAML creator needs a game, not a world declaration, so every
+        # selected game gets one appended -- including worlds that declare
+        # nothing at all.
+        if module:
+            tools.append(YamlComponent(module))
         self._component_buttons = [self._make_component_button(tool) for tool in tools]
         for button in self._component_buttons:
             box.add_widget(button)
+        self.update_connect_button_text()
 
-    def _make_component_button(self, tool) -> MDButton:
-        button = MDButton(
-            MDButtonIcon(icon=self._COMPONENT_TYPE_ICONS.get(tool.type, "wrench")),
-            MDButtonText(text=tool.name),
-            style="tonal",
-            size_hint_x=1,
-        )
+    def _make_component_button(self, tool) -> LauncherComponentButton:
+        button = LauncherComponentButton(icon=self._COMPONENT_TYPE_ICONS.get(tool.type, "wrench"),text=tool.name)
         button.bind(on_release=lambda *_args, t=tool: self._activate_world_component(t))
         return button
 
     def _activate_world_component(self, tool):
-        if getattr(tool, "type", "tool") == "client":
+        component_type = getattr(tool, "type", "tool")
+        if component_type == "yaml":
+            self.create_yaml()
+            return
+        if component_type == "client":
             self._spawn_component_client(tool)
             return
-        import worlds.LauncherComponents as launcher_components
+        import LauncherComponents as launcher_components
         run_fn = getattr(launcher_components, "run_world_tool", None)
         if run_fn is None:
             MessageBox("World Tool", "This core version cannot run world tools.", is_error=True).open()
@@ -1164,7 +1236,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         if port_error:
             MessageBox("Invalid Port", port_error, is_error=True).open()
             return
-        from worlds.LauncherComponents import spawn_client
+        from BaseUtils import spawn_client
 
         host_port, slot_name, password = self._raw_connect_inputs()
         try:
@@ -1182,6 +1254,80 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             return
         self._persist_last_connect(host_port, slot_name)
         self._check_spawn_health(process, tool.name)
+
+    # Nav drawer icons for builtin tool components, keyed by display name.
+    # Anything core adds that isn't listed here falls back to a toolbox.
+    _BUILTIN_DRAWER_ICONS = {
+        "Open host.yaml": "file-cog",
+        "Install APWorld": "package-down",
+        "Export Datapackage": "database-export",
+        "Build APWorlds": "package-variant",
+    }
+
+    def _rebuild_nav_drawer_menu(self):
+        """Repaint everything below the drawer's static Host/Generate/Patch
+        items: builtin tool components, tools from client-less worlds, and
+        the Settings tail. Runs once at startup (Settings only -- the tool
+        sections need the manifest scan) and again on every scan repaint,
+        including the post-Install-APWorld rescan."""
+        menu = self.nav_menu
+        for widget in self._drawer_widgets:
+            menu.ids.menu.remove_widget(widget)
+        self._drawer_widgets = []
+
+        def _add(widget):
+            self._drawer_widgets.append(widget)
+            menu.add_widget(widget)
+
+        tool_entries = []
+        if self._world_components is not None:
+            # The scan worker already imported core LauncherComponents, so
+            # building the builtin entries here is a sys.modules hit.
+            from mwgg_gui.launcher.launcher_components import builtin_menu_entries
+            try:
+                tool_entries = builtin_menu_entries()
+            except Exception:
+                logger.exception("Nav drawer: builtin components unavailable")
+        if tool_entries:
+            _add(MDNavigationDrawerDivider())
+            _add(NavDrawerLabel(text="Tools"))
+            for entry in tool_entries:
+                button = LauncherNavDrawerButton(
+                    icon=self._BUILTIN_DRAWER_ICONS.get(entry.title, "toolbox-outline"),
+                    text=entry.title)
+                button.bind(on_release=lambda *_a, entry=entry: entry.activate())
+                _add(button)
+
+        world_tools = self._clientless_world_tools()
+        if world_tools:
+            _add(MDNavigationDrawerDivider())
+            _add(NavDrawerLabel(text="World Tools"))
+            for tool in world_tools:
+                button = LauncherNavDrawerButton(
+                    icon=self._COMPONENT_TYPE_ICONS.get(tool.type, "wrench"),
+                    text=tool.name)
+                button.bind(on_release=lambda *_a, t=tool: self._activate_world_component(t))
+                _add(button)
+
+        _add(MDNavigationDrawerDivider())
+        settings_button = LauncherNavDrawerButton(icon="cog", text="Settings")
+        settings_button.bind(on_release=lambda *_a: self.app.change_screen("settings"))
+        _add(settings_button)
+
+    def _clientless_world_tools(self) -> list:
+        """Tools/adjusters from installed worlds that declare no client
+        component. Such worlds never show up in the game list, so the nav
+        drawer is their only surface. Reaching the manifest scan requires an
+        actual install (Install APWorld / custom_worlds) -- deliberately no
+        looser autodetection for something that runs arbitrary code."""
+        tools = []
+        for module in sorted(self._world_components or {}):
+            components = self._world_components[module]
+            if any(getattr(c, "type", "") == "client" for c in components):
+                continue
+            tools.extend(c for c in components
+                         if getattr(c, "type", "") in ("tool", "adjuster"))
+        return tools
 
     def get_current_game(self) -> tuple[str, str] | None:
         """Return the currently selected (module_name, display_name) tuple,
@@ -1232,13 +1378,13 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
     def _spawn_client(self, game_module: str, game_label: str) -> None:
         """Spawn a detached per-game client process and return to the idle
-        launcher screen. `worlds.LauncherComponents.spawn_client` owns exe
+        launcher screen. `BaseUtils.spawn_client` owns exe
         resolution, argv flags, child env, and OS-level detachment -- the
         launcher only supplies the raw connect inputs, never builds argv
         itself. The pre-flight verify path and the skip path both funnel
         through here.
         """
-        from worlds.LauncherComponents import spawn_client
+        from BaseUtils import spawn_client
 
         host_port, slot_name, password = self._raw_connect_inputs()
         connect_button = self.launcher_view.ids.connect_button
@@ -1273,7 +1419,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     def spawn_text_client(self) -> None:
         """Tools-card entry point: spawn a Text Client independent of the
         Play tab's game selection/client-type radios."""
-        from worlds.LauncherComponents import spawn_client
+        from BaseUtils import spawn_client
 
         host_port, slot_name, password = self._raw_connect_inputs()
 
