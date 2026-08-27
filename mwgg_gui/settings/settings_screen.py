@@ -16,13 +16,13 @@ import logging
 import os
 
 from kivymd.uix.screen import MDScreen
-from kivymd.uix.navigationdrawer import MDNavigationDrawerMenu, MDNavigationDrawerDivider
-from kivymd.uix.navigationdrawer.navigationdrawer import MDNavigationDrawerItem, MDNavigationDrawerLabel
+from kivymd.uix.navigationdrawer import MDNavigationDrawerDivider
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.screenmanager import MDScreenManager
 from kivymd.uix.navigationdrawer import MDNavigationLayout
 from kivymd.uix.label import MDLabel
 
+from mwgg_gui.components.nav_drawer import NavDrawerMenu, NavDrawerLabel, NavDrawerItem
 from mwgg_gui.settings.settings_components import (
     ConnectionSettings,
     ThemingSettings,
@@ -124,32 +124,6 @@ SettingsNavLayout:
                 id: settings_nav_menu
 
 
-<NavDrawerMenu>:
-    orientation: "vertical"
-
-<NavDrawerLabel>:
-    font_style: "Title"
-    bold: True
-    padding: [0, dp(16), 0, 0]
-    theme_text_color: "Custom"
-    text_color: app.theme_cls.primaryColor
-
-<NavDrawerItem>:
-    MDNavigationDrawerItemLeadingIcon:
-        icon: root.icon
-        theme_icon_color: "Custom"
-        icon_color: app.theme_cls.onPrimaryContainerColor
-    MDNavigationDrawerItemText:
-        text: root.text
-        shorten: True
-        theme_text_color: "Custom"
-        text_color: app.theme_cls.onSecondaryContainerColor
-    MDNavigationDrawerItemTrailingText:
-        text: root.trailing_text
-        width: dp(32)
-        theme_text_color: "Custom"
-        text_color: app.theme_cls.onTertiaryContainerColor
-
 <SettingsScreenSection>:
     orientation: "vertical"
     size_hint_y: None
@@ -160,45 +134,6 @@ SettingsNavLayout:
 
 class SettingsNavLayout(MDNavigationLayout):
     settings_nav_menu: ObjectProperty
-
-class NavDrawerMenu(MDNavigationDrawerMenu):
-    menu_label = StringProperty("")
-
-    def on_start(self):
-        self.ids.menu.size_hint_x = None
-        self.ids.menu.width = self.width - dp(8)
-
-class NavDrawerLabel(MDNavigationDrawerLabel):
-    """
-    Setting labels (Connection, Theming, Interface)
-
-    TODO: This isn't quite right, needs to be redesigned
-    """
-    pass
-
-class NavDrawerItem(MDNavigationDrawerItem):
-    """
-    Setting items (Hostname, Host Authentication, etc.)
-    """
-    icon = StringProperty("")
-    text = StringProperty("")
-    trailing_text = StringProperty("")
-    screen = StringProperty("")
-    manager = ObjectProperty(None)
-
-
-    def __init__(self, manager, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.manager = manager
-        self.bind(on_release=self.screen_callback)
-
-    def screen_callback(self, *args):
-        try:
-            logger.debug(f"Navigating to screen: {self.screen}")
-            self.manager.current = self.screen
-            logger.debug("Navigation complete")
-        except Exception as e:
-            logger.error(f"Error during navigation: {e}", exc_info=True)
 
 class SettingsScreenSection(MDScreen):
     '''
