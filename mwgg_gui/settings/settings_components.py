@@ -457,7 +457,7 @@ class ConnectionSettings(SettingsScrollBox):
         # Profile section
         profile_section = SettingsSection(name="profile_settings", title="Profile")
 
-        # Avatar — uploaded via the profile dialog's file chooser.
+        # Avatar: uploaded via the profile dialog's file chooser.
         avatar_box = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(55), padding=dp(4), spacing=dp(4))
         avatar_box.add_widget(MDLabel(text="Avatar", theme_text_color="Primary", size_hint_x=0.7))
         avatar_button = MDButton(

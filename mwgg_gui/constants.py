@@ -17,10 +17,9 @@ __all__ = (
     "AVATAR_FILE_EXTENSIONS",
 )
 
-# Process roles, mirrored from the MWGG_ROLE env var set by the monorepo's
-# MultiWorld.py/Launcher.py (see MultiMDApp.__init__). "launcher" shows the
-# game list and spawns clients as separate processes; "client" boots
-# straight to the console screen for one already-selected game.
+# Process roles from the MWGG_ROLE env var (set by MultiWorld.py/Launcher.py):
+# "launcher" spawns clients as separate processes; "client" boots straight to
+# one game's console.
 ROLE_LAUNCHER = "launcher"
 ROLE_CLIENT = "client"
 
@@ -28,9 +27,8 @@ ROLE_CLIENT = "client"
 # https://multiworld.gg once the uploader is rolled out there.
 MWGG_WEBHOST_BASE = "https://mw.prismativerse.com"
 
-# Hosts whose avatar URLs the client is willing to render. URLs that fail this
-# check (legacy YAML entries, manually-edited persistent storage, or hostile
-# Set values from other clients) collapse to the default avatar.
+# Avatar URLs failing this host check (legacy YAML entries, hand-edited
+# storage, hostile Set values) collapse to the default avatar.
 TRUSTED_AVATAR_HOSTS = ("multiworld.gg", "mw.prismativerse.com")
 
 AVATAR_TOKEN_MINT_URL = f"{MWGG_WEBHOST_BASE}/api/avatar/token"
@@ -67,10 +65,9 @@ CONSOLE_ACTIONS = [
     "type":         "assist",
 },
 {
-    # Reconnect UI for client-direct processes, which never build a
-    # launcher screen (see components/connect_dialog.py). Special-cased in
-    # BottomAppBar.on_bar_action to open the dialog instead of animating
-    # the text input like the other entries.
+    # Client-direct reconnect (see components/connect_dialog.py); special-cased
+    # in BottomAppBar.on_bar_action to open the dialog instead of animating the
+    # text input.
     "id":           "connect",
     "buttonicon":   "lan-connect",
     "icon":         "lan-connect",
@@ -83,9 +80,8 @@ CONSOLE_ACTIONS = [
 
 LAUNCHER_ACTIONS = [
 {
-    # Special-cased in BottomAppBar.on_bar_action to call the launcher
-    # screen's connect() directly instead of animating the text input --
-    # the launcher's command processor has no live connection to talk to.
+    # Special-cased in BottomAppBar.on_bar_action to call the launcher screen's
+    # connect() directly -- no live connection for the command processor.
     "id":           "launch",
     "buttonicon":   "rocket-launch",
     "icon":         "rocket-launch",

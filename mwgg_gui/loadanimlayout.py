@@ -25,7 +25,7 @@ from kivy.uix.effectwidget import PixelateEffect
 from kivymd.uix.label import MDLabel
 
 MIN_SPEED = 0.016  # Fastest speed (60fps)
-MAX_SPEED = 0.050   # Slowest speed (10fps)
+MAX_SPEED = 0.050   # Slowest speed (20fps)
 DEFAULT_SPEED = 0.040  # Default speed (40ms)
 
 class CallbackHandler(logging.Handler):
@@ -68,7 +68,6 @@ class MWGGLoadingLayout(MDRelativeLayout):
         super().__init__(*args, **kwargs)
         self.app = App.get_running_app()
         
-        # Create the image box for the loading animation
         self.img_box = MDBoxLayout(theme_bg_color="Custom", md_bg_color=(0,0,0,0), pos_hint={'center_x': 0.5, 'center_y': 0.5}, size=(200,200))
         img = PILImage.open(img_path)
         for i, frame in enumerate(ImageSequence.Iterator(img)):
@@ -95,11 +94,9 @@ class MWGGLoadingLayout(MDRelativeLayout):
             self.add_widget(self.img_box)
             if display_logs and self.log_box is not None:
                 self.add_widget(self.log_box)
-            # Use the new enable_effects method instead of directly setting effects
             if hasattr(self.app, 'enable_effects'):
                 self.app.enable_effects()
             else:
-                # Fallback to old method
                 self.app.pixelate_effect.effects = [PixelateEffect(pixel_size=3)]
             self._clock_event = Clock.schedule_interval(self.update_frame, speed)
     
@@ -108,14 +105,11 @@ class MWGGLoadingLayout(MDRelativeLayout):
         if not self.loading:
             return
             
-        # Clamp speed between MIN_SPEED and MAX_SPEED
         speed = max(self.MIN_SPEED, min(self.MAX_SPEED, speed))
         
-        # Cancel existing clock event
         if self._clock_event:
             self._clock_event.cancel()
         
-        # Schedule new clock event with new speed
         self._clock_event = Clock.schedule_interval(self.update_frame, speed)
     
     def update_frame(self, dt):
@@ -144,9 +138,7 @@ class MWGGLoadingLayout(MDRelativeLayout):
                 self.log_box = None
             if self.img_box is not None and self.img_box.parent:
                 self.remove_widget(self.img_box)
-            # Use the new disable_effects method instead of directly clearing effects
             if hasattr(self.app, 'disable_effects'):
                 self.app.disable_effects()
             else:
-                # Fallback to old method
                 self.app.pixelate_effect.effects = []  # Hide blur

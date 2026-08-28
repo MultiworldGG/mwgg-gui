@@ -47,9 +47,8 @@ def world_tool_activator(run_fn, tool, custom: bool = True) -> Callable[[], None
                 f"'{tool.name}' failed: {err}",
                 is_error=True,
             ).open())
-    #TODO: apworld installs simply copy the world into the custom_worlds directory
-    #      we are concerned with other tools that are bundled as .apworlds (for example, a datapackage reader)
-    #      we need to give that a child process (preferably with less execution privileges)
+    # TODO: tools bundled as .apworlds (e.g. a datapackage reader) should run
+    #       in a child process, preferably with reduced execution privileges.
     def _start():
         threading.Thread(target=_run, name=f"world-tool-{tool.module}", daemon=True).start()
 
@@ -69,9 +68,8 @@ def world_tool_activator(run_fn, tool, custom: bool = True) -> Callable[[], None
     )
 
 
-# Builtins with a static surface elsewhere: Generate/Host/Open Patch are the
-# nav drawer's own Host/Generate/Patch items, Text Client is a play-pane
-# client-type radio.
+# Builtins with a static surface elsewhere: Generate/Host/Open Patch are nav
+# drawer items, Text Client is a play-pane client-type radio.
 _STATIC_SURFACE_COMPONENTS = frozenset({"Generate", "Host", "Text Client", "Open Patch"})
 
 # Builtins surfaced as topappbar trailing icons rather than drawer items.
