@@ -105,7 +105,7 @@ class MWGGLoadingLayout(MDRelativeLayout):
         if not self.loading:
             return
             
-        speed = max(self.MIN_SPEED, min(self.MAX_SPEED, speed))
+        speed = max(MIN_SPEED, min(MAX_SPEED, speed))
         
         if self._clock_event:
             self._clock_event.cancel()
