@@ -888,7 +888,7 @@ class HintListPanel(GameListPanel):
             if classification == "Progression":
                 behavior["elevation_level"] = 5
                 behavior["shadow_color"] = item_colors["progression"]
-            if classification == "Progression - Requried for Goal":
+            if classification == "Progression - Required for Goal":
                 behavior["elevation_level"] = 6
                 behavior["shadow_color"] = item_colors["progression_goal"]
             if classification == "Found":

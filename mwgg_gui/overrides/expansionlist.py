@@ -236,7 +236,7 @@ class MWBaseListItem(MDBoxLayout, CommonElevationBehavior):
         if self.classification == "Progression":
             self.elevation_level = 5
             self.shadow_color = item_colors["progression"]
-        if self.classification == "Progression - Requried for Goal":
+        if self.classification == "Progression - Required for Goal":
             self.elevation_level = 6
             self.shadow_color = item_colors["goal"]
         if self.found == "Found":
