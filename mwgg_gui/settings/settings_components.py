@@ -824,7 +824,6 @@ class ThemingSettings(SettingsScrollBox):
             # Create a closure that captures the current attr_name
             def make_save_handler(attr_name):
                 def save_handler(attr_name, color_attr):
-                    print(f"Saving color {attr_name}: {color_attr}")  # Debug print
                     self.theme_mw.save_markup_color(attr_name, color_attr)
                 return save_handler
             
