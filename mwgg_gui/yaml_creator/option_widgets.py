@@ -7,8 +7,8 @@ module. Descriptor shape per type is documented in `world_data.py`.
 
 Every widget extends `OptionRow` and exposes:
   - `option_name` : str
-  - `value`       : kivy property reflecting the user's current pick
-  - dispatches `on_value` when the user changes the input
+  - `value`       : kivy property reflecting the user's current pick;
+    listeners subscribe with `bind(value=cb)` (see OptionRow)
 
 Factory `widget_for_option(option_name, descriptor, world)` picks the
 right class. `world` is the `data["world"]` dict (item/location names
@@ -17,7 +17,8 @@ empty and we have to fall back to the world's full name list.
 
 Item-name and location-name -valued options always route to the
 RecycleView-backed widgets in `mass_select.py` (any chip-per-key wrap
-froze the loading animation for non-trivial item counts).
+froze the loading animation for non-trivial item counts). Option sets
+whose keys don't fit chips (see `_chips_fit`) route there too.
 
 References:
   - WebHostLib/templates/playerOptions/macros.html — web equivalent
@@ -190,12 +191,11 @@ class OptionTitle(MDBoxLayout):
 class OptionRow(MDBoxLayout):
     """Base for every option row widget.
 
-    `value` is a Kivy `ObjectProperty` — listeners can subscribe with
-    either `bind(value=cb)` (callback gets `(instance, value)`) or
-    `bind(on_value=cb)` (Kivy auto-creates the `on_value` event from
-    the property; same `(instance, value)` signature). We rely on the
-    property's auto-dispatch and don't register a custom `on_value`
-    event ourselves — doing both at once miscounts callback args.
+    `value` is a Kivy `ObjectProperty` — listeners subscribe with
+    `bind(value=cb)` (callback gets `(instance, value)`). Kivy creates
+    `on_<prop>` handlers only inside KV rules; a Python
+    `bind(on_value=cb)` is silently dropped because no `on_value`
+    event is registered.
 
     Subclasses should:
       * build their widget tree in `__init__` (no initial widget state)
@@ -243,6 +243,19 @@ class OptionRow(MDBoxLayout):
         frame after `__init__`. Override in subclasses; default is a
         no-op for rows that don't need post-KV widget state setup."""
 
+    def apply_value(self, value):
+        """Translate an externally-supplied `value` (Sync -> Form) into
+        BOTH `self.value` and widget state. Unlike a bare `self.value =
+        value` assignment, this must leave every internal (selected
+        sets, counters, slider position, ...) consistent so the next
+        user interaction doesn't recompute `value` from stale state and
+        silently clobber the sync. Override in stateful subclasses;
+        base is a plain passthrough for rows with no internal mirror of
+        `value` (e.g. OptionDictRow). Tolerate bad/mismatched incoming
+        values (EAFP: skip, keep old state) - sync must never crash on
+        weird YAML."""
+        self.value = value
+
     def is_default(self) -> bool:
         """Return True if `self.value` still matches the descriptor's
         default. Override for types whose `value` shape differs from
@@ -281,6 +294,11 @@ class ToggleRow(OptionRow):
     def apply_default(self):
         # Set after KV applies — MDSwitch.on_active touches self.ids.thumb.
         self._switch.active = bool(self.value)
+
+    def apply_value(self, value):
+        self.value = bool(value)
+        self._switch.active = self.value
+        self._label.text = "On" if self.value else "Off"
 
     def _on_active(self, _instance, active):
         self.value = bool(active)
@@ -385,6 +403,26 @@ class ChoiceRow(OptionRow):
                 self._default_key, ""
             )
 
+    def apply_value(self, value):
+        machine_by_key = getattr(self, "_machine_by_key", None)
+        if not machine_by_key:
+            self.value = value
+            return
+        key = next((k for k, m in machine_by_key.items() if m == value), None)
+        if key is None:
+            return  # unknown value — keep old state
+        self.value = value
+        items_by_key = getattr(self, "_items_by_key", None)
+        if items_by_key:
+            # `MDSegmentedButtonItem.active` only deactivates siblings via
+            # the widget's own on_release handler (a click) — a
+            # programmatic `.active = True` here leaves the previously
+            # active item lit unless we clear the others ourselves.
+            for k, item in items_by_key.items():
+                item.active = (k == key)
+        if hasattr(self, "_dropdown_item") and hasattr(self, "_label_by_key"):
+            self._dropdown_item.children[0].text = self._label_by_key.get(key, "")
+
     def is_default(self) -> bool:
         # Descriptor default is the option id (int); self.value is the
         # machine_name string. Compare via the lookup we built in init.
@@ -432,6 +470,23 @@ class TextChoiceRow(ChoiceRow):
         if text:
             self.value = text
 
+    def apply_value(self, value):
+        machine_by_key = getattr(self, "_machine_by_key", None)
+        if machine_by_key and value in machine_by_key.values():
+            self._custom_field.opacity = 0
+            self._custom_field.disabled = True
+            super().apply_value(value)
+            return
+        # Not one of the enumerated choices — treat as the custom value.
+        self.value = value
+        for item in getattr(self, "_items_by_key", {}).values():
+            item.active = False
+        self._custom_field.opacity = 1
+        self._custom_field.disabled = False
+        self._custom_field.text = str(value)
+        if hasattr(self, "_dropdown_item"):
+            self._dropdown_item.children[0].text = "Custom…"
+
 
 # ----- Range / NamedRange --------------------------------------------------
 
@@ -474,6 +529,18 @@ class RangeRow(OptionRow):
         # Setting slider.value fires _on_slider which also updates the
         # text field, so this single assignment covers both.
         self._slider.value = int(self.value)
+
+    def apply_value(self, value):
+        try:
+            ival = int(value)
+        except (TypeError, ValueError):
+            return  # unparseable — keep old state
+        start, end = self._range
+        ival = max(start, min(end, ival))
+        self.value = ival
+        # Setting slider.value fires _on_slider, which also syncs the
+        # text field — same cascade apply_default relies on.
+        self._slider.value = ival
 
     def _on_slider(self, _instance, val):
         ival = int(val)
@@ -536,13 +603,18 @@ class FreeTextRow(OptionRow):
     def apply_default(self):
         self._field.text = str(self.value)
 
+    def apply_value(self, value):
+        self.value = str(value) if value is not None else ""
+        self._field.text = self.value
+
 
 # ----- OptionSet / OptionList / small ItemSet, LocationSet -----------------
 
 
 class _ChipMultiSelect(OptionRow):
-    """Wrap of filter chips, one per key.
-    TODO:  This is broken, the interface expands to a very large size with blank space."""
+    """Wrap of filter chips, one per key. Only used for small,
+    short-labeled key sets (see `_chips_fit`); anything bigger routes
+    to `ChecklistSelectRow` in mass_select.py."""
 
     def __init__(self, descriptor, keys, default_selected=None, **kwargs):
         super().__init__(descriptor, **kwargs)
@@ -550,10 +622,19 @@ class _ChipMultiSelect(OptionRow):
         self.value = sorted(default_selected)
         self._selected = set(default_selected)
         self._chips_by_key: dict = {}
+        # Guards _on_chip_active during apply_value's bulk chip.active
+        # writes — those are just the visual echo of a self._selected we
+        # already computed, not new user picks.
+        self._applying_value = False
 
+        # `height=dp(0)` before the bind — otherwise the parent's
+        # minimum_height reads the Kivy Widget default (dp(100)) until
+        # minimum_height first fires (same race as mass_select.py's
+        # chip wrap).
         wrap = MDStackLayout(
             spacing=dp(4),
             size_hint_y=None,
+            height=dp(0),
             padding=[0, dp(4), 0, dp(4)],
         )
         wrap.bind(minimum_height=wrap.setter("height"))
@@ -574,12 +655,32 @@ class _ChipMultiSelect(OptionRow):
             if key in self._selected and not chip.active:
                 chip.active = True
 
+    def apply_value(self, value):
+        try:
+            incoming = set(value or [])
+        except TypeError:
+            return  # not iterable — keep old state
+        selected = {
+            key for key in self._chips_by_key
+            if key in incoming or str(key) in incoming
+        }
+        self._selected = selected
+        self.value = sorted(self._selected)
+        self._applying_value = True
+        try:
+            for key, chip in self._chips_by_key.items():
+                chip.active = key in self._selected
+        finally:
+            self._applying_value = False
+
     def is_default(self) -> bool:
         # Compare as sorted lists — chip order doesn't carry meaning,
         # and `self.value` is always sorted.
         return sorted(self.value or []) == sorted(self.descriptor.get("default") or [])
 
     def _on_chip_active(self, instance, active):
+        if self._applying_value:
+            return
         if active:
             self._selected.add(instance._option_key)
         else:
@@ -611,6 +712,9 @@ class OptionCounterRow(OptionRow):
         col = MDBoxLayout(
             orientation="vertical",
             size_hint_y=None,
+            # `height=0` before the bind — an empty col never dispatches
+            # minimum_height, leaving the dp(100) Widget default.
+            height=0,
             spacing=dp(2),
         )
         col.bind(minimum_height=col.setter("height"))
@@ -640,6 +744,20 @@ class OptionCounterRow(OptionRow):
         return row
 
     def apply_default(self):
+        for key, field in self._fields_by_key.items():
+            field.text = str(self._counts.get(key, 0))
+
+    def apply_value(self, value):
+        if not isinstance(value, dict):
+            return  # not a mapping — keep old state
+        counts = {}
+        for key in self._fields_by_key:
+            try:
+                counts[key] = max(0, int(value.get(key, 0)))
+            except (TypeError, ValueError):
+                counts[key] = self._counts.get(key, 0)
+        self._counts = counts
+        self.value = dict(self._counts)
         for key, field in self._fields_by_key.items():
             field.text = str(self._counts.get(key, 0))
 
@@ -732,8 +850,11 @@ def widget_for_option(descriptor: dict, world: dict) -> OptionRow:
             from .mass_select import MassMultiSelectRow
             return MassMultiSelectRow(descriptor, world, kind="location")
         if t == "option_set":
-            # Arbitrary, small key set — chips are fine.
-            return OptionSetRow(descriptor)
+            keys = [str(k) for k in (descriptor.get("valid_keys") or [])]
+            if _chips_fit(keys):
+                return OptionSetRow(descriptor)
+            from .mass_select import ChecklistSelectRow
+            return ChecklistSelectRow(descriptor)
 
         if t == "option_counter":
             if descriptor.get("verify_item_name") or descriptor.get("verify_location_name"):
@@ -753,6 +874,21 @@ def widget_for_option(descriptor: dict, world: dict) -> OptionRow:
 
 
 # ----- helpers -------------------------------------------------------------
+
+
+CHIP_MAX_KEYS = 15
+CHIP_MAX_LABEL_WORDS = 2
+CHIP_MAX_LABEL_CHARS = 24
+
+
+def _chips_fit(keys) -> bool:
+    """Chips only for small sets of short labels; wordy keys (OoT's
+    dungeon names, trick descriptions) wrap into an unusable chip wall
+    and route to `ChecklistSelectRow` instead."""
+    return len(keys) <= CHIP_MAX_KEYS and all(
+        len(k.split()) <= CHIP_MAX_LABEL_WORDS and len(k) <= CHIP_MAX_LABEL_CHARS
+        for k in keys
+    )
 
 
 def _counter_keys(descriptor: dict, world: dict):

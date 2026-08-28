@@ -5,9 +5,12 @@ Backed by MDRecycleView so scrolling stays smooth even with multi-thousand
 item lists. The rest of the codebase treats RecycleView as legacy, but
 nothing else holds up at ALTTP-class scales — see plan for rationale.
 
-`MassMultiSelectRow` — for ItemSet / LocationSet.
-`MassCounterRow`     — for OptionCounter with `verify_item_name` or
-                       `verify_location_name`.
+`MassMultiSelectRow`  — for ItemSet / LocationSet.
+`MassCounterRow`      — for OptionCounter with `verify_item_name` or
+                        `verify_location_name`.
+`ChecklistSelectRow`  — for OptionSet whose keys don't fit chips (see
+                        `_chips_fit` in option_widgets.py); search +
+                        checkbox list + summary, no chip wrap.
 
 Layout:
     [search MDTextField                                          ]
@@ -42,10 +45,11 @@ from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
 from .option_widgets import OptionRow
 
-__all__ = ("MassMultiSelectRow", "MassCounterRow")
+__all__ = ("MassMultiSelectRow", "MassCounterRow", "ChecklistSelectRow")
 
 ROW_HEIGHT = dp(40)
 LIST_HEIGHT = dp(280)
+LIST_HEIGHT_COMPACT = dp(200)
 
 
 Builder.load_string(
@@ -148,6 +152,11 @@ class MassSelectViewRow(RecycleDataViewBehavior, MDBoxLayout):
         return super().refresh_view_attrs(rv, index, data)
 
     def on_checkbox(self, active):
+        # Keep the view property in step with the checkbox: recycling
+        # only re-applies `selected` when the new data value differs from
+        # the property, so a stale property would let the old `active`
+        # survive onto another key's row.
+        self.selected = active
         if self.owner is None:
             return
         self.owner._set_selected(self.key, active)
@@ -278,6 +287,32 @@ class MassMultiSelectRow(OptionRow):
             self._selected.discard(key)
         self.value = sorted(self._selected)
         self._rebuild_chips()
+        # Freshen the data entry in place so a recycled view row doesn't
+        # reapply a stale `selected` — same guard as ChecklistSelectRow.
+        for entry in self._rv.data:
+            if entry["key"] == key:
+                entry["selected"] = active
+                break
+
+    def apply_value(self, value):
+        try:
+            incoming = {str(v) for v in (value or [])}
+        except TypeError:
+            return  # not iterable — keep old state
+        if self._data_prepared:
+            # Keep only keys the world actually has; unknown names from
+            # hand-edited YAML are silently dropped rather than crashing.
+            selected = {k for k in self._all_keys if k in incoming}
+        else:
+            # prepare_data() hasn't sorted the real key list yet — accept
+            # as-is, same as the __init__ default path. Recomputed once
+            # prepare_data()/_refresh() runs against real keys.
+            selected = incoming
+        self._selected = selected
+        self.value = sorted(self._selected)
+        self._rebuild_chips()
+        if self._data_prepared:
+            self._refresh(self._search.text)
 
     def is_default(self) -> bool:
         return sorted(self.value or []) == sorted(self.descriptor.get("default") or [])
@@ -297,6 +332,97 @@ class MassMultiSelectRow(OptionRow):
             chip._option_key = key
             chip.bind(on_release=lambda _i, k=key: self._set_selected(k, False))
             self._chip_wrap.add_widget(chip)
+
+
+# ----- Checklist (OptionSet) -----------------------------------------------
+
+
+class ChecklistSelectRow(OptionRow):
+    """Search + checkbox list + "N of M selected" summary, for
+    option_sets with too many or too wordy keys for chips. No chip wrap
+    by design: every child has a fixed height, so the row is
+    width-independent and the expansion panel's height math stays exact.
+    Unlike the Mass rows, option_set values always emit into YAML, so
+    `skip_when_default` stays at the base False."""
+
+    def __init__(self, descriptor: dict, **kwargs):
+        super().__init__(descriptor, **kwargs)
+        self._all_keys = sorted(str(k) for k in (descriptor.get("valid_keys") or []))
+        self._selected = {str(k) for k in (descriptor.get("default") or [])}
+        self.value = sorted(self._selected)
+
+        self._search = MDTextField(
+            MDTextFieldHintText(text="Search…"),
+            size_hint_y=None,
+            height=dp(48),
+        )
+        self._search.bind(text=lambda _i, t: self._refresh(t))
+        self.add_widget(self._search)
+
+        self._summary = MDLabel(
+            text=self._summary_text(),
+            theme_text_color="Secondary",
+            size_hint_y=None,
+            height=dp(24),
+        )
+        self.add_widget(self._summary)
+
+        self._rv = MassRecycleView(size_hint_y=None, height=LIST_HEIGHT_COMPACT)
+        self.add_widget(self._rv)
+        self._refresh("")
+
+    def _refresh(self, query: str):
+        q = (query or "").strip().lower()
+        if q:
+            keys = [k for k in self._all_keys if q in k.lower()]
+        else:
+            # Selected first so the current picks are visible without
+            # scrolling. Reorder only on query change — never on toggle —
+            # so rows don't jump under the cursor.
+            keys = [k for k in self._all_keys if k in self._selected] + [
+                k for k in self._all_keys if k not in self._selected
+            ]
+        keys = keys[:500]
+        self._rv.data = [
+            {
+                "label": k,
+                "key": k,
+                "selected": k in self._selected,
+                "owner": self,
+            }
+            for k in keys
+        ]
+
+    def _set_selected(self, key: str, active: bool):
+        if active:
+            self._selected.add(key)
+        else:
+            self._selected.discard(key)
+        self.value = sorted(self._selected)
+        self._summary.text = self._summary_text()
+        # Freshen the data entry in place (no refresh, no reorder) so a
+        # recycled view row doesn't reapply a stale `selected` and
+        # silently undo the toggle.
+        for entry in self._rv.data:
+            if entry["key"] == key:
+                entry["selected"] = active
+                break
+
+    def apply_value(self, value):
+        try:
+            incoming = {str(v) for v in (value or [])}
+        except TypeError:
+            return  # not iterable — keep old state
+        self._selected = {k for k in self._all_keys if k in incoming}
+        self.value = sorted(self._selected)
+        self._summary.text = self._summary_text()
+        self._refresh(self._search.text)
+
+    def is_default(self) -> bool:
+        return sorted(self.value or []) == sorted(self.descriptor.get("default") or [])
+
+    def _summary_text(self) -> str:
+        return f"{len(self._selected)} of {len(self._all_keys)} selected"
 
 
 # ----- Counter (Mass) ------------------------------------------------------
@@ -377,6 +503,34 @@ class MassCounterRow(OptionRow):
         self._counts[key] = int(count)
         self.value = self._nonzero_counts()
         self._summary.text = self._summary_text()
+        # Freshen the data entry in place so a recycled view row doesn't
+        # redisplay the count it was built with.
+        for entry in self._rv.data:
+            if entry["key"] == key:
+                entry["count"] = int(count)
+                break
+
+    def apply_value(self, value):
+        if not isinstance(value, dict):
+            return  # not a mapping — keep old state
+        try:
+            counts = {str(k): max(0, int(v)) for k, v in value.items()}
+        except (TypeError, ValueError):
+            return
+        if self._data_prepared:
+            # Full replace against the real key set: keys the incoming
+            # value omits go back to zero; unknown keys are dropped.
+            for key in self._all_keys:
+                self._counts[key] = counts.get(key, 0)
+        else:
+            # prepare_data() hasn't backfilled zeros for the rest of the
+            # world's keys yet — its setdefault() loop will do that later
+            # without clobbering what we store here.
+            self._counts = counts
+        self.value = self._nonzero_counts()
+        self._summary.text = self._summary_text()
+        if self._data_prepared:
+            self._refresh(self._search.text)
 
     def is_default(self) -> bool:
         default = {k: int(v) for k, v in (self.descriptor.get("default") or {}).items() if v}

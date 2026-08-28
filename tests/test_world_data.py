@@ -20,10 +20,10 @@ def _completed(returncode=0, stdout='{"ok": true}', stderr=""):
 
 
 def _stub_launcher_components(monkeypatch, exe, component="generate-component"):
-    """Mount fake worlds / worlds.LauncherComponents modules that record the
-    delegation calls — the real worlds package is never imported."""
+    """Mount a fake top-level LauncherComponents module that records the
+    delegation calls — the real core module is never imported."""
     calls = {}
-    lc = types.ModuleType("worlds.LauncherComponents")
+    lc = types.ModuleType("LauncherComponents")
 
     def find_component(name):
         calls["find_component"] = name
@@ -35,10 +35,7 @@ def _stub_launcher_components(monkeypatch, exe, component="generate-component"):
 
     lc.find_component = find_component
     lc.get_exe = get_exe
-    worlds = types.ModuleType("worlds")
-    worlds.LauncherComponents = lc
-    monkeypatch.setitem(sys.modules, "worlds", worlds)
-    monkeypatch.setitem(sys.modules, "worlds.LauncherComponents", lc)
+    monkeypatch.setitem(sys.modules, "LauncherComponents", lc)
     return calls
 
 

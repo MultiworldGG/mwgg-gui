@@ -158,6 +158,7 @@ class OptionGroupPanel(MDExpansionPanel):
         self.row_widgets: dict = {}
         self.header_layout: OptionGroupHeader | None = None
         self._rows_prepared = False
+        self.bind(on_open=self._resync_content_height)
 
     # -- height math overrides ---------------------------------------------
     #
@@ -180,6 +181,24 @@ class OptionGroupPanel(MDExpansionPanel):
         if not self._content:
             return
         self._original_content_height = self._content.minimum_height
+
+    def _resync_content_height(self, *_args):
+        # Until the first `open()`, kivymd keeps the content detached
+        # (`MDExpansionPanel.add_widget` stashes it without attaching),
+        # so every pre-open measurement sees the content laid out at the
+        # 100 px Widget-default width — width-dependent rows (chip
+        # wraps) report a hugely inflated minimum_height there, and the
+        # open animation drives `height` to that stale target, leaving
+        # blank space below the rows. Re-measure once the open animation
+        # completes and the content has laid out at real width; later
+        # minimum_height changes propagate via the content's KV
+        # `height: self.minimum_height` binding.
+        content = self._content
+        if not content:
+            return
+        self._original_content_height = content.minimum_height
+        if self.is_open:
+            content.height = content.minimum_height
 
     async def populate(self):
         """Async populate. Caller awaits this from the form's own
@@ -206,7 +225,10 @@ class OptionGroupPanel(MDExpansionPanel):
                     desc.get("name"), e, exc_info=True,
                 )
                 continue
-            widget.bind(on_value=self._on_value_changed)
+            # Bind the property, not `on_value`: no row registers an
+            # `on_value` event, and Kivy silently drops binds to
+            # unregistered event names (see OptionRow docstring).
+            widget.bind(value=self._on_value_changed)
             self.row_widgets[desc["name"]] = widget
             self.panel_content.add_widget(widget)
 
@@ -222,6 +244,10 @@ class OptionGroupPanel(MDExpansionPanel):
         """
         if not self.is_open:
             self._prepare_rows()
+            # Refresh the animation target: kivymd captures it once,
+            # 0.8 s after construction, and never again — stale after
+            # any reflow (chip toggles, reopen at a new window width).
+            self._update_original_content_height(None)
             self.open()
         else:
             self.close()
@@ -278,6 +304,11 @@ class OptionsForm(MDList):
         self._world = world_data.get("world", {})
         self._groups = world_data.get("groups", {})
         self._panels: dict = {}
+        # Property binds fire on every `value` assignment, including the
+        # programmatic writes during build (`apply_default`) and Sync →
+        # Form (`apply`). Suppress dispatch for those so only user edits
+        # reach on_change.
+        self._suppress_change = True
 
     # -- subclasses override -----------------------------------------------
 
@@ -325,16 +356,14 @@ class OptionsForm(MDList):
         # Option rows schedule `apply_default` on the next Clock tick;
         # yield once more so those have run before we claim ready.
         await asynckivy.sleep(0)
+        self._suppress_change = False
         self.dispatch("on_ready")
 
     # -- value plumbing ----------------------------------------------------
 
     def _on_value_changed(self, _instance, _value):
-        logger.info(
-            "yaml_creator: on_value from %s = %r",
-            getattr(_instance, "option_name", _instance),
-            _value,
-        )
+        if self._suppress_change:
+            return
         self.dispatch("on_change", self.collect())
 
     def collect(self) -> dict:
@@ -357,14 +386,23 @@ class OptionsForm(MDList):
         return out
 
     def apply(self, options: dict):
-        for name, value in (options or {}).items():
-            widget = self._row_for(name)
-            if widget is None:
-                continue
-            try:
-                widget.value = value
-            except Exception as e:
-                logger.debug("apply(): %s rejected value: %s", name, e)
+        # Suppressed: an on_change here would re-render the preview over
+        # the very text Sync → Form just applied.
+        self._suppress_change = True
+        try:
+            for name, value in (options or {}).items():
+                widget = self._row_for(name)
+                if widget is None:
+                    continue
+                try:
+                    # apply_value (not a bare `widget.value = value`)
+                    # updates the row's internal state and visuals too —
+                    # see OptionRow.apply_value.
+                    widget.apply_value(value)
+                except Exception as e:
+                    logger.debug("apply(): %s rejected value: %s", name, e)
+        finally:
+            self._suppress_change = False
 
     def _row_for(self, name: str):
         for panel in self._panels.values():

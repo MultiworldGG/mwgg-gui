@@ -152,6 +152,10 @@ class WeightedRow(OptionRow):
         self._rows_container = MDBoxLayout(
             orientation="vertical",
             size_hint_y=None,
+            # `height=0` before the bind — a container that stays empty
+            # never dispatches minimum_height (already 0), which would
+            # leave the Kivy Widget default dp(100) as a blank gap.
+            height=0,
             spacing=dp(2),
         )
         self._rows_container.bind(
@@ -192,6 +196,29 @@ class WeightedRow(OptionRow):
 
     def _on_weight_change(self, key, weight):
         self._weights[key] = int(weight)
+        self._refresh_value()
+
+    def apply_value(self, value):
+        """Sync -> Form for a weighted row: `value` is {label: weight}."""
+        if not isinstance(value, dict):
+            return  # not a mapping — keep old state
+        try:
+            weights = {str(k): int(v) for k, v in value.items()}
+        except (TypeError, ValueError):
+            return
+        for key, row in self._row_widgets.items():
+            # `weight` is bound in KV as the slider's `value:` — this
+            # cascades into MDSlider.on_value -> `_on_weight_change`,
+            # the same path a manual drag takes, so `_weights` and the
+            # "most likely" chip stay correct without duplicating that
+            # logic here.
+            row.weight = weights.get(key, 0)
+        # Keys present in the incoming value but not one of our built-in
+        # rows (a custom text/range entry from a previous session) need
+        # a new row, same as the "Add value" control.
+        for key, weight in weights.items():
+            if key not in self._row_widgets and weight:
+                self._add_row(key, key, weight=weight, removable=True)
         self._refresh_value()
 
     def is_default(self) -> bool:

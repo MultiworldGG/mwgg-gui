@@ -39,19 +39,21 @@ class MessageBox(MDDialog):
 
     cancel_button: ObjectProperty
 
-    def __init__(self, title="", message="", callback: Callable[[bool], None] = None, is_error=False):
+    def __init__(self, title="", message="", callback: Callable[[bool], None] = None, is_error=False,
+                 ok_text="OK", cancel_text="Cancel"):
         super().__init__()
         self.title = title
         self.message = message
         self.callback = callback
         self.is_error = is_error
+        self.ok_text = ok_text
         self.app = MDApp.get_running_app()
         self.dialog = None
         self.cancel_button = Widget()
         if self.callback:
             self.cancel_button = MDButton(
                 MDButtonText(
-                    text="Cancel",
+                    text=cancel_text,
                     theme_text_color="Custom",
                     text_color=self.app.theme_cls.onSurfaceColor,
                 ),
@@ -88,7 +90,7 @@ class MessageBox(MDDialog):
                 self.cancel_button,
                 MDButton(
                     MDButtonText(
-                        text="OK",
+                        text=self.ok_text,
                         theme_text_color="Custom",
                         text_color=self.app.theme_cls.errorColor if self.is_error else self.app.theme_cls.onSurfaceColor,
                     ),

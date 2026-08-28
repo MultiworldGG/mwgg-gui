@@ -28,10 +28,15 @@ class LauncherComponentData:
     icon_name: Optional[str] = None
 
 
-def world_tool_activator(run_fn, tool) -> Callable[[], None]:
-    """Wrap a world tool/adjuster run behind the arbitrary-code warning with
-    the world's own suppression key. Returns a callable that, when invoked,
-     will either show the warning or run the tool."""
+def world_tool_activator(run_fn, tool, custom: bool = True) -> Callable[[], None]:
+    """Return a callable that runs a world tool/adjuster on a worker thread.
+
+    `custom` marks a world the user installed themselves into custom_worlds/:
+    its code is unreviewed, so it runs behind the arbitrary-code warning
+    under the world's own suppression key. Worlds bundled with the launcher
+    or pulled from the index are vetted before they ship, and their tools run
+    on the first click. Defaults to warning -- unknown provenance is not
+    vetted provenance."""
     def _run():
         try:
             run_fn(tool.module, tool.name)
@@ -48,9 +53,9 @@ def world_tool_activator(run_fn, tool) -> Callable[[], None]:
     def _start():
         threading.Thread(target=_run, name=f"world-tool-{tool.module}", daemon=True).start()
 
-    #TODO: This is WILDLY unnessary for most cases.  The arbitrary code warning should show only for
-    # .apworld custom_worlds that use 'tool' or 'adjuster' components.  Indexed worlds should
-    # never see this.
+    if not custom:
+        return _start
+
     return partial(
         confirm_arbitrary_code,
         "Run World Tool",

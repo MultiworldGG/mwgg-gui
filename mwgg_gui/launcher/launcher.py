@@ -1236,9 +1236,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             MessageBox("World Tool", "This core version cannot run world tools.", is_error=True).open()
             return
         from mwgg_gui.launcher.launcher_components import world_tool_activator
-        # Same semantics as the tools-grid cards had: per-world suppressible
-        # warning, worker thread, Clock-hopped MessageBox on failure.
-        world_tool_activator(run_fn, tool)()
+        world_tool_activator(
+            run_fn, tool, custom=tool.module in self._custom_world_modules)()
 
     def _spawn_component_client(self, tool):
         """Named-client twin of _spawn_client: same field reads, persist and

@@ -5,12 +5,11 @@ The GUI must not import game worlds into its own interpreter
 (`AutoWorldRegister` pulls in a lot of global state), so option introspection
 runs in a separate process: we invoke MultiworldGG's `Generate` entry point
 with `--yaml-options`. The argv prefix is resolved through
-`worlds.LauncherComponents.get_exe`, which reads `BaseUtils.FROZEN_TARGETS`
+`LauncherComponents.get_exe`, which reads `BaseUtils.FROZEN_TARGETS`
 — the single source of truth for built exe names — so this module can't
-drift from the actual frozen executable. Importing `worlds.LauncherComponents`
-(lazily, inside the function) is sanctioned: the launcher-side `worlds`
-package loads only the origin-filtered infrastructure worlds
-(generic + tracker), never game worlds. Importing game-world code is not.
+drift from the actual frozen executable. LauncherComponents is a top-level
+core module: importing it never touches the `worlds` package, so no world
+code runs in this interpreter.
 
 Generate installs the world if needed, loads it, and writes a single JSON
 object to stdout. All of its own logging/noise is diverted to stderr in this
@@ -63,10 +62,10 @@ def _generate_command() -> list[str]:
     Resolved through LauncherComponents — same path as the launcher's own
     generation flow — so the frozen exe name can't drift from the actual
     built target (see BaseUtils.FROZEN_TARGETS). The import stays inside
-    the function: it's a sanctioned launcher-side import, but keeping it
-    off the module import path keeps world_data loadable standalone.
+    the function: keeping it off the module import path keeps world_data
+    loadable standalone.
     """
-    from worlds.LauncherComponents import find_component, get_exe
+    from LauncherComponents import find_component, get_exe
 
     component = find_component("Generate")
     if component is None:

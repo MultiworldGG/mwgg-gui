@@ -83,17 +83,12 @@ Builder.load_string(
     md_bg_color: app.theme_cls.surfaceVariantColor
     MDTextField:
         id: player_name
-        size_hint_x: 0.24
+        size_hint_x: 0.4
         MDTextFieldHintText:
             text: "Player name"
-    MDTextField:
-        id: description
-        size_hint_x: 0.34
-        MDTextFieldHintText:
-            text: "Description"
     MDSegmentedButton:
         id: mode_toggle
-        size_hint_x: 0.42
+        size_hint_x: 0.6
         pos_hint: {"center_y": 0.5}
         MDSegmentedButtonItem:
             id: mode_player
@@ -125,6 +120,14 @@ class YamlScreen(InnerMDScreen):
 
         self._form = None  # current form widget
         self._mode = "player"
+        # True while live form→preview sync is off: during Sync → Form
+        # application, and after the user chose to keep manual edits.
+        self._sync_paused = False
+        # Coalesce bursts of on_change (slider drags fire per pixel) to
+        # one preview render per frame.
+        self._push_trigger = Clock.create_trigger(
+            lambda _dt: self._push_to_preview(), 0
+        )
         # Worker results, keyed by visibility ("simple" / "complex").
         # Populated asynchronously; consulted by _show_form.
         self._world_data: dict = {}
@@ -176,9 +179,6 @@ class YamlScreen(InnerMDScreen):
         self._header.ids.player_name.bind(
             text=lambda *_: self._push_to_preview()
         )
-        self._header.ids.description.bind(
-            text=lambda *_: self._push_to_preview()
-        )
         # Bind the mode-toggle segments in Python so `self` (the screen)
         # is the callback target. In KV, `root` inside the HeaderCard
         # rule resolves to the HeaderCard, not the screen.
@@ -216,6 +216,7 @@ class YamlScreen(InnerMDScreen):
         self._preview = YamlPreview(
             game_name=self.game_name,
             on_sync=self._on_preview_sync,
+            on_resync=self._resume_sync,
             known_options=self._known_option_names,
             size_hint_x=0.42,
         )
@@ -391,7 +392,7 @@ class YamlScreen(InnerMDScreen):
         """Swap the form into the left pane. Loading overlay stays up
         until the form fires `on_ready` — see OptionsForm — so the
         chrome doesn't drop while panels are still building."""
-        form.bind(on_change=lambda _i, _opts: self._push_to_preview())
+        form.bind(on_change=lambda _i, _opts: self._push_trigger())
         form.bind(on_ready=lambda _i: self._on_form_ready())
         self._set_scroll_child(form)
         self._form = form
@@ -412,22 +413,52 @@ class YamlScreen(InnerMDScreen):
 
     # ----- preview sync ---------------------------------------------------
 
-    def _push_to_preview(self):
+    def _render_canonical_yaml(self) -> str:
+        """The YAML the form's current state would produce. Used both to
+        push the live preview and (in `_on_preview_sync`) to check
+        whether a synced preview text round-tripped losslessly."""
         if self._form is None:
-            return
+            return ""
         player_name = (self._header.ids.player_name.text or "Player").strip()
-        description = (self._header.ids.description.text or "").strip()
-        collected = self._form.collect() #TODO: This isn't working - form changes aren't being propogated to the preview pane.
-        logger.info("yaml_creator: _push_to_preview, collected=%r", collected)
-        text = form_state_to_yaml(
+        return form_state_to_yaml(
             player_name=player_name,
             game_name=self.game_name,
-            options=collected,
-            description=description,
+            options=self._form.collect(),
             extras=self._yaml_extras,
             game_extras=self._game_extras,
         )
-        self._preview.set_text(text)
+
+    def _push_to_preview(self):
+        if self._form is None or self._sync_paused:
+            return
+        text = self._render_canonical_yaml()
+        if not self._preview.dirty or text == self._preview.get_text():
+            self._preview.set_text(text)
+            return
+        # Manual edits present and the form now disagrees. Pause BEFORE
+        # asking: Cancel and scrim-dismiss (which never fires the
+        # callback) both just leave sync paused with the Resync button
+        # up, and the early-return above keeps a second dialog from
+        # stacking — one warning per dirty episode.
+        self._sync_paused = True
+        self._preview.show_sync_paused()
+        MessageBox(
+            "Overwrite manual edits?",
+            "You've edited the YAML by hand. Overwrite it with the "
+            "form's values, or keep your edits? Keeping them pauses "
+            "live updates until you press Resync.",
+            callback=lambda ok: self._resume_sync() if ok else None,
+            ok_text="Overwrite",
+            cancel_text="Keep edits",
+        ).open()
+
+    def _resume_sync(self):
+        # Re-render instead of reusing any earlier text — the form may
+        # have changed again while sync was paused.
+        self._preview.dirty = False
+        self._preview.hide_sync_paused()
+        self._sync_paused = False
+        self._push_to_preview()
 
     def _known_option_names(self):
         """Option names the current form owns — lets the preview pane
@@ -438,20 +469,45 @@ class YamlScreen(InnerMDScreen):
 
     def _on_preview_sync(self, state):
         """User clicked Sync → Form in the preview pane."""
-        # Hold every key the form doesn't own so pushes re-emit it. Stored
-        # FIRST: the widget updates below fire _push_to_preview synchronously,
-        # and a push with the stale extras would rewrite the preview without
-        # the keys the user just hand-wrote.
-        self._yaml_extras = state.get("__extras__") or {}
-        self._game_extras = state.get("__game_extras__") or {}
-        name = state.get("__name__")
-        if name:
-            self._header.ids.player_name.text = str(name)
-        self._header.ids.description.text = str(state.get("__description__") or "")
-        options = state.get("__options__") or {}
-        if self._form is not None:
-            self._form.apply(options)
-        # Don't push back to preview — the user's text already matches.
+        # Gate pushes for the duration: the player-name write below
+        # fires _push_to_preview synchronously, and the form hasn't
+        # applied the synced options yet — an ungated push would rewrite
+        # the preview from stale rows.
+        self._sync_paused = True
+        try:
+            # Hold every key the form doesn't own so pushes re-emit it.
+            self._yaml_extras = state.get("__extras__") or {}
+            self._game_extras = state.get("__game_extras__") or {}
+            name = state.get("__name__")
+            if name:
+                self._header.ids.player_name.text = str(name)
+            options = state.get("__options__") or {}
+            if self._form is not None:
+                self._form.apply(options)
+        except Exception as e:
+            # Never strand the UI paused with no way forward — resume so
+            # the next form edit still syncs, same as a failed parse.
+            logger.warning("Sync → Form failed to apply: %s", e, exc_info=True)
+            self._preview.dirty = False
+            self._preview.hide_sync_paused()
+            self._sync_paused = False
+            return
+
+        # A clean parse doesn't guarantee a lossless round-trip — YAML
+        # comments, key order, and reserved keys the form can't
+        # represent all survive the parse but not a re-render. Only
+        # treat the text as fully captured (clear dirty, resume live
+        # sync) when the form's canonical render matches what the user
+        # actually typed; otherwise leave their hand formatting alone
+        # and keep sync paused until they hit Resync or answer the
+        # overwrite dialog on a later form change.
+        if self._render_canonical_yaml() == self._preview.get_text():
+            self._preview.dirty = False
+            self._preview.hide_sync_paused()
+            self._sync_paused = False
+        else:
+            self._preview.dirty = True
+            self._preview.show_sync_paused()
 
     # ----- save / cancel --------------------------------------------------
 
