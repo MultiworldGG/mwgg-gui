@@ -59,19 +59,14 @@ DEFAULT_TEXT_COLORS = {
 [Light Mode, Dark Mode]
 '''
 
-# Load mw_theme.kv — overrides for default kivymd widget styles
-# (MDTextField height, font defaults, etc.). Kivy only auto-loads a
-# kv file named after the App class (`multimd.kv` here), so theme
-# overrides need an explicit Builder.load. Same pattern as
-# overrides/expansionlist.py:53-54.
+# mw_theme.kv overrides default kivymd widget styles; Kivy only auto-loads
+# a kv named after the App class, so it needs an explicit Builder.load.
 with open(
     os.path.join(os.path.dirname(__file__), "mw_theme.kv"),
     encoding="utf-8",
 ) as kv_file:
     Builder.load_string(kv_file.read())
-# The names of these colors are from Material Design
-# and will be the input for primary_palette
-# The colors in hex are actual color for the theme
+# (Material Design color name fed to primary_palette, actual theme hex)
 THEME_OPTIONS = {
     "Light": [("Gray","97f0ff"), #default
               ("Chocolate","ffdbc9"),
@@ -232,12 +227,10 @@ class DefaultTheme(ThemableBehavior):
             atlas_path = os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "defaulttheme-orig.png")
             output_path = os.path.join(os.getenv("KIVY_DATA_DIR"), "images","defaulttheme-0.png")
 
-            # Open and convert the image
             atlas = Image.open(atlas_path)
             atlas = atlas.convert("RGBA")
             data = numpy.array(atlas)
 
-            # Define the target colors and their replacements
             color_pairs = [
                 (numpy.array([50, 164, 206]), numpy.array(self.theme_cls.primaryColor[:3]) * 255, 100),      # cyanish -> primary
                 (numpy.array([141, 178, 200]), numpy.array(self.theme_cls.secondaryColor[:3]) * 255, 40),    # blueish -> secondary
@@ -245,13 +238,10 @@ class DefaultTheme(ThemableBehavior):
                 (numpy.array([32, 72, 77]), numpy.array(self.theme_cls.onSecondaryColor[:3]) * 255, 15),       # alphatealish -> onPrimary
             ]
             
-            # Process each color pair sequentially
             for old_color, new_color, tolerance in color_pairs:
-                # Calculate color distances for this color
                 rgb_data = data[:, :, :3]
                 color_diff = numpy.sqrt(numpy.sum((rgb_data - old_color) ** 2, axis=2))
                 
-                # Create a mask for pixels within tolerance
                 mask = color_diff < tolerance
                 
                 # First, replace exact matches
@@ -269,27 +259,21 @@ class DefaultTheme(ThemableBehavior):
                                 direction = direction / direction_norm
                                 # Apply the same direction from the new color
                                 replacement_color = new_color + direction * color_diff[i, j]
-                                # Ensure values stay within valid range
                                 replacement_color = numpy.clip(replacement_color, 0, 255)
                                 data[i, j, :3] = replacement_color
             
-            # Convert back to image and save
             new_atlas = Image.fromarray(data)
             new_atlas.save(output_path)
             
         except Exception as e:
             print(f"Error recoloring atlas: {str(e)}")
-            # You might want to log this error or handle it differently
 
     def init_global_theme(self):
-        # Get theme settings from app_config
-        # Get theme style with Dark as fallback
         theme_style = self.app_config.get('client', 'theme_style', fallback='Dark')
         if theme_style.lower() not in ["light","dark"]:
             theme_style = 'Dark'
         self.theme_style = theme_style
         
-        # Get primary palette with first option as fallback
         primary_palette = self.app_config.get('client', 'primary_palette', fallback=THEME_OPTIONS[theme_style][0][0]).capitalize()
         valid_palettes = [
             name_color.capitalize() for name_color in hex_colormap.keys()
@@ -298,7 +282,6 @@ class DefaultTheme(ThemableBehavior):
             primary_palette = THEME_OPTIONS[theme_style][0][0]
         self.primary_palette = primary_palette
         
-        # Get compact mode setting
         compact_mode = self.app_config.getboolean('client', 'compact_mode', fallback=False)
         self.compact_mode = compact_mode
         
@@ -312,7 +295,6 @@ class DefaultTheme(ThemableBehavior):
                 self.app_config.set('markup_tags', color_name, ','.join(default_value))
             self.app_config.write()
         
-        # Dynamic scheme name remains unchanged as per comment
         self.dynamic_scheme_name = "RAINBOW"
         #self.theme_cls.sync_theme_styles()
 

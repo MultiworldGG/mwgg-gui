@@ -3,20 +3,15 @@
 TODO: probably pull this out - users have /connect & we can make a reconnect
 button rather than a whole ass dialog.
 
-ConnectDialog -- reconnect UI for client-direct processes.
+ConnectDialog -- reconnect UI for client-direct processes, which never build
+a launcher screen (see app.py's `_create_screen` client-role guard). Four
+fields (hostname/port/username/password) prefill from `app.ctx`'s InitContext
+properties; confirming calls `app.ctx.connect(...)`.
 
-Client processes never build a launcher screen (see app.py's `_create_screen`
-client-role guard), so a lost connection needs its own reconnect home. Four
-fields (hostname/port/username/password), prefilled from `app.ctx`'s own
-InitContext properties, mirror the launcher's old "Launch Settings" fields;
-confirming calls `app.ctx.connect(...)` the same way the launcher's in-process
-reconnect branch used to before every launch became a separate OS process.
-
-Singleton-guarded: opening a second dialog while one is already up dismisses
-the stale one first, mirroring the MessageBox/ConsoleBox pile-up fix (commit
-9370dad, "Fix reconnect dialog pile-up") -- `open()` builds and shows a
-*nested* MDDialog rather than opening itself, so `dismiss()` is overridden to
-close that nested dialog instead of the (never-shown) outer one.
+Singleton-guarded: opening a second dialog dismisses the stale one first.
+`open()` builds and shows a *nested* MDDialog rather than opening itself, so
+`dismiss()` is overridden to close that nested dialog instead of the
+(never-shown) outer one.
 """
 from __future__ import annotations
 
@@ -119,13 +114,10 @@ class ConnectDialog(MDDialog):
             logger.warning("ConnectDialog: missing server address/port, ignoring reconnect")
             return
 
-        # Embedding creds in the address userinfo alone is not enough:
-        # server_loop() never parses them back into ctx._username/_password,
-        # and CommonContext.username/password getters prefer those cached
-        # values over anything in the address -- so an edited field would be
-        # silently ignored. Assign through the setters (which is what
-        # client_get_username()/client_get_password() actually consult)
-        # before connecting.
+        # Creds in the address userinfo are not enough: server_loop() never
+        # parses them back into ctx._username/_password, and the CommonContext
+        # getters prefer those cached values -- an edited field would be
+        # silently ignored. Assign through the setters before connecting.
         ctx = self.app.ctx
         ctx.username = username
         ctx.password = password

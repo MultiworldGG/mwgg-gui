@@ -25,10 +25,8 @@ from kivy.lang import Builder
 from mwgg_gui.overrides.expansionlist import HintListItemLabel as TooltipLabel
 
 
-# Style rule so SelectableLabel rows render kivy markup ([color=...], [u], ...)
-# from the moment they're instantiated, before any text is assigned by data —
-# without this, the initial paint happens with markup=False and the [color=...]
-# tags render as literal text.
+# SelectableLabel rows need markup=True before data assigns text, or the
+# initial paint renders [color=...] tags literally.
 Builder.load_string('''
 <SelectableLabel>:
     markup: True
@@ -58,12 +56,10 @@ class SelectableLabel(RecycleDataViewBehavior, TooltipLabel):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # World kv rules ship tracker rows with [color=...] markup; if markup
-        # parsing is off, the raw tags render as literal text.
+        # Tracker rows from world kv rules carry [color=...] markup.
         self.markup = True
-        # ListItemTooltip's kv creates an MDTooltipPlain child that's hooked up
-        # as self._tooltip by MDTooltip.add_widget. The popup also needs
-        # markup parsing or every tooltip renders literal [color=...] tags.
+        # The MDTooltipPlain child hooked up as self._tooltip by
+        # MDTooltip.add_widget also needs markup parsing.
         tooltip = getattr(self, "_tooltip", None)
         if tooltip is not None and hasattr(tooltip, "markup"):
             tooltip.markup = True
@@ -90,9 +86,8 @@ class SelectableLabel(RecycleDataViewBehavior, TooltipLabel):
             Clipboard.copy(
                 text.replace("&amp;", "&").replace("&bl;", "[").replace("&br;", "]")
             )
-            # Best-effort autofill into whichever text input the running app
-            # exposes. New MultiMDApp uses `console_text_input`; the legacy
-            # GameManager used `textinput`. Skip silently if neither is set.
+            # Best-effort autofill: new MultiMDApp exposes `console_text_input`,
+            # the legacy GameManager `textinput`; skip silently if neither is set.
             app = App.get_running_app()
             cmdinput = getattr(app, "console_text_input", None) or getattr(app, "textinput", None)
             last_cmd = getattr(app, "last_autofillable_command", None)

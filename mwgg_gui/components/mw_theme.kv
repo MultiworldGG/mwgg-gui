@@ -7,7 +7,7 @@
     font_name: app.theme_cls.font_styles[self.font_style][self.role]["font-name"]
     font_size: app.theme_cls.font_styles[self.font_style][self.role]["font-size"]
     # Kivy's parser only honors `-property:` (clear inherited bindings)
-    # on single-line values — see kivy/lang/parser.py:729. Keep these
+    # on single-line values -- see kivy/lang/parser.py:729. Keep these
     # as one long line each; splitting them re-introduces kivymd's
     # default rules on top of ours.
     -padding: (dp(4) if not self._leading_icon else dp(42) if self.mode != "filled" else (dp(6) if not self._leading_icon else dp(52)), (self.height / 2.0 - (self.line_height / 2.0) * min(len(self._lines), int(self.height / self.line_height))) + dp(10 if self.mode == "filled" else 0), dp(4) if not self._trailing_icon else self._trailing_icon.texture_size[0] + dp(28), dp(4))

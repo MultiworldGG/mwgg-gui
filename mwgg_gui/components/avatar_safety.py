@@ -86,7 +86,7 @@ def upload_avatar(file_path: str, token: str, timeout: float = 30.0) -> str:
     """POST the file at `file_path` to /api/avatar/upload. Returns the trusted URL.
 
     The caller is responsible for persisting the returned URL (and the token).
-    Runs synchronously — schedule on a worker thread from the UI.
+    Runs synchronously -- schedule on a worker thread from the UI.
     """
     if not token:
         raise AvatarUploadError("No avatar token")

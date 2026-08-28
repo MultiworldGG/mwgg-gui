@@ -137,7 +137,6 @@ class BottomBarTextInput(MDTextField):
             'logout': 'Usage: logout'
         }
         
-        # Add commands to dropdown
         for command in sorted(self.admin_commands.items()):
             self.dropdown.items.append({
                 "text": command[0],
@@ -220,10 +219,9 @@ class BottomAppBar(MDBottomAppBar):
     def __init__(self, screen_name: str, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.app = MDApp.get_running_app()
-        self.screen_name = screen_name  # Store screen_name for later use
-        # Per-world tabs (Tracker, Manual, ...) come through CustomScreen with
-        # arbitrary screen names. Default to no fab actions for those so we
-        # don't trip an UnboundLocalError on the for-loop below.
+        self.screen_name = screen_name
+        # Per-world tabs (CustomScreen) carry arbitrary screen names; default
+        # them to no fab actions.
         actions = []
         if screen_name == "console" or screen_name == "hint":
             actions = CONSOLE_ACTIONS
@@ -238,13 +236,9 @@ class BottomAppBar(MDBottomAppBar):
             action_items.append(button)
         self.text_input = BottomBarTextInput(id=f'{screen_name}_text_input')
         self.ids.console_text_input_fab.id = "console_fab_button"
-        # Note: the launcher screen never attaches this bar to its widget
-        # tree at all (see LauncherScreen.init_important) -- the Play pane's
-        # "Launch & Play" button already covers the bar's one action, and the
-        # chat FAB has no command processor to talk to on that screen. An
-        # opacity/disabled toggle used to try to hide the FAB here instead;
-        # that left it visibly dimmed rather than gone, so not attaching the
-        # bar is the actual fix.
+        # The launcher screen never attaches this bar at all (see
+        # LauncherScreen.init_important): the Play pane covers its one action
+        # and the chat FAB has no command processor there.
         Clock.schedule_once(lambda dt: self.set_actions(action_items), 0)
 
     def set_actions(self, action_items: list[MDActionBottomAppBarButton]):
@@ -253,27 +247,22 @@ class BottomAppBar(MDBottomAppBar):
     def add_widget(self, widget, index=0, canvas=None):
         """Override add_widget to handle MDTextField widgets"""
         if isinstance(widget, MDTextField):
-            # Call MDFloatLayout's add_widget directly
             MDFloatLayout.add_widget(self, widget, index, canvas)
         else:
             super().add_widget(widget, index, canvas)
 
     def on_bar_action(self, instance):
-        # 'launch' (launcher screen) and 'connect' (console screen) open a
-        # dialog / call straight into the screen instead of animating the
-        # bottom-bar text input -- neither has a command processor to send
-        # prefilled text to.
+        # 'launch' and 'connect' open a dialog / call the screen directly --
+        # neither has a command processor to send prefilled text to.
         if instance.id == "launch" and self.screen_name == "launcher":
             if getattr(self.app, "launcher_screen", None) is not None:
                 self.app.launcher_screen.connect()
             return
         if instance.id == "connect":
-            # 'connect' is a CONSOLE_ACTIONS entry shared by the console and
-            # hint screens (see constants.py); the dialog itself only needs
-            # app.ctx, so it's safe to open from either.
+            # 'connect' is shared by the console and hint screens (see
+            # constants.py); the dialog only needs app.ctx.
             self.app.open_connect_dialog()
             return
-        # Toggle: if text input is already visible, hide it. Otherwise, show it.
         if self.text_input.parent and self.text_input.y > -50 and "fab" in instance.id:
             self.hide_text_input()
         else:
@@ -284,7 +273,6 @@ class BottomAppBar(MDBottomAppBar):
 
     def animate_text_input(self, id_name: str):
         """Animate the text input with properties from the clicked action item"""
-        # Find the action data for this button
         action_data = None
         if self.screen_name == "console" or self.screen_name == "hint":
             actions = CONSOLE_ACTIONS
@@ -293,7 +281,6 @@ class BottomAppBar(MDBottomAppBar):
         else:
             return
     
-        # Find the matching action data
         for action in actions:
             if action["id"] in id_name:
                 action_data = action
@@ -302,23 +289,18 @@ class BottomAppBar(MDBottomAppBar):
         if not action_data:
             return
         
-        # Update text input properties
         self.text_input.icon = action_data["icon"]
         self.text_input.hint_text = action_data["label"]
         self.text_input.silent_prefix = action_data["prefill"]
         self.text_input.action_type = action_data["id"]
         
-        # Show the text input with animation
         if not self.text_input.parent:
-            # Add text input to the layout if not already present
             self.add_widget(self.text_input)
         
-        # Set position and animate in
         self.text_input.y = -60
         self.text_input.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
         self.text_input.size_hint = (0.4, None)
         
-        # Animate the text input appearing
         def animate_in(dt):
             Animation(y=13, duration=0.2).start(self.text_input)
         

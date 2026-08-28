@@ -74,7 +74,6 @@ class MessageBox(MDDialog):
         
     def open(self):
         """Opens the dialog and displays it to the user."""
-        # Create the dialog
         self.dialog = MDDialog(
             MDDialogHeadlineText(
                 text=self.title,
@@ -142,7 +141,6 @@ class CodeWarningBox(MessageBox):
             size=(dp(36), dp(36)),
             pos_hint={"center_y": 0.5},
         )
-        # Create the dialog
         self.dialog = MDDialog(
             MDDialogHeadlineText(
                 text=self.title,
@@ -212,14 +210,9 @@ def confirm_arbitrary_code(title: str, text: str, config_key: str,
 
 class ConsoleBox(MDDialog):
     """
-    A dialog for interactive console-style prompts with text input.
-    Used for slot name and password prompts in the client.
-    
-    Args:
-        title (str): The dialog title
-        prompt (str): The prompt text to display
-        ctx: The context object (InitContext or CommonContext)
-        is_password (bool): If True, hides the input text (for passwords)
+    Interactive console-style prompt with a text input; used for slot name
+    and password prompts (input is masked when the prompt mentions a
+    password).
     """
     
     def __init__(self, title="", prompt=""):
@@ -240,13 +233,11 @@ class ConsoleBox(MDDialog):
     
     def _cancel(self, instance):
         """Handle cancel button press."""
-        # Just dismiss the dialog on cancel
         self.dialog.dismiss()
         self.dialog = None
         
     def open(self):
         """Opens the dialog and displays it to the user."""
-        # Create text input field
         if 'password' in self.prompt.lower():
             self.is_password = True
         else:
@@ -259,7 +250,6 @@ class ConsoleBox(MDDialog):
             on_text_validate=self._submit,
         )
         
-        # Create button container
         button_container = MDDialogButtonContainer(
             Widget(),
             MDButton(
@@ -281,7 +271,6 @@ class ConsoleBox(MDDialog):
             spacing=dp(8),
         )
         
-        # Create the dialog
         self.dialog = MDDialog(
             MDDialogHeadlineText(
                 text=self.title,
@@ -297,6 +286,5 @@ class ConsoleBox(MDDialog):
         self.dialog.state_press = 0
         self.dialog.open()
         
-        # Focus the text input
         if self.text_input:
             self.text_input.focus = True

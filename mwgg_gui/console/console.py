@@ -109,7 +109,6 @@ class ConsoleSliverAppbar(MDSliverAppbar, ColumnSortMixin, ColumnFilterMixin):
         self.content.id = "content"
         self.add_widget(self.content)
 
-        # Determine tracker mode from the launcher's client_type selection.
         # Client-direct processes never build a launcher screen (see
         # app.py._create_screen's client-role guard), so fall back to the
         # MWGG_CLIENT_TYPE env var the launcher spawned this process with.
@@ -272,10 +271,9 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         players_screen.add_widget(self.slots_mdlist)
         self.slots_mdlist.bind(height=lambda inst, h: setattr(players_screen, "height", max(h, dp(48))))
 
-        # Logic screen mirrors the Players screen: sized by its MDList content
-        # (TrackerRegionList.minimum_height). Each expanded region panel
-        # contains its own inner RecycleView that virtualizes location rows,
-        # so the outer list stays cheap even for games with many regions.
+        # Logic screen mirrors the Players screen: sized by its MDList content;
+        # each region panel's inner RecycleView virtualizes its location rows,
+        # keeping the outer list cheap for games with many regions.
         self.tracker_regions_mdlist.size_hint_y = None
         self.tracker_regions_mdlist.bind(
             minimum_height=self.tracker_regions_mdlist.setter("height"))
@@ -297,10 +295,9 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         if self.important_appbar.tracker_mode:
             Clock.schedule_once(lambda dt: self.update_tracker_locations(), 0.5)
 
-        # on_enter already fired (once, at startup) before this deferred
-        # build created ui_console, so re-arm hover tracking if the console
-        # is the visible screen. start_hover_tracking is idempotent, so the
-        # normal on_enter/on_leave flow stays correct on later switches.
+        # on_enter fired at startup before this deferred build created
+        # ui_console, so re-arm hover tracking if this screen is visible;
+        # start_hover_tracking is idempotent for later on_enter/on_leave.
         if self.manager and self.manager.current == self.name:
             self.ui_console.text_console.start_hover_tracking()
 
@@ -320,14 +317,12 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         if not visible_hints:
             return (False, 0)  # No hints, goes to end
         
-        # Calculate elevation levels for each hint
         priority_order = {5: 0, 4: 1, 6: 2, 3: 3, 2: 4, 1: 5, 0: 6}
         highest_priority = 6  # Default to lowest priority
         
         for hint in visible_hints:
             classification = hint.assigned_classification if hint.assigned_classification else hint.classification
             
-            # Determine elevation level based on classification
             if hint.found == "Found":
                 elevation = 0
             elif classification == "Progression - Requried for Goal":
@@ -345,7 +340,6 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
             else:
                 elevation = 0
             
-            # Update if this is higher priority
             if elevation in priority_order:
                 if priority_order[elevation] < highest_priority:
                     highest_priority = priority_order[elevation]
@@ -355,17 +349,15 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
     async def set_slots_list(self):
         self.slots_mdlist.clear_widgets()
         
-        # Filter and collect slots
         slots_to_add = [
             (slot_id, slot_data)
             for slot_id, slot_data in self.app.ctx.ui.ui_player_data.items()
             if slot_data.slot_name != "Archipelago"
         ]
         
-        # Sort by priority (has hints first, then by elevation priority)
+        # Has-hints first, then by elevation priority.
         slots_to_add.sort(key=lambda x: self._get_slot_priority(x[1]), reverse=True)
         
-        # Add sorted slots
         for slot_id, slot_data in slots_to_add:
             await asynckivy.sleep(0)
             slot = GameListPanel(item_name=slot_id, item_data=slot_data)

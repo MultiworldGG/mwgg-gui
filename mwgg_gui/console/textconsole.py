@@ -50,9 +50,7 @@ class ConsoleFilter(logging.Filter):
 
 class TextConsole(ConsoleHoverBehavior, MarkupTextField, ThemableBehavior):
     # Mixin FIRST: its on_touch_down dismisses the hover tooltip before the
-    # text field's selection handling runs. Hover reads the
-    # client.item_tooltips setting (fallback=True) the same way
-    # all_players_chat is consumed below.
+    # text field's selection handling runs.
     text_buffer: Queue
     app: MDApp
 
