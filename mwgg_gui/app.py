@@ -248,7 +248,6 @@ class MultiMDApp(MDApp):
         self.ctx = ctx
         self.commandprocessor = self.ctx.command_processor(self.ctx)
 
-        self.icon = os.path.join(os.path.curdir, "icon.ico")
         self.theme_mw = DefaultTheme(self.app_config)
 
         self.text_buffer = Queue(maxsize=1000)
