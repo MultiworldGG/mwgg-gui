@@ -9,13 +9,23 @@ TODO: I don't think Launcher needs the topappbar at all.
 """
 from kivymd.app import MDApp
 from kivymd.uix.appbar import MDTopAppBar, MDTopAppBarTitle, MDActionTopAppBarButton
+from kivymd.uix.tooltip import (
+    MDTooltip,
+    MDTooltipRich,
+    MDTooltipRichSubhead,
+    MDTooltipRichSupportingText,
+    MDTooltipRichActionButton,
+)
 from kivymd.uix.button import MDButtonText, MDButton
+from kivymd.uix.behaviors import HoverBehavior
 from kivy.lang import Builder
 from kivy.uix.anchorlayout import AnchorLayout
 from kivy.properties import (ObjectProperty,
+                             StringProperty,
                              ColorProperty,
                              NumericProperty,
-                             BooleanProperty)
+                             BooleanProperty,
+                             ListProperty)
 from .progress_overlay import ProgressOverlay
 from .profile import show_profile
 from kivy.clock import Clock
@@ -35,6 +45,11 @@ logger = logging.getLogger("MultiWorld")
 __all__ = ("TopAppBarLayout", "TopAppBar")
 
 Builder.load_string('''
+<MDTooltipRichSubhead>:
+    markup: True
+<MDTooltipRichSupportingText>:
+    markup: True
+
 <Timer>:
 
 <ServerLabel>:
@@ -198,20 +213,57 @@ class Timer(MDTopAppBarTitle):
             Clock.unschedule(self._update_event)
             self._update_event = None
  
-class ServerLabel(MDTopAppBarTitle):
-    """
-    Label for the server and information
+class ServerRichTooltip(MDTooltipRich, HoverBehavior):
+    """Rich tooltip with hover behavior for ServerLabel"""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.server_label = None  # Will be set by parent
+        self.auto_dismiss = False
+        Clock.schedule_interval(self.hover_sanity_check, 10)
+
+    def hover_sanity_check(self, dt):
+        """Check if the tooltip is still hovering over the server label or tooltip"""
+        if not self.hovering and not self.server_label.hovering:
+            Clock.schedule_once(self.on_leave, 0)
+
+    def on_leave(self, *args):
+        """Delay dismissal so briefly mousing off doesn't close the tooltip."""
+        if self.server_label:
+            Clock.schedule_once(self.server_label._delayed_leave, .5)
+        else:
+            super().on_leave()
+
+
+class ServerLabel(MDTooltip, MDTopAppBarTitle):
+    """Appbar title showing the connected server. In client role it carries a
+    rich hover tooltip (slot/checks/hints/permissions pages); the launcher
+    never connects, so launcher role gets the bare title with no tooltip.
     """
     ctx: ObjectProperty
+    _server_name: StringProperty
+    _game_info: StringProperty
+    game_pages: ListProperty
+    current_page: NumericProperty
     initial_height: NumericProperty
     _connected: BooleanProperty(False)
 
     def __init__(self, **kwargs):
         self._connected = False
+        self._server_name = "Not Connected"
+        self._game_info = "No current server connection. \nPlease connect to a server."
+        self._tooltip_enabled = MDApp.get_running_app().role != ROLE_LAUNCHER
         super().__init__(**kwargs)
+        self.game_pages = ["No current server connection. \nPlease connect to a server."]
+        self.game_info = self.game_pages[0]
+        self.server_name = "Not Connected"
+        self.current_page = 0
         self.theme_font_style = "Custom"
         self.font_style = "Monospace"
         self.role = "large"
+        self.tooltip = None  # Single tooltip instance
+        self.tooltip_display_delay = 0  # This is a delay, it does not verify hovering
+        self._update_tooltip_content()
 
     def on_text(self, instance, value):
         """Step the title role down when text grows taller than the first
@@ -224,11 +276,82 @@ class ServerLabel(MDTopAppBarTitle):
         elif self.texture_size[1] > self.initial_height and self.role == "medium":
             self.role = "small"
 
+    def _update_tooltip_content(self):
+        """Update the tooltip widgets based on current state"""
+        if not self._tooltip_enabled:
+            return
+        self.shift_left = dp(220) if len(self.game_pages) == 1 else dp(100)
+        self.shift_y = dp(1) if len(self.game_pages) == 1 else dp(-80)
+        self._cleanup_old_tooltips()
+
+        if getattr(self, 'tooltip', None) is not None:
+            self.tooltip.clear_widgets()
+            self.tooltip.add_widget(MDTooltipRichSubhead(text=self.server_name))
+            self.tooltip.add_widget(MDTooltipRichSupportingText(text=self.game_info))
+            if len(self.game_pages) > 1:
+                self.tooltip.add_widget(
+                    MDTooltipRichActionButton(
+                        MDButtonText(text="More"),
+                        on_release=lambda x: self.next_page()
+                    )
+                )
+        else:
+            tooltip_widgets = [
+                MDTooltipRichSubhead(text=self.server_name),
+                MDTooltipRichSupportingText(text=self.game_info),
+            ]
+            if len(self.game_pages) > 1:
+                tooltip_widgets.append(
+                    MDTooltipRichActionButton(
+                        MDButtonText(text="More"),
+                        on_release=lambda x: self.next_page()
+                    )
+                )
+            self.tooltip = ServerRichTooltip(*tooltip_widgets)
+            self.tooltip.server_label = self  # Back-reference for communication
+            self.widgets = [self.tooltip]
+
+    def _cleanup_old_tooltips(self):
+        """Remove stale ServerRichTooltip instances from the window."""
+        from kivy.core.window import Window
+
+        current = getattr(self, 'tooltip', None)
+        for child in Window.children[:]:
+            if isinstance(child, ServerRichTooltip) and child is not current:
+                try:
+                    Window.remove_widget(child)
+                except Exception:
+                    pass
+
+    @property
+    def server_name(self):
+        return self._server_name
+
+    @server_name.setter
+    def server_name(self, value):
+        if self._server_name != value:
+            self._server_name = value
+            self._update_tooltip_content()
+
+    @property
+    def game_info(self):
+        return self._game_info
+
+    @game_info.setter
+    def game_info(self, value):
+        if self._game_info != value:
+            self._game_info = value
+            self._update_tooltip_content()
+
     def on_ui_built(self):
         self.ctx = MDApp.get_running_app().ctx
         self.slot_info = self.ctx.slot_info
         self._connected = True
         self.update_server_info()
+
+    def on_open(self, *args):
+        """Called when tooltip opens - content should already be current"""
+        pass
 
     def update_server_info(self, ctx=None):
         """Update server info display - called directly from on_connect"""
@@ -237,6 +360,7 @@ class ServerLabel(MDTopAppBarTitle):
         if not ctx:
             return
 
+        self._build_tooltip_data(ctx)
         server_address = f"{urllib.parse.urlparse(ctx.server_address).hostname}:{urllib.parse.urlparse(ctx.server_address).port}"
         if ctx.slot is not None:
             name = ctx.player_names[ctx.slot]
@@ -246,15 +370,84 @@ class ServerLabel(MDTopAppBarTitle):
         else:
             self.text = f"{server_address}"
 
+    def _build_tooltip_data(self, ctx):
+        """Build complete tooltip data from context"""
+        if not self._tooltip_enabled:
+            return
+        from NetUtils import TEXT_COLORS
+        self.game_pages = []
+        server_address = f"{urllib.parse.urlparse(ctx.server_address).hostname}:{urllib.parse.urlparse(ctx.server_address).port}"
+        if ctx.slot is None:
+            self.server_name = f"{server_address}"
+            self.game_pages = [f"You are not authenticated yet."]
+        else:
+            name = ctx.player_names[ctx.slot]
+            if hasattr(ctx.slot_info[ctx.slot], 'alias') and ctx.slot_info[ctx.slot].alias:
+                name = ctx.slot_info[ctx.slot].alias
+            self.server_name = f"{name}@{server_address}"
+
+            if ctx.total_locations:
+                self.game_pages.append(
+                    f"""You are Slot Number {ctx.slot} named [color={TEXT_COLORS['player1_color']}]{name}[/color].
+You have received [color={TEXT_COLORS['progression_item_color']}]{len(ctx.items_received)}[/color] items.
+You can list them in order with [b][color={TEXT_COLORS['command_echo_color']}]/received[/color][/b].
+You have checked [color={TEXT_COLORS['location_color']}]{len(ctx.checked_locations)}[/color]
+    out of [color={TEXT_COLORS['location_color']}]{ctx.total_locations}[/color] locations.
+You can get more info on missing checks with [b][color={TEXT_COLORS['command_echo_color']}]/missing[/color][/b].
+""")
+            if ctx.hint_cost is not None and ctx.total_locations:
+                min_cost = int(ctx.server_version >= (0, 3, 9))
+                self.game_pages.append(f"""New hints cost [color={TEXT_COLORS['command_echo_color']}]{ctx.hint_cost}%[/color] of checks made.
+Commands are:
+[b][color={TEXT_COLORS['command_echo_color']}]!hint[/color] [color={TEXT_COLORS['progression_item_color']}]<itemname>[/color][/b]
+[b][color={TEXT_COLORS['command_echo_color']}]!hint_location[/color] [color={TEXT_COLORS['location_color']}]<locationname>[/color][/b]
+For you this means every [color={TEXT_COLORS['command_echo_color']}]{max(min_cost, int(ctx.hint_cost * 0.01 * ctx.total_locations))}[/color] location checks.
+You currently have [color={TEXT_COLORS['command_echo_color']}]{ctx.hint_points}[/color] points.""")
+            if ctx.permissions:
+                txt = "Permissions:\n"
+                txt += "".join([f'{permission_name}: {permission_data}\n' for permission_name, permission_data in ctx.permissions.items()])
+                self.game_pages.append(txt)
+
+        self.game_info = self.game_pages[0] if self.game_pages else "No information available"
+
     def on_disconnect(self):
         """Called when disconnected from server"""
         self._connected = False
         self.text = "Not Connected"
+        self.game_pages = [f"No current server connection. \nPlease connect to a server."]
+        self.current_page = 0
+        self.game_info = self.game_pages[self.current_page]
+        self.server_name = self.text
+
+    def next_page(self):
+        """Navigate to next page and refresh tooltip"""
+        if len(self.game_pages) > 1:
+            self.current_page = (self.current_page + 1) % len(self.game_pages)
+            self.game_info = self.game_pages[self.current_page]
+        else:
+            self.game_info = self.game_pages[0] if self.game_pages else "No information available"
 
     def on_parent(self, instance, parent):
         """Clean up when widget is removed"""
         if parent is None:
             self._connected = False
+
+    def on_enter(self, *args):
+        """Hold the tooltip back until the cursor has lingered; no-op when the
+        tooltip is disabled (launcher role)."""
+        if not self._tooltip_enabled or self.tooltip is None:
+            return
+        Clock.schedule_once(lambda *a: self._delayed_enter(*a) if self.hovering else None, 2)
+
+    def _delayed_enter(self, *args):
+        """Delayed enter that calls the parent's on_enter for proper display"""
+        Clock.schedule_once(self.animation_tooltip_show)
+        super().on_enter()
+
+    def _delayed_leave(self, *args):
+        """Delayed leave that calls the parent's on_leave for proper dismissal"""
+        Clock.schedule_once(self.animation_tooltip_dismiss)
+        super().on_leave()
 
 
     
