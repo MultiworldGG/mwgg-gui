@@ -267,7 +267,7 @@ class MWColorPicker(MDBoxLayout):
                 window_pos = self.to_window(touch.x, touch.y)
                 
                 # Add window location offsets
-                screen_x = Window.left + window_pos[0] # Window.left is 410
+                screen_x = Window.left + window_pos[0]
                 # Get the "inverse" position of the window because kivy is weird
                 screen_y = Window.height - window_pos[1] + Window.top 
                 

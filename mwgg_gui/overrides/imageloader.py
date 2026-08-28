@@ -132,12 +132,9 @@ def register_url_scheme(prefix: str, loader_class: type[ImageLoaderBase]) -> Non
     Kivy's extension-based dispatch. Calling this twice with the same prefix
     overwrites the previous registration.
     """
-    if prefix in _scheme_loaders:
+    if prefix in _scheme_loaders and loader_class is not _scheme_loaders[prefix]:
         # Replace existing -- common during hot-reload / re-imports.
-        if loader_class is not _scheme_loaders[prefix]:
-            logger.debug(f"Replacing image loader for scheme {prefix!r}")
-    else:
-        _scheme_loaders[prefix] = loader_class
+        logger.debug(f"Replacing image loader for scheme {prefix!r}")
     _scheme_loaders[prefix] = loader_class
     ImageLoader.register(loader_class)
     _install_scheme_dispatch()
@@ -151,8 +148,8 @@ def _install_scheme_dispatch() -> None:
     original_load = ImageLoader.load
 
     def dispatch(filename: str, default_load=original_load, **kwargs):
-        # Iterate in insertion order so "ap:zip:" wins over "ap:" without
-        # forcing callers to manage prefix ordering manually.
+        # Insertion order is registration order: "ap:zip:" is registered
+        # before "ap:", so the longer prefix wins.
         for prefix, loader_cls in _scheme_loaders.items():
             if filename.startswith(prefix):
                 return loader_cls(filename)
