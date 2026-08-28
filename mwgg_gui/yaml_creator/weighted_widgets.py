@@ -10,7 +10,7 @@ matches.
 
 `weight_widget_for_option(descriptor, world)` picks the right row type
 given an option descriptor produced by `world_data.py`. Options the
-generator consumes as direct values (`supports_weighting` false — the
+generator consumes as direct values (`supports_weighting` false: the
 set/dict/counter family) get the same direct-value rows player mode
 uses instead of a weight stack.
 
@@ -152,9 +152,7 @@ class WeightedRow(OptionRow):
         self._rows_container = MDBoxLayout(
             orientation="vertical",
             size_hint_y=None,
-            # `height=0` before the bind — a container that stays empty
-            # never dispatches minimum_height (already 0), which would
-            # leave the Kivy Widget default dp(100) as a blank gap.
+            # height=0 before the bind: an empty container never dispatches minimum_height (dp(100) gap).
             height=0,
             spacing=dp(2),
         )
@@ -201,21 +199,15 @@ class WeightedRow(OptionRow):
     def apply_value(self, value):
         """Sync -> Form for a weighted row: `value` is {label: weight}."""
         if not isinstance(value, dict):
-            return  # not a mapping — keep old state
+            return  # not a mapping: keep old state
         try:
             weights = {str(k): int(v) for k, v in value.items()}
         except (TypeError, ValueError):
             return
         for key, row in self._row_widgets.items():
-            # `weight` is bound in KV as the slider's `value:` — this
-            # cascades into MDSlider.on_value -> `_on_weight_change`,
-            # the same path a manual drag takes, so `_weights` and the
-            # "most likely" chip stay correct without duplicating that
-            # logic here.
+            # KV binds `weight` to the slider; the write cascades through _on_weight_change like a manual drag.
             row.weight = weights.get(key, 0)
-        # Keys present in the incoming value but not one of our built-in
-        # rows (a custom text/range entry from a previous session) need
-        # a new row, same as the "Add value" control.
+        # Unknown incoming keys (custom entries from a prior session) get a new removable row.
         for key, weight in weights.items():
             if key not in self._row_widgets and weight:
                 self._add_row(key, key, weight=weight, removable=True)
@@ -402,11 +394,8 @@ class WeightedPrimer(MDCard):
 # ----- factory -------------------------------------------------------------
 
 
-# Types the generator consumes as direct values: Generate.handle_option
-# feeds options with `supports_weighting = False` (the set/dict/counter
-# family) their raw YAML value via from_any, with no weighted pick. Used
-# as the routing fallback for payloads too old to carry the
-# `supports_weighting` field.
+# Generate.handle_option feeds these their raw YAML value (no weighted
+# pick); routing fallback for payloads lacking `supports_weighting`.
 _DIRECT_VALUE_TYPES = frozenset({
     "item_set",
     "location_set",
@@ -418,9 +407,7 @@ _DIRECT_VALUE_TYPES = frozenset({
 
 def weight_widget_for_option(descriptor: dict, world: dict) -> OptionRow:
     t = descriptor.get("type", "free_text")
-    # Direct-value options get the same rows player mode uses — a
-    # {value: weight} stack here would be misparsed by the generator
-    # (wrong seeds or an OptionError), never weighted-picked.
+    # A {value: weight} stack would be misparsed by the generator, never weighted-picked.
     supports_weighting = descriptor.get("supports_weighting")
     if supports_weighting is None:
         supports_weighting = t not in _DIRECT_VALUE_TYPES
@@ -438,5 +425,5 @@ def weight_widget_for_option(descriptor: dict, world: dict) -> OptionRow:
         return WeightedRangeRow(descriptor)
     if t == "free_text":
         return WeightedFreeTextRow(descriptor)
-    # Unrecognized weightable type — free text keeps it editable.
+    # Unrecognized weightable type: free text keeps it editable.
     return WeightedFreeTextRow(descriptor)

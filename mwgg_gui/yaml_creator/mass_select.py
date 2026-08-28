@@ -1,14 +1,12 @@
 """
-Mass-selection row widgets for worlds with 500+ items or locations.
+Mass-selection row widgets for worlds with 500+ items or locations,
+backed by MDRecycleView (the rest of the codebase treats RecycleView as
+legacy, but nothing else holds up at ALTTP-class scales).
 
-Backed by MDRecycleView so scrolling stays smooth even with multi-thousand
-item lists. The rest of the codebase treats RecycleView as legacy, but
-nothing else holds up at ALTTP-class scales — see plan for rationale.
-
-`MassMultiSelectRow`  — for ItemSet / LocationSet.
-`MassCounterRow`      — for OptionCounter with `verify_item_name` or
+`MassMultiSelectRow`  - for ItemSet / LocationSet.
+`MassCounterRow`      - for OptionCounter with `verify_item_name` or
                         `verify_location_name`.
-`ChecklistSelectRow`  — for OptionSet whose keys don't fit chips (see
+`ChecklistSelectRow`  - for OptionSet whose keys don't fit chips (see
                         `_chips_fit` in option_widgets.py); search +
                         checkbox list + summary, no chip wrap.
 
@@ -152,10 +150,7 @@ class MassSelectViewRow(RecycleDataViewBehavior, MDBoxLayout):
         return super().refresh_view_attrs(rv, index, data)
 
     def on_checkbox(self, active):
-        # Keep the view property in step with the checkbox: recycling
-        # only re-applies `selected` when the new data value differs from
-        # the property, so a stale property would let the old `active`
-        # survive onto another key's row.
+        # Recycling only re-applies `selected` when it differs from the property; stale values leak onto other rows.
         self.selected = active
         if self.owner is None:
             return
@@ -199,9 +194,7 @@ class MassMultiSelectRow(OptionRow):
 
     def __init__(self, descriptor: dict, world: dict, *, kind: str, **kwargs):
         super().__init__(descriptor, **kwargs)
-        # Don't sort the full item/location list yet — that's the heavy
-        # bit for ALTTP-scale worlds and `prepare_data()` does it on
-        # first panel open. Stash the source so we can compute lazily.
+        # Key sort deferred to prepare_data() (first panel open); heavy at ALTTP scale.
         self._world = world
         self._kind = kind
         self._all_keys: list = []
@@ -222,12 +215,7 @@ class MassMultiSelectRow(OptionRow):
         self._search.bind(text=lambda _i, t: self._refresh(t))
         self.add_widget(self._search)
 
-        # Selected chips (cheap — only as many chips as the descriptor's
-        # default selection, usually 0). Initialize `height` explicitly
-        # so the parent OptionRow's `minimum_height` doesn't read the
-        # Kivy `Widget.height` default (dp(100)) before our
-        # `bind(minimum_height -> height)` settles — that race surfaced
-        # as a ~100 px gap above every chip-bearing row.
+        # height=0 before the bind, else minimum_height reads the dp(100) Widget default (~100 px gap).
         self._chip_wrap = MDStackLayout(
             spacing=dp(4),
             size_hint_y=None,
@@ -267,8 +255,7 @@ class MassMultiSelectRow(OptionRow):
             keys = [k for k in self._all_keys if q in k.lower()]
         else:
             keys = self._all_keys
-        # Cap visible rows; RecycleView is fast but rendering 5000 still
-        # forces a giant layout pass we don't need.
+        # Cap visible rows: rendering 5000 forces a giant layout pass.
         keys = keys[:500]
         self._rv.data = [
             {
@@ -287,8 +274,7 @@ class MassMultiSelectRow(OptionRow):
             self._selected.discard(key)
         self.value = sorted(self._selected)
         self._rebuild_chips()
-        # Freshen the data entry in place so a recycled view row doesn't
-        # reapply a stale `selected` — same guard as ChecklistSelectRow.
+        # Freshen the data entry in place so a recycled row doesn't reapply a stale `selected`.
         for entry in self._rv.data:
             if entry["key"] == key:
                 entry["selected"] = active
@@ -298,15 +284,12 @@ class MassMultiSelectRow(OptionRow):
         try:
             incoming = {str(v) for v in (value or [])}
         except TypeError:
-            return  # not iterable — keep old state
+            return  # not iterable: keep old state
         if self._data_prepared:
-            # Keep only keys the world actually has; unknown names from
-            # hand-edited YAML are silently dropped rather than crashing.
+            # Unknown names from hand-edited YAML are silently dropped.
             selected = {k for k in self._all_keys if k in incoming}
         else:
-            # prepare_data() hasn't sorted the real key list yet — accept
-            # as-is, same as the __init__ default path. Recomputed once
-            # prepare_data()/_refresh() runs against real keys.
+            # No real key list before prepare_data(); accept as-is, recomputed later.
             selected = incoming
         self._selected = selected
         self.value = sorted(self._selected)
@@ -376,9 +359,7 @@ class ChecklistSelectRow(OptionRow):
         if q:
             keys = [k for k in self._all_keys if q in k.lower()]
         else:
-            # Selected first so the current picks are visible without
-            # scrolling. Reorder only on query change — never on toggle —
-            # so rows don't jump under the cursor.
+            # Selected first; reorder only on query change so rows don't jump under the cursor on toggle.
             keys = [k for k in self._all_keys if k in self._selected] + [
                 k for k in self._all_keys if k not in self._selected
             ]
@@ -400,9 +381,7 @@ class ChecklistSelectRow(OptionRow):
             self._selected.discard(key)
         self.value = sorted(self._selected)
         self._summary.text = self._summary_text()
-        # Freshen the data entry in place (no refresh, no reorder) so a
-        # recycled view row doesn't reapply a stale `selected` and
-        # silently undo the toggle.
+        # Freshen in place (no reorder) so a recycled row can't reapply stale `selected` and undo the toggle.
         for entry in self._rv.data:
             if entry["key"] == key:
                 entry["selected"] = active
@@ -412,7 +391,7 @@ class ChecklistSelectRow(OptionRow):
         try:
             incoming = {str(v) for v in (value or [])}
         except TypeError:
-            return  # not iterable — keep old state
+            return  # not iterable: keep old state
         self._selected = {k for k in self._all_keys if k in incoming}
         self.value = sorted(self._selected)
         self._summary.text = self._summary_text()
@@ -433,16 +412,13 @@ class MassCounterRow(OptionRow):
 
     def __init__(self, descriptor: dict, world: dict, **kwargs):
         super().__init__(descriptor, **kwargs)
-        # Defer the keys sort + counts table for the same reason as
-        # MassMultiSelectRow — item/location lists can be thousands of
-        # entries. `prepare_data()` runs on first panel open.
+        # Keys sort + counts table deferred to prepare_data(), as in MassMultiSelectRow.
         self._world = world
         self._all_keys: list = []
         self._data_prepared = False
 
         defaults = dict(descriptor.get("default") or {})
-        # Only the user-defined non-zero defaults need to live in
-        # `_counts` until prepare_data fills the rest with zeros.
+        # Only non-zero defaults live here until prepare_data backfills zeros.
         self._counts: dict = {k: int(v) for k, v in defaults.items()}
         self.value = self._nonzero_counts()
 
@@ -472,8 +448,7 @@ class MassCounterRow(OptionRow):
             self._all_keys = sorted(self._world.get("item_names") or [])
         else:
             self._all_keys = sorted(self._world.get("location_names") or [])
-        # Backfill zeros for keys the user hasn't touched. `_counts`
-        # already holds any non-zero defaults from __init__.
+        # Backfill zeros; `_counts` already holds the non-zero defaults.
         for k in self._all_keys:
             self._counts.setdefault(k, 0)
         self._refresh("")
@@ -503,8 +478,7 @@ class MassCounterRow(OptionRow):
         self._counts[key] = int(count)
         self.value = self._nonzero_counts()
         self._summary.text = self._summary_text()
-        # Freshen the data entry in place so a recycled view row doesn't
-        # redisplay the count it was built with.
+        # Freshen in place so a recycled row doesn't redisplay its build-time count.
         for entry in self._rv.data:
             if entry["key"] == key:
                 entry["count"] = int(count)
@@ -512,20 +486,17 @@ class MassCounterRow(OptionRow):
 
     def apply_value(self, value):
         if not isinstance(value, dict):
-            return  # not a mapping — keep old state
+            return  # not a mapping: keep old state
         try:
             counts = {str(k): max(0, int(v)) for k, v in value.items()}
         except (TypeError, ValueError):
             return
         if self._data_prepared:
-            # Full replace against the real key set: keys the incoming
-            # value omits go back to zero; unknown keys are dropped.
+            # Full replace: omitted keys go back to zero, unknown keys are dropped.
             for key in self._all_keys:
                 self._counts[key] = counts.get(key, 0)
         else:
-            # prepare_data() hasn't backfilled zeros for the rest of the
-            # world's keys yet — its setdefault() loop will do that later
-            # without clobbering what we store here.
+            # prepare_data()'s setdefault() will backfill zeros later without clobbering these.
             self._counts = counts
         self.value = self._nonzero_counts()
         self._summary.text = self._summary_text()

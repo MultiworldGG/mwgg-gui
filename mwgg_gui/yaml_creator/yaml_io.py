@@ -58,7 +58,7 @@ def form_state_to_yaml(
     their natural YAML form (str, int, bool, list, dict).
 
     `extras` / `game_extras` are the unknown top-level and game-section keys
-    a previous `yaml_to_form_state` preserved — hand-written `triggers:` and
+    a previous `yaml_to_form_state` preserved: hand-written `triggers:` and
     the like. They re-emit verbatim; form-owned keys always win a collision.
     """
     game_section = {k: _to_yaml_value(v) for k, v in options.items()}
@@ -89,13 +89,13 @@ def yaml_to_form_state(text: str, game_name: str, known_options=None) -> FormSta
     """Parse YAML text back into a flat option-name -> value dict.
 
     Raises ParseError on malformed YAML or missing required keys. The form
-    pane only updates when this returns cleanly — partial syncs would leave
+    pane only updates when this returns cleanly; partial syncs would leave
     the user in an unclear half-state.
 
     Unknown top-level keys land in `__extras__`. When `known_options` (an
     iterable of the option names the form owns) is given, game-section keys
-    outside it land in `__game_extras__` instead of `__options__` — the form
-    would silently drop them on the next collect otherwise. Both dicts are
+    outside it land in `__game_extras__` instead of `__options__` (the form
+    would silently drop them on the next collect otherwise). Both dicts are
     meant to be handed back to `form_state_to_yaml` so hand-written keys
     (e.g. `triggers:`) survive form edits.
     """
@@ -138,7 +138,7 @@ def _to_yaml_value(value):
     """Coerce a widget's `value` into something yaml.safe_dump accepts.
 
     Sliders give floats that are really ints; segmented buttons sometimes
-    hand back enum names. Keep this tiny — anything fancier belongs in the
+    hand back enum names. Keep this tiny; anything fancier belongs in the
     widget's own `value` getter.
     """
     if isinstance(value, float) and value.is_integer():

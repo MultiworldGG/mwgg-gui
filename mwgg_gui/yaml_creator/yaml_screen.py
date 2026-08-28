@@ -1,5 +1,5 @@
 """
-YamlScreen — the full-screen YAML creator.
+YamlScreen - the full-screen YAML creator.
 
 Layout mirrors ConsoleScreen (left half = primary content, right half =
 auxiliary view). Here:
@@ -57,9 +57,9 @@ __all__ = ("YamlScreen",)
 
 def _players_dir() -> str:
     """Settings-resolved Players directory (settings.generator.
-    player_files_path) — the exact dir Generate scans. `Utils.players_path`
+    player_files_path): the exact dir Generate scans. `Utils.players_path`
     needs a beta core new enough to ship it; older cores fall back to the
-    user_path default (never local_path — the install dir may not be
+    user_path default (never local_path: the install dir may not be
     writable)."""
     players_path = getattr(Utils, "players_path", None)
     if players_path is not None:
@@ -120,21 +120,16 @@ class YamlScreen(InnerMDScreen):
 
         self._form = None  # current form widget
         self._mode = "player"
-        # True while live form→preview sync is off: during Sync → Form
-        # application, and after the user chose to keep manual edits.
+        # True while live sync is off: during Sync -> Form apply, or after the user kept manual edits.
         self._sync_paused = False
-        # Coalesce bursts of on_change (slider drags fire per pixel) to
-        # one preview render per frame.
+        # Coalesce on_change bursts (slider drags fire per pixel) to one render per frame.
         self._push_trigger = Clock.create_trigger(
             lambda _dt: self._push_to_preview(), 0
         )
-        # Worker results, keyed by visibility ("simple" / "complex").
-        # Populated asynchronously; consulted by _show_form.
+        # Worker results keyed by visibility ("simple" / "complex"); consulted by _build_form_for.
         self._world_data: dict = {}
-        # Unknown top-level / game-section keys captured on Sync → Form
-        # (hand-written `triggers:` and the like). Held here — across mode
-        # switches and form rebuilds — and re-emitted on every preview push
-        # so form edits never destroy them.
+        # Extras captured on Sync -> Form (hand-written `triggers:` etc.);
+        # held across form rebuilds and re-emitted on every push.
         self._yaml_extras: dict = {}
         self._game_extras: dict = {}
 
@@ -144,9 +139,7 @@ class YamlScreen(InnerMDScreen):
     # ----- layout ---------------------------------------------------------
 
     def _build(self):
-        # Two-pane horizontal split, with an action bar beneath. The
-        # surrounding InnerMDScreen has already reserved space for the
-        # title bar, top app bar, and bottom app bar.
+        # Two-pane split + action bar; InnerMDScreen already reserves the chrome space.
         self._grid = MDBoxLayout(
             orientation="horizontal",
             size_hint=(1, 1),
@@ -154,13 +147,9 @@ class YamlScreen(InnerMDScreen):
             padding=[dp(6), dp(6)],
         )
 
-        # Left pane: an explicitly-sized vertical container that holds
-        # two more explicitly-sized boxes — one for the header, one for
-        # the scroll. MDScrollView's size_hint cascade does NOT work
-        # when it's a size_hint sibling of a fixed-height widget inside
-        # a single BoxLayout (the inner MDList ends up rendering at
-        # full minimum_height); the workaround is to wrap each region
-        # in its own pixel-sized container.
+        # Left pane: pixel-sized wrapper boxes per region. MDScrollView's
+        # size_hint cascade breaks as a sibling of a fixed-height widget
+        # (the inner MDList renders at full minimum_height).
         self._left = MDBoxLayout(
             orientation="vertical",
             size_hint=(0.58, None),
@@ -179,9 +168,7 @@ class YamlScreen(InnerMDScreen):
         self._header.ids.player_name.bind(
             text=lambda *_: self._push_to_preview()
         )
-        # Bind the mode-toggle segments in Python so `self` (the screen)
-        # is the callback target. In KV, `root` inside the HeaderCard
-        # rule resolves to the HeaderCard, not the screen.
+        # Bound in Python: in KV, `root` in the HeaderCard rule resolves to the card, not the screen.
         self._header.ids.mode_player.bind(
             active=lambda _i, a: a and self.set_mode("player")
         )
@@ -192,9 +179,6 @@ class YamlScreen(InnerMDScreen):
         self._left.add_widget(self._header_box)
 
         # --- scroll box: pixel-sized wrapper holding the MDScrollView.
-        # The scroll uses size_hint_x=1 (fill the box horizontally) and
-        # default size_hint_y=1 (fill the box vertically — which works
-        # cleanly now that the box itself has an explicit pixel height).
         self._scroll_box = MDBoxLayout(
             orientation="vertical",
             size_hint=(1, None),
@@ -242,23 +226,20 @@ class YamlScreen(InnerMDScreen):
         bar.add_widget(cancel_btn)
         bar.add_widget(save_btn)
 
-        # InnerMDScreen handles the chrome offset for us; we just need
-        # one vertical container holding the two-pane grid + action bar.
+        # One vertical container: two-pane grid + action bar.
         root = MDBoxLayout(orientation="vertical", size_hint=(1, 1))
         root.add_widget(self._grid)
         root.add_widget(bar)
         self.add_widget(root)
 
-        # Kick off the worker for the initial mode. The form gets built
-        # in _on_world_data_loaded once the response is in.
+        # The form is built in _on_world_data_loaded once the worker responds.
         self._show_loading("Loading options…")
         self._fetch_world_data("simple")
 
     # ----- pixel-height sizing --------------------------------------------
 
-    # Chrome (title bar + top app bar + bottom app bar) reserved by
-    # every screen in this app — raw pixels, same constant as
-    # `launcher.kv:8` and `hintscreen.py:229`. NOT a dp value.
+    # Chrome (title + top + bottom bars) reserved by every screen; raw
+    # pixels, NOT dp; same constant as launcher.kv:8 and hintscreen.py:229.
     _CHROME_PX = 185
 
     def _left_height(self) -> float:
@@ -287,9 +268,7 @@ class YamlScreen(InnerMDScreen):
             return
         self._mode = mode
         visibility = "complex" if mode == "weighted" else "simple"
-        # Always show the loading overlay during the rebuild — even when
-        # data is cached, the new form's panels populate asynchronously
-        # and we don't want the user to see half-built rows.
+        # Overlay even when cached: panels populate async and half-built rows would show.
         self._show_loading(f"Loading {mode} options…")
         if visibility in self._world_data:
             self._build_form_for(visibility)
@@ -325,10 +304,8 @@ class YamlScreen(InnerMDScreen):
     def _on_world_data_loaded(self, visibility: str, data: dict):
         self._world_data[visibility] = data
         expected = "complex" if self._mode == "weighted" else "simple"
-        # Only render if the user hasn't switched away while we were
-        # waiting; otherwise stash the data for when they come back.
-        # `_show_form` keeps the loading overlay up until the form
-        # dispatches on_ready — no preview push needed here.
+        # Render only if the user hasn't switched modes meanwhile; the
+        # overlay stays up until the form dispatches on_ready.
         if visibility == expected:
             self._build_form_for(visibility)
 
@@ -348,24 +325,14 @@ class YamlScreen(InnerMDScreen):
             else PlayerOptionsForm(data)
         )
         self._show_form(form)
-        # Build panels asynchronously so the loading animation keeps
-        # rendering during the heavy widget construction (KH2 ~45
-        # panels, some worlds much more). Mirrors
-        # `HintScreen.update_hints_list` →
-        # `asynckivy.start(self.set_hints_list())` in
-        # mwgg_gui/hint/hintscreen.py:275.
+        # Async build keeps the loading animation rendering (mirrors HintScreen.update_hints_list).
         asynckivy.start(form.populate())
 
     # ----- form / loading swap -------------------------------------------
 
     def _show_loading(self, _text: str):
-        """Show the app-wide loading animation while the worker runs.
-
-        The full-screen overlay is what we already use for other slow
-        ops (font reload, theme change, generate); reusing it keeps the
-        UX consistent. The `text` arg is accepted but currently unused —
-        the loading layout is animation-only.
-        """
+        """Show the app-wide loading overlay (same as other slow ops).
+        `text` is accepted but unused: the layout is animation-only."""
         self._set_scroll_child(MDLabel(text="", size_hint_y=None, height=dp(1)))
         try:
             self.app.loading_layout.show_loading()
@@ -389,9 +356,8 @@ class YamlScreen(InnerMDScreen):
         )
 
     def _show_form(self, form):
-        """Swap the form into the left pane. Loading overlay stays up
-        until the form fires `on_ready` — see OptionsForm — so the
-        chrome doesn't drop while panels are still building."""
+        """Swap the form into the left pane. The loading overlay stays up
+        until the form fires `on_ready` (see OptionsForm)."""
         form.bind(on_change=lambda _i, _opts: self._push_trigger())
         form.bind(on_ready=lambda _i: self._on_form_ready())
         self._set_scroll_child(form)
@@ -435,11 +401,9 @@ class YamlScreen(InnerMDScreen):
         if not self._preview.dirty or text == self._preview.get_text():
             self._preview.set_text(text)
             return
-        # Manual edits present and the form now disagrees. Pause BEFORE
-        # asking: Cancel and scrim-dismiss (which never fires the
-        # callback) both just leave sync paused with the Resync button
-        # up, and the early-return above keeps a second dialog from
-        # stacking — one warning per dirty episode.
+        # Manual edits disagree with the form. Pause BEFORE asking:
+        # Cancel/scrim-dismiss never fire the callback and just leave sync
+        # paused; the early-return above keeps dialogs from stacking.
         self._sync_paused = True
         self._preview.show_sync_paused()
         MessageBox(
@@ -453,15 +417,14 @@ class YamlScreen(InnerMDScreen):
         ).open()
 
     def _resume_sync(self):
-        # Re-render instead of reusing any earlier text — the form may
-        # have changed again while sync was paused.
+        # Re-render: the form may have changed while sync was paused.
         self._preview.dirty = False
         self._preview.hide_sync_paused()
         self._sync_paused = False
         self._push_to_preview()
 
     def _known_option_names(self):
-        """Option names the current form owns — lets the preview pane
+        """Option names the current form owns; lets the preview pane
         classify hand-written game-section keys as extras on sync."""
         if self._form is None:
             return None
@@ -469,10 +432,8 @@ class YamlScreen(InnerMDScreen):
 
     def _on_preview_sync(self, state):
         """User clicked Sync → Form in the preview pane."""
-        # Gate pushes for the duration: the player-name write below
-        # fires _push_to_preview synchronously, and the form hasn't
-        # applied the synced options yet — an ungated push would rewrite
-        # the preview from stale rows.
+        # Gate pushes: the player-name write fires _push_to_preview
+        # synchronously, before the form has applied the synced options.
         self._sync_paused = True
         try:
             # Hold every key the form doesn't own so pushes re-emit it.
@@ -485,22 +446,16 @@ class YamlScreen(InnerMDScreen):
             if self._form is not None:
                 self._form.apply(options)
         except Exception as e:
-            # Never strand the UI paused with no way forward — resume so
-            # the next form edit still syncs, same as a failed parse.
+            # Never strand the UI paused: resume so the next form edit still syncs.
             logger.warning("Sync → Form failed to apply: %s", e, exc_info=True)
             self._preview.dirty = False
             self._preview.hide_sync_paused()
             self._sync_paused = False
             return
 
-        # A clean parse doesn't guarantee a lossless round-trip — YAML
-        # comments, key order, and reserved keys the form can't
-        # represent all survive the parse but not a re-render. Only
-        # treat the text as fully captured (clear dirty, resume live
-        # sync) when the form's canonical render matches what the user
-        # actually typed; otherwise leave their hand formatting alone
-        # and keep sync paused until they hit Resync or answer the
-        # overwrite dialog on a later form change.
+        # A clean parse isn't a lossless round-trip (comments, key order).
+        # Clear dirty and resume only when the canonical render matches the
+        # typed text verbatim; otherwise stay paused until Resync/overwrite.
         if self._render_canonical_yaml() == self._preview.get_text():
             self._preview.dirty = False
             self._preview.hide_sync_paused()
@@ -523,8 +478,7 @@ class YamlScreen(InnerMDScreen):
             filename = f"{player_name}_{self.module_name}.yaml"
             filepath = os.path.join(players_dir, filename)
             if os.path.exists(filepath):
-                # Players/ may hold hand-maintained YAMLs the form never saw —
-                # never clobber one without asking.
+                # Players/ may hold hand-maintained YAMLs; never clobber without asking.
                 MessageBox(
                     "Overwrite YAML?",
                     f"{filename} already exists in your Players folder. Overwrite it?",
@@ -568,15 +522,9 @@ class YamlScreen(InnerMDScreen):
 
     # ----- top app bar override ------------------------------------------
     #
-    # While the YAML creator is up, swap the top app bar's server label
-    # to advertise which game we're authoring for — "Not Connected" is
-    # the right text on the launcher but unhelpful here. We restore the
-    # previous text on `on_leave`. If a game connects while we're on
-    # this screen, `on_connect` removes us via `remove_widget` (no
-    # `on_leave` fires), but the connection flow rewrites the label
-    # via `TopAppBar.update_server_info(ctx)` anyway, so the stale
-    # game-name text gets overwritten immediately. No extra cleanup
-    # needed for that path.
+    # Show the game being authored in the server label; restored on
+    # on_leave. A game connect removes the screen without on_leave, but
+    # TopAppBar.update_server_info(ctx) rewrites the label anyway.
 
     _APPBAR_FALLBACK = "Not Connected"
 

@@ -1,5 +1,5 @@
 """
-Form containers — one widget per mode (Player Options / Weighted).
+Form containers - one widget per mode (Player Options / Weighted).
 
 Container shape mirrors the hint screen (`mwgg_gui/hint/hintscreen.py`):
 
@@ -8,24 +8,18 @@ Container shape mirrors the hint screen (`mwgg_gui/hint/hintscreen.py`):
             ├── [WeightedPrimer]   (weighted form only)
             ├── OptionGroupPanel
             ├── OptionGroupPanel
-            └── …
+            └── ...
 
-The form itself extends `MDList` so the scroll wraps it directly — no
-extra MDBoxLayout in between. Panel construction is heavy (KH2 has
-~45 options, ALTTP has hundreds of items per `OptionSet`), so the
-form's `populate()` is a coroutine that awaits `asynckivy.sleep(0)`
-NOTE: might need to set this higher than 0; animation is still very choppy
-between each panel. That yields the main thread back to the Clock so
-`app.loading_layout`'s animation keeps rendering while the form
-builds.
+The form extends `MDList` so the scroll wraps it directly. Panel
+construction is heavy (KH2 ~45 options, ALTTP hundreds of items per
+`OptionSet`), so `populate()` is a coroutine awaiting
+`asynckivy.sleep(0)` between steps, keeping the loading animation
+rendering; it dispatches `on_ready` when the last panel is in place and
+the screen then drops the overlay. NOTE: sleep(0) may need to be
+higher; the animation is still choppy between panels.
 
-`YamlScreen` runs `asynckivy.start(form.populate())` once the worker
-returns; `populate()` dispatches `on_ready` when the last panel is in
-place. The screen drops the loading overlay on `on_ready`.
-
-This module is deliberately worlds-free: the GUI process never imports
-`worlds`, `Options`, or any apworld code. All option metadata reaches
-us as plain JSON.
+Deliberately worlds-free: the GUI process never imports `worlds`,
+`Options`, or any apworld code; option metadata arrives as plain JSON.
 """
 from __future__ import annotations
 
@@ -59,11 +53,8 @@ __all__ = (
 )
 
 
-# KV mirrors `<-HintListPanel>` from `mwgg_gui/hint/hintscreen.py` —
-# the dash strips kivymd's `<MDExpansionPanel>` rule so we own sizing
-# end-to-end. We pair that with Python overrides of
-# `_set_content_height` / `_update_original_content_height` below so
-# we can bypass kivymd's buggy `content.height - dp(88)` math.
+# The `<-` prefix strips kivymd's `<MDExpansionPanel>` rule so we own
+# sizing (mirrors `<-HintListPanel>`); paired with the height overrides below.
 Builder.load_string(
     """
 <-OptionGroupPanel>:
@@ -117,7 +108,7 @@ Builder.load_string(
 
 class OptionGroupHeader(MDBoxLayout):
     """Label + chevron-style icon button that delegates expansion to the
-    parent `OptionGroupPanel` via `panel.toggle_expansion(self)` — same
+    parent `OptionGroupPanel` via `panel.toggle_expansion(self)` - same
     pattern as `SlotListItemHeader` in `overrides/expansionlist.py`."""
 
     text = StringProperty("")
@@ -162,14 +153,9 @@ class OptionGroupPanel(MDExpansionPanel):
 
     # -- height math overrides ---------------------------------------------
     #
-    # kivymd's `MDExpansionPanel._set_content_height` caches
-    # `_original_content_height = content.height - dp(88)`, which makes
-    # the open animation animate to a height 88 px short of the actual
-    # content — the bottom rows get clipped and visually overlap the
-    # next panel's header. `HintListPanel` works around this by
-    # overriding both hooks; we do the same with the simpler "use the
-    # measured minimum_height" rule, since our content is a vertical
-    # BoxLayout of rows whose heights sum cleanly.
+    # kivymd caches `_original_content_height = content.height - dp(88)`,
+    # so the open animation lands 88 px short and clips the bottom rows;
+    # both hooks are overridden to use the measured minimum_height.
 
     def _set_content_height(self, *args):
         if not self._content:
@@ -183,16 +169,9 @@ class OptionGroupPanel(MDExpansionPanel):
         self._original_content_height = self._content.minimum_height
 
     def _resync_content_height(self, *_args):
-        # Until the first `open()`, kivymd keeps the content detached
-        # (`MDExpansionPanel.add_widget` stashes it without attaching),
-        # so every pre-open measurement sees the content laid out at the
-        # 100 px Widget-default width — width-dependent rows (chip
-        # wraps) report a hugely inflated minimum_height there, and the
-        # open animation drives `height` to that stale target, leaving
-        # blank space below the rows. Re-measure once the open animation
-        # completes and the content has laid out at real width; later
-        # minimum_height changes propagate via the content's KV
-        # `height: self.minimum_height` binding.
+        # Pre-open, kivymd keeps the content detached, so it measures at
+        # the 100 px default width and chip wraps inflate minimum_height;
+        # re-measure once the open animation completes at real width.
         content = self._content
         if not content:
             return
@@ -225,28 +204,19 @@ class OptionGroupPanel(MDExpansionPanel):
                     desc.get("name"), e, exc_info=True,
                 )
                 continue
-            # Bind the property, not `on_value`: no row registers an
-            # `on_value` event, and Kivy silently drops binds to
-            # unregistered event names (see OptionRow docstring).
+            # Bind the property: Kivy silently drops `bind(on_value=...)` (see OptionRow).
             widget.bind(value=self._on_value_changed)
             self.row_widgets[desc["name"]] = widget
             self.panel_content.add_widget(widget)
 
     def toggle_expansion(self, instance):
-        """Toggle the panel + rotate the chevron. Same shape as
-        `GameListPanel.toggle_expansion` in `overrides/expansionlist.py`.
-
-        Note: `self.is_open` only flips to True after `open()`'s animation
-        completes (see `MDExpansionPanel.open` in
-        `kivymd/uix/expansionpanel/expansionpanel.py`). So inverting the
-        chevron call against `self.is_open` here gives the correct visual
-        — closed -> opening -> chevron rotates down.
-        """
+        """Toggle the panel + rotate the chevron (same shape as
+        `GameListPanel.toggle_expansion`). `is_open` flips only after the
+        open animation completes, so testing it inverted gives the correct
+        chevron direction."""
         if not self.is_open:
             self._prepare_rows()
-            # Refresh the animation target: kivymd captures it once,
-            # 0.8 s after construction, and never again — stale after
-            # any reflow (chip toggles, reopen at a new window width).
+            # kivymd captures the target once, 0.8 s after construction; refresh or reflows leave it stale.
             self._update_original_content_height(None)
             self.open()
         else:
@@ -282,7 +252,7 @@ class OptionGroupPanel(MDExpansionPanel):
 
 
 class OptionsForm(MDList):
-    """The scrollable form body — an `MDList` of `OptionGroupPanel`s
+    """The scrollable form body: an `MDList` of `OptionGroupPanel`s
     (and optionally a leading `WeightedPrimer`).
 
     Built incrementally via the async `populate()` coroutine so the
@@ -294,8 +264,7 @@ class OptionsForm(MDList):
     __events__ = ("on_change", "on_ready")
 
     def __init__(self, world_data: dict, **kwargs):
-        # `MDList` ships with size_hint_y=None already; mirror what
-        # `hints_mdlist` does in hintscreen.py:236.
+        # MDList ships size_hint_y=None already; mirrors hints_mdlist (hintscreen.py:236).
         kwargs.setdefault("size_hint_y", None)
         kwargs.setdefault("size_hint_x", 1)
         super().__init__(**kwargs)
@@ -304,10 +273,7 @@ class OptionsForm(MDList):
         self._world = world_data.get("world", {})
         self._groups = world_data.get("groups", {})
         self._panels: dict = {}
-        # Property binds fire on every `value` assignment, including the
-        # programmatic writes during build (`apply_default`) and Sync →
-        # Form (`apply`). Suppress dispatch for those so only user edits
-        # reach on_change.
+        # Suppress dispatch during programmatic writes (build, Sync -> Form) so only user edits reach on_change.
         self._suppress_change = True
 
     # -- subclasses override -----------------------------------------------
@@ -323,12 +289,9 @@ class OptionsForm(MDList):
     # -- async population --------------------------------------------------
 
     async def populate(self):
-        """Build the form incrementally so the loading overlay's
-        animation keeps rendering throughout. Same pattern as
-        `HintScreen.set_hints_list` (`mwgg_gui/hint/hintscreen.py:277`),
-        but yields between every row — not just every panel — because a
-        single option-set widget can build hundreds of chips on its own.
-        """
+        """Build incrementally so the loading animation keeps rendering
+        (same pattern as `HintScreen.set_hints_list`); yields between every
+        row because one option-set widget can build hundreds of chips."""
         self.clear_widgets()
         self._panels.clear()
 
@@ -349,12 +312,10 @@ class OptionsForm(MDList):
             self._panels[group_name] = panel
             self.add_widget(panel)
             await asynckivy.sleep(0)
-            # Each panel populates its own header + rows with yields
-            # between every row.
+            # panel.populate() itself yields between rows.
             await panel.populate()
 
-        # Option rows schedule `apply_default` on the next Clock tick;
-        # yield once more so those have run before we claim ready.
+        # Rows schedule apply_default next tick; yield once more before claiming ready.
         await asynckivy.sleep(0)
         self._suppress_change = False
         self.dispatch("on_ready")
@@ -367,13 +328,9 @@ class OptionsForm(MDList):
         self.dispatch("on_change", self.collect())
 
     def collect(self) -> dict:
-        """Return {option_name: value} for every option except those
-        whose row asks to be hidden when at default (item-name and
-        location-name -valued options — the web's playerOptions YAML
-        omits these unless the user customizes them, since dumping the
-        full item/location list as a default is unreadable). Every
-        other option emits with its current value so the YAML matches
-        what the generator will actually see."""
+        """Return {option_name: value}, omitting rows hidden at default
+        (item/location-name options, mirroring the web's playerOptions
+        YAML)."""
         out: dict = {}
         for panel in self._panels.values():
             for name, widget in panel.row_widgets.items():
@@ -386,8 +343,7 @@ class OptionsForm(MDList):
         return out
 
     def apply(self, options: dict):
-        # Suppressed: an on_change here would re-render the preview over
-        # the very text Sync → Form just applied.
+        # Suppressed: an on_change here would re-render the preview over the text Sync -> Form just applied.
         self._suppress_change = True
         try:
             for name, value in (options or {}).items():
@@ -395,9 +351,7 @@ class OptionsForm(MDList):
                 if widget is None:
                     continue
                 try:
-                    # apply_value (not a bare `widget.value = value`)
-                    # updates the row's internal state and visuals too —
-                    # see OptionRow.apply_value.
+                    # apply_value also updates internal state and visuals (see OptionRow).
                     widget.apply_value(value)
                 except Exception as e:
                     logger.debug("apply(): %s rejected value: %s", name, e)
@@ -421,10 +375,10 @@ class OptionsForm(MDList):
         return names
 
     def on_change(self, options: dict):
-        """Default handler — overridden via `bind(on_change=...)`."""
+        """Default handler; overridden via `bind(on_change=...)`."""
 
     def on_ready(self):
-        """Default handler — overridden via `bind(on_ready=...)`."""
+        """Default handler; overridden via `bind(on_ready=...)`."""
 
 
 # ----- Player options form -------------------------------------------------
