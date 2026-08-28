@@ -7,7 +7,7 @@ LauncherLayout - layout for the launcher screen
 LauncherView - view for the launcher screen
 
 Includes the following:
-- FavoritesCarousel - carousel for displaying favorite games
+- FavoritesScroll - horizontal scroller for favorite games
 """
 
 __all__ = ('LauncherScreen', 

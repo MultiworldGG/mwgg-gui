@@ -1,46 +1,32 @@
-from __future__ import annotations
-
-from kivy.properties import ColorProperty
-from kivymd.uix.imagelist import MDSmartTileImage
-from kivymd.uix.button import MDIconButton
-
 """
 LAUNCHER FAVORITE BAR
 
-FavoritesCarousel - carousel for displaying favorite games
+FavoritesScroll - horizontal scroller for favorite games
 FavoriteToggleButton - button for toggling a favorite game
 Favorite - widget for displaying a favorite game
 """
-__all__ = ('FavoritesCarousel', 
+from __future__ import annotations
+
+__all__ = ('FavoritesScroll',
            'Favorite'
            )
 
-from kivy.metrics import dp
-from kivy.properties import StringProperty, ObjectProperty, ListProperty
-from kivymd.uix.boxlayout import MDBoxLayout
-from kivy.lang import Builder
-from kivy.properties import ObjectProperty
-from kivymd.uix.scrollview import MDScrollView
-from kivymd.uix.imagelist import MDSmartTile
 import logging
-from typing import Any
 
 from kivy.app import App
+from kivy.lang import Builder
+from kivy.metrics import dp
+from kivy.properties import ColorProperty, ListProperty, ObjectProperty, StringProperty
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDIconButton
+from kivymd.uix.imagelist import MDSmartTile, MDSmartTileImage
+from kivymd.uix.scrollview import MDScrollView
+
 from mwgg_igdb import GameIndex
 
 logger = logging.getLogger("Client")
 
 Builder.load_string('''
-
-<FavoritesCarousel>:
-    do_x_scroll: True
-    do_y_scroll: False
-    effect_y: "ScrollEffect"
-    size_hint_x: None
-    size_hint_y: None
-    bar_color: [0,0,0,0]
-    inactive_bar_color: [0,0,0,0]
-    height: dp(65)
 
 <FavoriteToggleButton>:
     style: "standard"
