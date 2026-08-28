@@ -45,7 +45,8 @@ import Utils
 from mwgg_gui.components.dialog import MessageBox
 from mwgg_gui.overrides.innermdscreen import InnerMDScreen
 
-from .options_form import PlayerOptionsForm, WeightedOptionsForm
+from .options_form import PlayerOptionsForm
+from .weighted_form import WeightedOptionsForm
 from .world_data import WorldDataError, load_world_data
 from .yaml_io import form_state_to_yaml
 from .yaml_view import YamlPreview
@@ -186,7 +187,6 @@ class YamlScreen(InnerMDScreen):
         )
         self._form_scroll = MDScrollView(
             size_hint_x=1,
-            bar_width=dp(4),
             do_scroll_x=False,
         )
         self._scroll_box.add_widget(self._form_scroll)
@@ -371,11 +371,20 @@ class YamlScreen(InnerMDScreen):
 
     def _set_scroll_child(self, widget):
         if self._form is not None:
-            self._form_scroll.remove_widget(self._form)
+            parent = self._form.parent
+            if parent is not None:
+                parent.remove_widget(self._form)
             self._form = None
-        # The scroll view holds at most one child; clear and add fresh.
         self._form_scroll.clear_widgets()
-        self._form_scroll.add_widget(widget)
+        self._scroll_box.clear_widgets()
+        if getattr(widget, "self_scrolling", False):
+            # A RecycleView-backed form owns its own viewport; nesting
+            # it inside the shared MDScrollView would fight it for every
+            # scroll gesture, so it replaces the scroll in the box.
+            self._scroll_box.add_widget(widget)
+        else:
+            self._form_scroll.add_widget(widget)
+            self._scroll_box.add_widget(self._form_scroll)
 
     # ----- preview sync ---------------------------------------------------
 

@@ -54,7 +54,6 @@ Builder.load_string(
     """
 <MassRecycleView>:
     viewclass: 'MassSelectViewRow'
-    bar_width: dp(8)
     RecycleBoxLayout:
         default_size: None, root.row_height
         default_size_hint: 1, None
@@ -65,7 +64,6 @@ Builder.load_string(
 
 <MassCounterRecycleView>:
     viewclass: 'MassCounterViewRow'
-    bar_width: dp(8)
     RecycleBoxLayout:
         default_size: None, root.row_height
         default_size_hint: 1, None

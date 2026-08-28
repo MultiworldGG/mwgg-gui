@@ -74,6 +74,7 @@ __all__ = (
     "RangeRow",
     "NamedRangeRow",
     "FreeTextRow",
+    "TapFilterChip",
     "OptionSetRow",
     "OptionCounterRow",
     "OptionDictRow",
@@ -588,6 +589,20 @@ class FreeTextRow(OptionRow):
 # ----- OptionSet / OptionList / small ItemSet, LocationSet -----------------
 
 
+class TapFilterChip(MDChip):
+    """`MDChip` in native kivy is pretty dumb.  Fixing."""
+
+    def on_press(self, *args) -> None:
+        self._on_press(args)
+
+    def on_release(self, *args) -> None:
+        self.active = not self.active
+        self._on_release(args)
+
+    def on_long_touch(self, *args) -> None:
+        pass
+
+
 class _ChipMultiSelect(OptionRow):
     """Wrap of filter chips, one per key. Only used for small,
     short-labeled key sets (see `_chips_fit`); anything bigger routes
@@ -611,7 +626,7 @@ class _ChipMultiSelect(OptionRow):
         )
         wrap.bind(minimum_height=wrap.setter("height"))
         for key in keys:
-            chip = MDChip(
+            chip = TapFilterChip(
                 MDChipText(text=str(key)),
                 type="filter",
                 size_hint=(None, None),

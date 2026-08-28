@@ -89,9 +89,9 @@ Builder.load_string('''
         RecycleView:
             id: rv
             viewclass: "TrackerLocationItem"
-            bar_width: dp(4)
+            bar_width: dp(10)
             # When the location list fits inside the panel viewport there's
-            # nothing to scroll — disable scrolling and overscroll bounce
+            # nothing to scroll; disable scrolling and overscroll bounce
             # so a drag falls through to the outer MDList instead.
             do_scroll_y: rl.minimum_height > self.height
             always_overscroll: False

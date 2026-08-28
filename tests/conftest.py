@@ -59,3 +59,8 @@ def yaml_io():
         "yaml", reason="PyYAML not installed — run under the beta venv"
     )
     return _load_by_path("yaml_creator_yaml_io", "yaml_io.py")
+
+
+@pytest.fixture(scope="session")
+def weighted_model():
+    return _load_by_path("yaml_creator_weighted_model", "weighted_model.py")

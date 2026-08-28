@@ -1,15 +1,6 @@
 """
 Form containers - one widget per mode (Player Options / Weighted).
 
-Container shape mirrors the hint screen (`mwgg_gui/hint/hintscreen.py`):
-
-    MDScrollView (`_form_scroll`)
-      └── MDList (= OptionsForm)
-            ├── [WeightedPrimer]   (weighted form only)
-            ├── OptionGroupPanel
-            ├── OptionGroupPanel
-            └── ...
-
 The form extends `MDList` so the scroll wraps it directly. Panel
 construction is heavy (KH2 ~45 options, ALTTP hundreds of items per
 `OptionSet`), so `populate()` is a coroutine awaiting
@@ -40,14 +31,12 @@ from kivymd.uix.list import MDList
 from mwgg_gui.overrides.expansionlist import GameTrailingPressedIconButton
 
 from .option_widgets import widget_for_option
-from .weighted_widgets import WeightedPrimer, weight_widget_for_option
 
 logger = logging.getLogger("Client")
 
 __all__ = (
     "OptionsForm",
     "PlayerOptionsForm",
-    "WeightedOptionsForm",
     "OptionGroupPanel",
     "OptionGroupHeader",
 )
@@ -281,11 +270,6 @@ class OptionsForm(MDList):
     def _make_widget(self, descriptor: dict):
         raise NotImplementedError
 
-    def _extras(self) -> list:
-        """Optional widgets to prepend before the panels (e.g. the
-        weighted-options primer card)."""
-        return []
-
     # -- async population --------------------------------------------------
 
     async def populate(self):
@@ -296,10 +280,6 @@ class OptionsForm(MDList):
         self._panels.clear()
 
         await asynckivy.sleep(0)
-        for extra in self._extras():
-            self.add_widget(extra)
-            await asynckivy.sleep(0)
-
         for group_name, descriptors in self._groups.items():
             if not descriptors:
                 continue
@@ -387,14 +367,3 @@ class OptionsForm(MDList):
 class PlayerOptionsForm(OptionsForm):
     def _make_widget(self, descriptor):
         return widget_for_option(descriptor, self._world)
-
-
-# ----- Weighted (advanced) form -------------------------------------------
-
-
-class WeightedOptionsForm(OptionsForm):
-    def _extras(self) -> list:
-        return [WeightedPrimer()]
-
-    def _make_widget(self, descriptor):
-        return weight_widget_for_option(descriptor, self._world)

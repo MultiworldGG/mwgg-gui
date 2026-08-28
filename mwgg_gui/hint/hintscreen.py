@@ -357,8 +357,7 @@ class HintLayout(AutoAdjustHeightBehavior, MDBoxLayout):
         # self.search_placeholder.bind(height=self.on_search_placeholder_height_changed)
         scroll_height = 1/self.search_placeholder.height
         self.hint_scroll = MDScrollView(size_hint_y=self.size_hint_y-scroll_height, 
-                                        size_hint_x=1,
-                                        bar_width=dp(4))
+                                        size_hint_x=1)
         for chip_data in FILTER_CHIPS:
             chip = MDChip(MDChipText(text = chip_data["filter_text"]),
                                              type="filter", 
