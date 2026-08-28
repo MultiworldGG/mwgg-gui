@@ -863,7 +863,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 cwd=cwd,
                 env=env
             )
-            MessageBox("Server Started", "MultiWorldGG Server has been started in a new terminal window.").open()
+            MessageBox("Server Started", "MultiworldGG Server has been started in a new terminal window.").open()
             logger.info("Server launched successfully (detached)")
             if hasattr(self, '_host_result'):
                 delattr(self, '_host_result')
@@ -957,11 +957,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         """Execute the Patch script with options in background thread.
 
         No LauncherComponents component wraps a standalone Patch exe (only
-        "Open Patch", which routes through spawn_client), so this resolves
-        the frozen name directly against BaseUtils.FROZEN_TARGETS -- the
-        single source of truth for built exe names -- rather than the
-        literal "MultiworldGGPatch.exe" this used to hardcode (wrong case:
-        the built exe is MultiWorldGGPatch.exe).
+        "Open Patch", which routes through spawn_client), so the frozen name
+        resolves directly against BaseUtils.FROZEN_TARGETS -- the single
+        source of truth for built exe names.
         """
         from BaseUtils import FROZEN_TARGETS
 

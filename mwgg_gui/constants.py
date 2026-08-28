@@ -1,6 +1,6 @@
 from __future__ import annotations
 """
-Dictionary of constants for the MultiWorld GUI application
+Constants for the MultiworldGG GUI application
 
 Contains the actions for the console and launcher.
 """
