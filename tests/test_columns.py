@@ -1,4 +1,4 @@
-"""Tests for mwgg_gui/components/columns.py — the column sort/filter registry.
+"""Tests for mwgg_gui/components/columns.py, the column sort/filter registry.
 
 columns.py is deliberately import-light (no kivy), so it is loaded by file
 path here, bypassing mwgg_gui/__init__ (which imports the full Kivy GUI).

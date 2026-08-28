@@ -1,7 +1,7 @@
 """Round-trip tests for mwgg_gui/yaml_creator/yaml_io.py (loaded by file
-path — see conftest.py), including unknown-key (extras) preservation, the
+path -- see conftest.py), including unknown-key (extras) preservation, the
 sanctioned interim path for hand-written `triggers:` blocks. `description`
-is form-owned and auto-generated — never an input, never an extra.
+is form-owned and auto-generated: never an input, never an extra.
 """
 from __future__ import annotations
 

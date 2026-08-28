@@ -1,4 +1,4 @@
-"""Tests for mwgg_gui/hint/select.py — hint-screen style resolution.
+"""Tests for mwgg_gui/hint/select.py, hint-screen style resolution.
 
 select.py is deliberately import-light, so it is loaded by file path here
 (bypassing mwgg_gui/__init__, which imports the full Kivy GUI). The new
