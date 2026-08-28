@@ -218,7 +218,7 @@ class DefaultTheme(ThemableBehavior):
     def load_markup_color(self, color_name, theme_style_index):
         """Load a single markup color from the config"""
         default_value = DEFAULT_TEXT_COLORS[color_name]
-        return self.markup_tags_theme.load_color(self.app_config, color_name, default_value)
+        return self.markup_tags_theme.load_color(self.app_config, color_name, default_value, theme_style_index)
 
     def recolor_atlas(self):
         """Recolor the atlas image by replacing pixels close to target colors with their respective theme colors.
