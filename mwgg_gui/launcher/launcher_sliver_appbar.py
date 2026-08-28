@@ -31,7 +31,7 @@ Builder.load_string('''
     MDSliverAppbarHeader:
         Image:
             source: os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "logo_bg.png")
-            pos_hint: {"center_y": 0.5}
+            pos_hint: {"center_y": 0.6}
             fit_mode: "scale-down"
     SearchBar:
         type: "small"
@@ -64,7 +64,9 @@ class LauncherSliverAppbar(MDSliverAppbar):
         self.content = MDSliverAppbarContent(orientation="vertical", padding=0)
         self.content.id = "content"
         self.add_widget(self.content)
-        self.ids.scroll.y = dp(82)
+        self.ids.scroll.y = dp(50)
+        self.ids.scroll.bar_width = dp(10)
+        self.ids.scroll.scroll_type = ["bars", "content"]
         self.ids.header.pos_hint = {"top": 1}
 
 class LauncherTextField(MDTextField):
