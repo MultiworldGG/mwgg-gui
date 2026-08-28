@@ -625,8 +625,13 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         base_cmd = get_exe(find_component("Generate"))
         cmd = [*base_cmd, "--player-files-path", temp_dir]
         cwd = os.path.dirname(base_cmd[-1])
-        # Also set KIVY_NO_ARGS to disable Kivy's argument parser when running from source
-        env = None if is_frozen() else {**os.environ, 'KIVY_NO_ARGS': '1'}
+        # PYTHONIOENCODING keeps the child's piped output UTF-8 regardless of
+        # locale; SKIP_REQUIREMENTS_UPDATE stops the child re-running the world
+        # updater the launcher already ran on cold start. KIVY_NO_ARGS disables
+        # Kivy's argument parser when running from source.
+        env = {**os.environ, 'PYTHONIOENCODING': 'utf-8', 'SKIP_REQUIREMENTS_UPDATE': '1'}
+        if not is_frozen():
+            env['KIVY_NO_ARGS'] = '1'
         # Console-subsystem exe: suppress the window that would flash over the
         # GUI on frozen Windows (output streams to the logger regardless).
         popen_kwargs = {}
@@ -658,10 +663,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
                     cwd=cwd,
                     bufsize=1,  # Line buffered
-                    universal_newlines=True,
                     env=env,
                     **popen_kwargs
                 )
@@ -968,7 +973,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             exe_path = local_path(f"{FROZEN_TARGETS['Patch']}{suffix}")
             cmd = [str(exe_path), patch_file]
             cwd = os.path.dirname(exe_path)
-            env = None
+            env = os.environ.copy()
         else:
             exe_path = Path(sys.executable)
             file_path = Path(local_path("Patch.py"))
@@ -977,6 +982,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             # Also set KIVY_NO_ARGS to disable Kivy's argument parser
             env = os.environ.copy()
             env['KIVY_NO_ARGS'] = '1'
+        # Same UTF-8 and no-child-update contract as the generation spawn.
+        env['PYTHONIOENCODING'] = 'utf-8'
+        env['SKIP_REQUIREMENTS_UPDATE'] = '1'
 
         if options.get('output_path'):
             cmd.extend(["--outputpath", options['output_path']])
@@ -999,10 +1007,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     cmd,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
-                    text=True,
+                    encoding='utf-8',
+                    errors='replace',
                     cwd=cwd,
                     bufsize=1,  # Line buffered
-                    universal_newlines=True,
                     env=env,
                     **popen_kwargs
                 )
