@@ -1,40 +1,20 @@
 """
-InnerMDScreen — MDScreen with a chrome-aware inner content area.
+InnerMDScreen: MDScreen with a chrome-aware inner content area.
 
-The app's root layout layers the title bar and top app bar over the
-screen manager, and screens typically own their own bottom app bar. A
-bare `MDScreen` fills the entire window so anything added to it
-overlaps the chrome.
+The root layout layers the title bar and top app bar over the screen
+manager, so a bare `MDScreen`'s children overlap the chrome. The fix
+can't shrink the screen itself: `MDScreenManager` transitions
+(`SwapTransition` and friends) look uniform only when every screen is
+full-window size. So the screen stays at `(1, 1)` and `add_widget` is
+proxied into an inner content layout positioned for the chrome (via the
+`AutoAdjustHeightBehavior` mixin, like every other screen); use
+`add_overlay` for window-edge widgets such as a `BottomAppBar`. Set
+`adjust_bottom_appbar = False` on screens without a bottom app bar.
 
-The fix can't go on the screen itself: the `MDScreenManager` uses
-`SwapTransition` (and friends) to animate between screens, and those
-transitions look uniform only when every screen is the same full-window
-size — a smaller screen would leak chrome through the slide. So we
-keep the screen at `(1, 1)` and route widgets into an inner content
-layout that's positioned for the chrome.
-
-`InnerMDScreen` builds that inner layout once and proxies the normal
-`add_widget` call into it, so subclasses use the screen exactly like
-they would a bare `MDScreen`:
-
-    class MyScreen(InnerMDScreen):
-        def __init__(self, **kwargs):
-            super().__init__(**kwargs)
-            self.add_widget(my_content)        # inside the chrome
-            self.add_overlay(my_bottom_bar)    # full-screen edge
-
-The inner layout uses the existing `AutoAdjustHeightBehavior` mixin
-from `mwgg_gui.components.mw_theme`, so resize behavior matches every
-other screen in the app.
-
-Set the class attribute `adjust_bottom_appbar = False` if your screen
-does not own a bottom app bar (settings pattern).
-
-NOTE: this module is intentionally *not* re-exported from
-`overrides/__init__.py` — `mw_theme.py` imports from `overrides`
-during its own initialization, and pulling `AutoAdjustHeightBehavior`
-from `mw_theme` here would deadlock the cycle. Import the class
-directly:
+NOTE: intentionally *not* re-exported from `overrides/__init__.py` --
+`mw_theme.py` imports from `overrides` during its own initialization,
+and pulling `AutoAdjustHeightBehavior` from `mw_theme` there would
+deadlock the cycle. Import the class directly:
 
     from mwgg_gui.overrides.innermdscreen import InnerMDScreen
 """
@@ -74,7 +54,7 @@ class InnerMDScreen(MDScreen, ThemableBehavior):
 
     The screen itself stays at `(1, 1)` so screen-manager transitions
     animate uniformly. Subclasses generally add widgets via the normal
-    `add_widget` — they're routed into the content area. Use
+    `add_widget`; they're routed into the content area. Use
     `add_overlay` for widgets that need to sit at the window edge
     (e.g. a `BottomAppBar`).
     """

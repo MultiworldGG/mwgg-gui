@@ -25,19 +25,16 @@ from .markuptextfield import (
     MarkupTextFieldCutCopyPaste,
 )
 
-# `InnerMDScreen` is intentionally NOT re-exported here. It depends on
-# `mwgg_gui.components.mw_theme.AutoAdjustHeightBehavior`, and mw_theme
-# imports from this package during its own init — re-exporting here
-# would create a circular import. Import it from the submodule:
-#     from mwgg_gui.overrides.innermdscreen import InnerMDScreen
+# `InnerMDScreen` is intentionally NOT re-exported here: it imports from
+# mw_theme, which imports this package during its own init -- re-exporting
+# would create a circular import. Import it from the submodule instead.
 
 from .fa_icons import (
     md_icons,
 )
 
-# Importing this module patches kivy.core.image.ImageLoader to recognize
-# `ap:` and `ap:zip:` URL schemes that world client kvs (Universal Tracker
-# et al.) feed AsyncImage. Side effect on import.
+# Import side effect: patches kivy.core.image.ImageLoader to recognize the
+# `ap:` / `ap:zip:` URL schemes world client kvs feed AsyncImage.
 from .imageloader import (
     ApAsyncImage,
     register_url_scheme,

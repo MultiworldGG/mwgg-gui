@@ -6,7 +6,7 @@ The GUI must not import game worlds into its own interpreter
 runs in a separate process: we invoke MultiworldGG's `Generate` entry point
 with `--yaml-options`. The argv prefix is resolved through
 `LauncherComponents.get_exe`, which reads `BaseUtils.FROZEN_TARGETS`
-— the single source of truth for built exe names — so this module can't
+(the single source of truth for built exe names), so this module can't
 drift from the actual frozen executable. LauncherComponents is a top-level
 core module: importing it never touches the `worlds` package, so no world
 code runs in this interpreter.
@@ -17,7 +17,7 @@ mode, so stdout carries only the payload.
 
 Public API:
     load_world_data(game_name, visibility="simple") -> dict
-    WorldDataError — raised on subprocess failure or unparseable response
+    WorldDataError - raised on subprocess failure or unparseable response
 """
 from __future__ import annotations
 
@@ -33,14 +33,11 @@ logger = logging.getLogger("Client")
 
 __all__ = ("WorldDataError", "load_world_data")
 
-# Generous: the first call for a missing world includes a uv install, which can
-# be slow on a cold cache / slow connection.
+# Generous: a first call for a missing world includes a uv install (slow on cold cache).
 _TIMEOUT_SECONDS = 300
 
-# Generate exits with this code after installing a previously-missing world: the
-# world can't be loaded in the same process that just installed it, so we re-run
-# Generate once and the fresh process loads it cleanly. Mirrors
-# Generate.EXIT_NEEDS_RELOAD / the project-wide "needs reload" convention.
+# A world can't load in the process that just installed it; on this exit code
+# re-run Generate once (mirrors Generate.EXIT_NEEDS_RELOAD).
 _EXIT_NEEDS_RELOAD = 10
 
 
@@ -59,10 +56,9 @@ class WorldDataError(Exception):
 def _generate_command() -> list[str]:
     """Build the argv prefix that runs MultiworldGG's Generate entry point.
 
-    Resolved through LauncherComponents — same path as the launcher's own
-    generation flow — so the frozen exe name can't drift from the actual
-    built target (see BaseUtils.FROZEN_TARGETS). The import stays inside
-    the function: keeping it off the module import path keeps world_data
+    Resolved through LauncherComponents (same path as the launcher's own
+    generation flow) so the frozen exe name can't drift from
+    BaseUtils.FROZEN_TARGETS. The function-local import keeps world_data
     loadable standalone.
     """
     from LauncherComponents import find_component, get_exe
@@ -86,27 +82,21 @@ def _run_generate(game_name: str, visibility: str, module: str = "") -> subproce
         "--game", game_name,
         "--visibility", visibility,
     ]
-    # Pass the module slug so a custom (non-pip) world loads without a game-index
-    # lookup — the index in a fresh Generate process only knows pip/index worlds.
+    # The module slug lets a custom (non-pip) world load without a game-index lookup.
     if module:
         cmd += ["--module", module]
-    # Run at the exe's directory: the child's get_settings() prefers a
-    # host.yaml in cwd over the user_path one, and the launcher process's
-    # own cwd is arbitrary. Parity with the generation flow in launcher.py.
+    # get_settings() prefers a host.yaml in cwd; run at the exe's dir (parity with launcher.py).
     cwd = os.path.dirname(prefix[-1])
     env = os.environ.copy()
-    # Block ModuleUpdate's self-update path in the child: on frozen builds
-    # Utils.exit_restart_for_update would respawn a detached duplicate
-    # Generate in a new console and exit 10. dump_yaml_options' world-install
-    # path is unaffected — only ModuleUpdate.update() is gated by this.
+    # Gates only ModuleUpdate.update(): a frozen child would otherwise
+    # respawn a detached duplicate Generate console and exit 10.
     env["SKIP_REQUIREMENTS_UPDATE"] = "1"
     if not is_frozen():
         # Disable Kivy's argument parser when running from source.
         env["KIVY_NO_ARGS"] = "1"
     kwargs = {}
     if is_windows:
-        # Generate is a console-subsystem exe; without this every options
-        # fetch flashes a console window on frozen Windows.
+        # Console-subsystem exe: without this every fetch flashes a console window.
         kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
     logger.debug("yaml-options spawn: %s", cmd)
     try:

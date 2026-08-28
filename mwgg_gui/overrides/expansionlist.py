@@ -54,31 +54,17 @@ with open(os.path.join(os.path.dirname(__file__), "expansionlist.kv"), encoding=
     Builder.load_string(kv_file.read())
 
 def calculate_text_height(text: str, font_size: float, text_width: float) -> float:
-    """
-    Calculate the rendered height of text using LabelBase.
-    
-    Args:
-        text: The text to measure
-        font_size: Font size in pixels
-        text_width: Available width for text wrapping
-        
-    Returns:
-        Height of the rendered text in pixels
-    """
+    """Measure rendered text height via LabelBase with wrapping at text_width."""
     label = LabelBase(text=text, font_size=font_size, text_size=(text_width, None))
     label.refresh()
     return label.texture.size[1] if label.texture else font_size
 
 class IconBadge(MDBadge):
-    """
-    A custom badge widget for displaying icons.
-    """
+    """Badge widget for displaying icons."""
     pass
 
 class HintListItemHeader(MDBoxLayout, ButtonBehavior, ThemableBehavior):
-    """
-    Header widget for displaying hint item information.
-    """
+    """Header row for a hint item."""
     hint_icon: StringProperty
     hint_text: StringProperty
     panel: ObjectProperty
@@ -90,15 +76,7 @@ class HintListItemHeader(MDBoxLayout, ButtonBehavior, ThemableBehavior):
         super().__init__(**kwargs)
 
 class SlotListItemHeader(MDBoxLayout, CommonElevationBehavior):
-    """
-    Header widget for displaying slot item information, it 
-    contains slot name and game information.
-    
-    Attributes:
-        slot_name (StringProperty): The name of the slot
-        game (StringProperty): The name of the game
-        panel (ObjectProperty): Reference to the parent panel
-    """
+    """Header showing a slot's name (with pronouns) and game."""
     slot_name: StringProperty
     game: StringProperty
     panel: ObjectProperty
@@ -106,13 +84,6 @@ class SlotListItemHeader(MDBoxLayout, CommonElevationBehavior):
     waiting: BooleanProperty
 
     def __init__(self, item_data, panel, **kwargs):
-        """
-        Initialize the SlotListItemHeader.
-        
-        Args:
-            game_data (dict): Dictionary containing slot and game information
-            panel: Reference to the parent panel
-        """
         self.panel = panel
         self.item_data = item_data
         self.theme_shadow_color = "Custom"
@@ -129,10 +100,7 @@ class SlotListItemHeader(MDBoxLayout, CommonElevationBehavior):
         Clock.schedule_once(lambda x: self.calculate_height())
 
     def calculate_height(self):
-        """
-        Calculate the header height based on actual text rendering.
-        Uses LabelBase to get real texture dimensions without creating reactive bindings.
-        """
+        """Compute header height from real texture sizes (no reactive bindings)."""
         # Available width for text 100 default kivy width
         # total width - children(avatar - trailing icon - spacing) - padding - spacing
         children_width = 0
@@ -170,30 +138,13 @@ class SlotListItemHeader(MDBoxLayout, CommonElevationBehavior):
                     self.search = True
 
 class GameListItemHeader(MDBoxLayout, ButtonBehavior, ThemableBehavior):
-    """
-    Header widget for displaying game item information in the game list.
-    
-    Attributes:
-        game_tag (StringProperty): The tag identifier for the game
-        game_data (DictProperty): Dictionary containing game information
-        panel (ObjectProperty): Reference to the parent panel
-        on_game_select (ObjectProperty): Callback function for game selection
-    """
+    """Header row for a game entry in the game list."""
     game_module: StringProperty
     game_data: DictProperty
     panel: ObjectProperty
     on_game_select: ObjectProperty = None
 
     def __init__(self, game_module, game_data, panel, on_game_select=None, **kwargs):
-        """
-        Initialize the GameListItemHeader.
-        
-        Args:
-            game_tag (str): The tag identifier for the game
-            game_data (dict): Dictionary containing game information
-            panel: Reference to the parent panel
-            on_game_select: Callback function for game selection
-        """
         self.game_module = game_module
         self.game_data = game_data
         self.panel = panel
@@ -207,19 +158,7 @@ class GameListItemHeader(MDBoxLayout, ButtonBehavior, ThemableBehavior):
             self.on_game_select(self.game_module)
 
     def list_tooltip(self, item_list: list[str]) -> dict[str, str]:
-        """
-        Create tooltip text for a list of items.
-        
-        Wraps the text to fit within specified width constraints and creates
-        both a label (shortened) and tooltip (full) version.
-        
-        Args:
-            item_list (list[str]): List of items to create tooltip for
-            
-        Returns:
-            dict[str, str]: Dictionary with 'label' (shortened text) and 
-                           'tooltip' (full text) keys
-        """
+        """Wrap items into a shortened 'label' and a full 'tooltip' text."""
         full_list = ", ".join(item_list).rstrip(", ")
         wrapped_list = wrap(full_list, width=17, break_on_hyphens=False, max_lines=3)
         item_dict = {
@@ -229,31 +168,7 @@ class GameListItemHeader(MDBoxLayout, ButtonBehavior, ThemableBehavior):
         return item_dict
 
 class MWBaseListItem(MDBoxLayout, CommonElevationBehavior):
-    """
-    Base class for list items.
-    Widget for displaying individual hint items in the hint player list.
-    
-    This class is used to display a hint item in the hint player list.
-    Displays entrance, location, item, and goal information.
-    
-    Attributes:
-        slot_icon_entrance (ObjectProperty): Icon widget for entrance
-        slot_text_entrance (ObjectProperty): Text widget for entrance name
-        slot_icon_location (ObjectProperty): Icon widget for location
-        slot_text_location (ObjectProperty): Text widget for location name
-        slot_icon_item (ObjectProperty): Icon widget for item
-        slot_text_item (ObjectProperty): Text widget for item name
-        slot_icon_goal (ObjectProperty): Icon widget for goal
-        item_name (StringProperty): Name of the item
-        location_name (StringProperty): Name of the location
-        entrance_name (StringProperty): Name of the entrance
-        game_status (StringProperty): Current status of the game
-        for_bk_mode (BooleanProperty): Indicates if item is for BK mode
-        for_goal (BooleanProperty): Indicates if item is for their goal
-        from_shop (BooleanProperty): Indicates if item is from a shop
-        classification (StringProperty): Classification of the item
-        assigned_level (StringProperty): Assigned level
-    """
+    """Base list item showing a hint's entrance, location, item, and goal."""
     entrance_texture: Tuple[NumericProperty, NumericProperty]
     slot_icon_entrance: ObjectProperty
     slot_text_entrance: ObjectProperty
@@ -277,13 +192,6 @@ class MWBaseListItem(MDBoxLayout, CommonElevationBehavior):
     location_badge_text: StringProperty
 
     def __init__(self, hint_data: UIHint, game_status: str, shadow_colors: dict, **kwargs):
-        """
-        Initialize the SlotListItem.
-        
-        Args:
-            game_status (str): Current status of the game
-            game_data (dict): Dictionary containing stored data
-        """
         from NetUtils import HintStatus, MWGGUIHintStatus
         self.hint_data = hint_data
         self.game_status = game_status
@@ -328,26 +236,14 @@ class MWBaseListItem(MDBoxLayout, CommonElevationBehavior):
         if self.classification == "Progression":
             self.elevation_level = 5
             self.shadow_color = item_colors["progression"]
-        if self.classification == "Progression - Requried for Goal":
+        if self.classification == "Progression - Required for Goal":
             self.elevation_level = 6
             self.shadow_color = item_colors["goal"]
         if self.found == "Found":
             self.elevation_level = 0
 
     def list_tooltip(self, item_list: list[str]) -> dict[str, str]:
-        """
-        Create tooltip text for a list of items.
-        
-        Wraps the text to fit within specified width constraints and creates
-        both a label (shortened) and tooltip (full) version.
-        
-        Args:
-            item_list (list[str]): List of items to create tooltip for
-            
-        Returns:
-            dict[str, str]: Dictionary with 'label' (shortened text) and 
-                           'tooltip' (full text) keys
-        """
+        """Wrap items into a shortened 'label' and a full 'tooltip' text."""
         full_list = ", ".join(item_list).rstrip(", ")
         wrapped_list = wrap(full_list, width=17, break_on_hyphens=False, max_lines=3)
         item_dict = {
@@ -379,17 +275,11 @@ class SlotListItem(MWBaseListItem):
         self.height = self.estimate_height()
 
     def populate_slot_item(self):
-        """
-        Populate the slot item with entrance, location, item, and goal information.
-        
-        This method sets up the visual elements of the slot item including
-        entrance information, location text, item text, and goal icon.
-        """
+        """Populate entrance, location, item, and goal widgets."""
         if "Vanilla" not in self.entrance_name:
-            # Normalize entrance display; server currently encodes unknown entrances as
-            # "Unknown location (ID: X)". For UI, we want to show just the identifier (e.g. "B1").
+            # Server encodes unknown entrances as "Unknown location (ID:X)";
+            # show just the identifier (e.g. "B1").
             entrance_text = self.entrance_name
-            # Server uses a fixed format: "Unknown location (ID:{code})"
             match = re.match(r"Unknown location \(ID:(.+)\)", entrance_text)
             if match:
                 self.entrance_name = match.group(1).strip()
@@ -405,10 +295,7 @@ class SlotListItem(MWBaseListItem):
         self.slot_icon_goal.icon = "flag_checkered" if self.game_status == "GOAL" else "blank"
 
     def estimate_height(self):
-        """
-        Calculate the height of the slot item based on actual text rendering.
-        Uses LabelBase to get real texture dimensions without creating reactive bindings.
-        """
+        """Compute item height from real texture sizes (no reactive bindings)."""
         # Available width for text (total width - icon - padding - spacing)
         text_width = 256 - dp(40) - dp(24) - dp(16)
         
@@ -641,7 +528,6 @@ class HintListDropdown(MDDropdownMenu):
                 "on_release": lambda x=status: self._on_item_release(dropdown_callback, x)
             })
         
-        # Pass items to parent constructor
         super().__init__(*args, items=items, **kwargs)
     
     def _on_item_release(self, callback: Callable[[HintStatus], None], status: HintStatus):
@@ -650,108 +536,44 @@ class HintListDropdown(MDDropdownMenu):
         self.dismiss()
 
 class ListItemTooltip(MDTooltip):
-    """
-    Base class for tooltip behavior.
-    
-    Provides tooltip functionality for game list items.
-    """
+    """Tooltip behavior base for list items."""
     pass
 
 class HintListItemLabel(ListItemTooltip, MDLabel):
-    """
-    List item with tooltip behavior for long text.
-    
-    Implements a list item with tooltip behavior for text that may be
-    truncated and needs a tooltip to show the full content.
-    
-    Attributes:
-        text (StringProperty): The display text
-        tooltip_text (StringProperty): The full text shown in tooltip
-    """
+    """Label with a tooltip carrying the full (possibly truncated) text."""
     tooltip_text = StringProperty("")
     def __init__(self, **kwargs):
-        """
-        Initialize the HintListItemLabel.
-        
-        Args:
-            tooltip_text (str): The tooltip text for long items
-        """
         super().__init__(**kwargs)
         self.tooltip_text = self.text
 
 class GameListItemLongText(ListItemTooltip, MDListItemSupportingText):
-    """
-    List item with tooltip behavior for long text.
-    
-    Implements a list item with tooltip behavior for text that may be
-    truncated and needs a tooltip to show the full content.
-    
-    Attributes:
-        text (StringProperty): The display text
-        tooltip_text (StringProperty): The full text shown in tooltip
-    """
+    """Supporting text with a tooltip carrying the full text."""
     text = StringProperty("")
     tooltip_text = StringProperty("")
 
     def __init__(self, text, tooltip_text, **kwargs):
-        """
-        Initialize the GameListItemLongText.
-        
-        Args:
-            text (str): The display text
-            tooltip_text (str): The tooltip text for long items
-        """
         self.text = text
         self.tooltip_text = tooltip_text
         super().__init__(**kwargs)
 
 class GameListItemShortText(MDListItemSupportingText):
-    """
-    List item with no tooltip behavior for short text.
-
-    Implements a list item without tooltip behavior for text that
-    fits within the display area without truncation.
-    
-    Attributes:
-        text (StringProperty): The display text
-    """
+    """Supporting text without a tooltip, for text that fits."""
     text = StringProperty("")
     
     def __init__(self, text, **kwargs):
-        """
-        Initialize the GameListItemShortText.
-        
-        Args:
-            text (str): The display text
-        """
         self.text = text
         super().__init__(**kwargs)
 
 class GameListItem(MDListItem, CommonElevationBehavior):
     """
-    Widget for displaying individual game items in the game list.
-    
-    This displays a single item from a dictionary (genre, theme, etc).
-    Supports both long text with tooltips and short text without tooltips.
-    
-    Attributes:
-        text (StringProperty): The display text
-        icon (StringProperty): The icon to display
-        tooltip_text (StringProperty): The tooltip text for long items
+    One metadata row (genre, theme, ...) in a game panel; long text gets a
+    tooltip with the full content.
     """
     text = StringProperty("")
     icon = StringProperty("")
     tooltip_text = StringProperty("")
     
     def __init__(self, text="", icon="blank", tooltip_text="", **kwargs):
-        """
-        Initialize the GameListItem.
-        
-        Args:
-            text (str): The display text
-            icon (str): The icon to display (default: "blank")
-            tooltip_text (str): The tooltip text for long items (default: "")
-        """
         super().__init__(**kwargs)
         self.text = text
         self.icon = icon
@@ -760,7 +582,6 @@ class GameListItem(MDListItem, CommonElevationBehavior):
         self.pos_hint = {"center_y": 0.5}
 
         Clock.schedule_once(lambda x: self.remove_extra_container())
-            # Create and add the text widget
         if "..." in self.text:
             text_widget = GameListItemLongText(text, tooltip_text)
         else:
@@ -768,12 +589,7 @@ class GameListItem(MDListItem, CommonElevationBehavior):
         self.add_widget(text_widget)
 
     def remove_extra_container(self):
-        """
-        Remove the extra trailing container from the list item.
-        
-        This method cleans up the widget structure by removing
-        unnecessary container elements.
-        """
+        """Remove the unused trailing container from the list item."""
         try:
             self.remove_widget(self.ids.trailing_container)
         except:
@@ -781,21 +597,8 @@ class GameListItem(MDListItem, CommonElevationBehavior):
 
 class GameListPanel(MDExpansionPanel):
     """
-    Expansion panel for displaying game information in the game or hintlist.
-    
-    This class is used to display a game item in the game list.
-    It is a subclass of MDExpansionPanel and can display either
-    slot items (if hints are present) or game metadata.
-    
-    Attributes:
-        item_name (StringProperty): The name of the item
-        item_data (DictProperty): Dictionary containing item information
-        icon (StringProperty): The icon to display (default: "game-controller")
-        leading_avatar (MDListItemLeadingAvatar): Avatar widget for the item
-        panel_header (MDExpansionPanelHeader): Header widget for the panel
-        panel_content (MDExpansionPanelContent): Content widget for the panel
-        panel_header_layout (ObjectProperty): Layout for the panel header
-        on_game_select (ObjectProperty): Callback function for game selection
+    Expansion panel for the game list or hint list: shows slot items when
+    item_data is UIPlayerData (hints), game metadata otherwise.
     """
     item_name: StringProperty
     item_data: Any
@@ -808,15 +611,6 @@ class GameListPanel(MDExpansionPanel):
     app: MDApp
     
     def __init__(self, item_name, item_data, on_game_select=None, **kwargs):
-        """
-        Initialize the GameListPanel.
-        
-        Args:
-            item_name (str): The name of the item
-            item_data (dict): Dictionary containing item information
-            on_game_select: Callback function for game selection
-            **kwargs: Additional keyword arguments for MDExpansionPanel
-        """
         super().__init__(**kwargs)
         self.app = MDApp.get_running_app()
         self.item_name = item_name
@@ -834,12 +628,7 @@ class GameListPanel(MDExpansionPanel):
         self.panel_content.height = self.panel_content.minimum_height
 
     def populate_slot_item(self, ctx: "CommonContext"):
-        """
-        Populate the panel with slot items when hints are present.
-        
-        This method sets up the panel to display slot information
-        including the header with avatar and slot items for each hint.
-        """
+        """Build the avatar header and one SlotListItem per visible hint."""
         self.panel_header = self.ids.panel_header
         self.panel_content = self.ids.panel_content
         self.panel_header_layout = SlotListItemHeader(item_data=self.item_data, panel=self)
@@ -873,13 +662,7 @@ class GameListPanel(MDExpansionPanel):
             self.panel_header_layout.ids.game_item_container.add_widget(BaseListItemIcon(icon="flag_checkered", theme_font_size="Custom", font_size=dp(14), pos_hint={"center_y": 0.5}),1)
 
     def populate_game_item(self):
-        """
-        Populate the panel with game metadata when no hints are present.
-        
-        This method sets up the panel to display game information
-        including genres, themes, keywords, player perspectives, ratings,
-        and release dates.
-        """
+        """Build the header and metadata rows (genres, themes, ratings, ...)."""
         self.panel_header = self.ids.panel_header
         self.panel_content = self.ids.panel_content
         self.panel_header_layout = GameListItemHeader(
@@ -911,19 +694,7 @@ class GameListPanel(MDExpansionPanel):
                 self.panel_content.add_widget(GameListItem(text=str(self.item_data['release_date']), icon="calendar-month", tooltip_text=str(self.item_data['release_date'])))
                 
     def list_tooltip(self, item_list: list[str]) -> dict[str, str]:
-        """
-        Create tooltip text for a list of items.
-        
-        Wraps the text to fit within specified width constraints and creates
-        both a label (shortened) and tooltip (full) version.
-        
-        Args:
-            item_list (list[str]): List of items to create tooltip for
-            
-        Returns:
-            dict[str, str]: Dictionary with 'label' (shortened text) and 
-                           'tooltip' (full text) keys
-        """
+        """Wrap items into a shortened 'label' and a full 'tooltip' text."""
         full_list = ", ".join(item_list).rstrip(", ")
         wrapped_list = wrap(full_list, width=18, break_on_hyphens=False, max_lines=3)
         item_dict = {
@@ -933,15 +704,7 @@ class GameListPanel(MDExpansionPanel):
         return item_dict
 
     def toggle_expansion(self, instance):
-        """
-        Toggle the expansion state of the panel.
-        
-        Animates the padding change and opens/closes the panel
-        with appropriate chevron icon updates.
-        
-        Args:
-            instance: The widget instance that triggered the toggle
-        """
+        """Open/close with padding animation and chevron update."""
         current_padding = self.padding
         new_padding = [dp(4), dp(12), dp(4), dp(12)] if not self.is_open else [dp(8),dp(4),dp(8),dp(4)]
         if current_padding != new_padding:
@@ -955,11 +718,5 @@ class GameListPanel(MDExpansionPanel):
 class GameTrailingPressedIconButton(
     ButtonBehavior, RotateBehavior, MDListItemTrailingIcon
 ):
-    """
-    A button widget that combines button behavior, rotation behavior,
-    and trailing icon functionality for game list items.
-    
-    This class provides an interactive icon button that can be pressed
-    and rotated, typically used for trailing icons in list items.
-    """
+    """Pressable, rotatable trailing icon button for list items."""
     ...

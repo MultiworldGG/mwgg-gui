@@ -9,8 +9,6 @@ from multiprocessing import Queue
 from logging.handlers import QueueHandler
 from collections import deque
 
-# Check if we're in a test environment
-
 # Allow Kivy to be imported during testing
 # if "pytest" not in sys.modules and "unittest" not in sys.modules and "test" not in sys.argv[0]:
 #     assert "kivy" not in sys.modules, "gui needs instansiation first"
@@ -33,11 +31,8 @@ from BaseUtils import local_path
 from kivy.config import Config as MWKVConfig
 from kivy.config import ConfigParser
 
-#####
-##### The config is an ACTUAL FILE THAT CAN SAVE ANY SETTING
-##### THERE IS EVEN A VIEW FOR IT
-##### AND WE CAN ADD OUR OWN SHIT
-#####
+# Kivy's Config is file-backed (persists to KIVY_HOME) and extensible with
+# app-specific settings; the settings screen edits it live.
 
 MWKVConfig.set("input", "mouse", "mouse,disable_multitouch")
 MWKVConfig.set("kivy", "exit_on_escape", "0")
@@ -48,55 +43,30 @@ MWKVConfig.set("kivy", "default_font", ['Inter',
                                     os.path.join("data","fonts","Inter-BoldItalic.ttf")])
 MWKVConfig.set("graphics", "width", "1099")
 MWKVConfig.set("graphics", "height", "699")
-# custom_titlebar is Windows-only: Kivy's set_custom_titlebar() only succeeds
-# there, and we explicitly write "0" on other platforms to overwrite any value
-# persisted by a previous Windows-only run (MWKVConfig.write() persists to
-# KIVY_HOME, so a one-time misconfig sticks across runs otherwise).
+# custom_titlebar only works on Windows; write "0" elsewhere to overwrite a
+# value persisted to KIVY_HOME by a previous Windows run.
 MWKVConfig.set("graphics", "custom_titlebar", "1" if sys.platform == "win32" else "0")
-# NOTE: window_icon previously set here was using a CWD-relative path and was
-# overridden anyway by App.icon at run() time — see MultiMDApp.icon below.
 MWKVConfig.set("graphics", "minimum_height", "700")
 MWKVConfig.set("graphics", "minimum_width", "600")
 MWKVConfig.set("graphics", "focus", "False")
 MWKVConfig.write()
 
 from kivy.core.window import Window
-# Windows-only: hide the window during the splash sequence so the splash
-# process owns the visible UI until Kivy finishes loading (see MultiWorld.py
-# for the splash gate). Borderless is also Windows-only because the custom
-# titlebar Kivy uses to replace the system one only works on Windows — on
-# Mac/Linux it silently fails ("Window: Window.custom_titlebar not set to
-# True… can't set custom titlebar"), leaving a borderless window with no
-# titlebar at all (no drag, no close button). Additionally on WSLg/llvmpipe
-# the opacity=0 + transparent clearcolor combo causes EffectWidget FBO
-# creation to fail at first layout (GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT),
-# which kills the Kivy main loop right after "Added nav_layout to screen".
+# Windows-only: the splash process owns the visible UI until Kivy loads (see
+# MultiWorld.py), and the custom titlebar only works on Windows -- elsewhere it
+# silently fails, leaving no titlebar at all. On WSLg/llvmpipe the opacity=0 +
+# transparent clearcolor combo also breaks EffectWidget FBO creation.
 if sys.platform == "win32":
     Window.opacity = 0
     Window.clearcolor = [0, 0, 0, 0]
     Window.borderless = True
 
-    # Kivy's Windows custom-titlebar support keeps the OS frame (for aero
-    # snap) and relies on a WndProc hook suppressing WM_NCCALCSIZE so the
-    # caption never shows. That scheme breaks for us twice over:
-    #
-    # 1. The hook (_WindowsSysDPIWatch) is installed on GetActiveWindow(),
-    #    but our window starts unfocused (graphics.focus=False above, splash
-    #    owns the foreground), so it lands on NULL.
-    # 2. Even with the hook re-armed, SDL keeps its own cached frame offsets,
-    #    so create_window's SetWindowPos(SWP_FRAMECHANGED) dance is never
-    #    idempotent: every pass moves/shrinks the window, which re-fires
-    #    Kivy's size->create_window binding — an infinite loop that walks the
-    #    window off-screen (and, before SafeEffectWidget, crashed the main
-    #    loop via a zero-width TitleBlur FBO during the reentrant layout).
-    #
-    # So make the initialized re-create path treat the custom titlebar like
-    # plain borderless — exactly what Kivy itself does on non-Windows
-    # platforms. custom_titlebar is not observed by anything (not in Kivy's
-    # _bind_create_window list, no on_custom_titlebar), so toggling it around
-    # the call is side-effect free; borderless=True above supplies the
-    # frameless style, and titlebar dragging still works because
-    # set_custom_titlebar() uses an SDL hit-test, not the WndProc hook.
+    # Kivy's Windows custom-titlebar WndProc hook installs on GetActiveWindow(),
+    # which is NULL here (window starts unfocused), and SDL's cached frame
+    # offsets make create_window's SetWindowPos(SWP_FRAMECHANGED) pass
+    # non-idempotent, re-firing the size->create_window binding in a loop. So
+    # once initialized, re-create as plain borderless (as Kivy does off-Windows):
+    # custom_titlebar is unobserved, and titlebar drag uses an SDL hit-test.
     from kivy.core.window.window_sdl2 import WindowSDL as _WindowSDL
 
     _orig_create_window = _WindowSDL.create_window
@@ -112,9 +82,8 @@ if sys.platform == "win32":
 
     _WindowSDL.create_window = _create_window_borderless_titlebar
 
-    # Independently of the loop above, re-arm the NULL-hwnd hook on the real
-    # SDL window so its WM_DPICHANGED handling (per-monitor DPI changes)
-    # actually works.
+    # Re-arm the NULL-hwnd hook on the real SDL window so its WM_DPICHANGED
+    # (per-monitor DPI) handling works.
     def _rearm_dpi_watch_on_sdl_hwnd() -> None:
         watch = getattr(Window, "_win_dpi_watch", None)
         if watch is None:
@@ -139,7 +108,7 @@ if sys.platform == "win32":
     _rearm_dpi_watch_on_sdl_hwnd()
 else:
     Window.clearcolor = [0, 0, 0, 1]
-# Window title is set via MultiMDApp.title — Kivy's App.run() applies that
+# Window title is set via MultiMDApp.title -- Kivy's App.run() applies that
 # after the window exists, clobbering any earlier Window.set_title() call.
 
 from kivy.clock import Clock
@@ -195,15 +164,9 @@ class MainScreenMgr(MDScreenManager):
 
 class MultiMDApp(MDApp):
 
-    # Kivy's App class derives the window title from the class name minus
-    # "App" if `title` isn't set — that gave us "MultiMD" in the titlebar.
-    # Setting it here also overrides the earlier `Window.set_title(...)`
-    # call (which runs before the window exists and gets clobbered when
-    # App.run() applies `self.title`).
+    # Without `title` Kivy derives it from the class name minus "App" ("MultiMD").
     title = "MultiworldGG"
-    # Same story for the icon: without `icon` set Kivy uses its own default
-    # logo. Resolve to an absolute path via local_path so it works from any
-    # CWD (frozen install dir, repo root during dev, etc.).
+    # Absolute via local_path so any CWD works; Kivy's default logo otherwise.
     icon = local_path("data", "icon.png")
 
     base_title = StringProperty("MultiworldGG")
@@ -222,7 +185,7 @@ class MultiMDApp(MDApp):
 
     console_screen: ConsoleScreen
     # Duck-typed: the classic variant (kvui.ClassicHintScreen) satisfies the
-    # same surface — update_hints_list() and bottom_appbar.text_input.
+    # same surface: update_hints_list() and bottom_appbar.text_input.
     hint_screen: HintScreen
     settings_screen: SettingsScreen
     launcher_screen: LauncherScreen
@@ -257,32 +220,24 @@ class MultiMDApp(MDApp):
 
     def __init__(self, ctx: context_type, role: typing.Optional[str] = None, **kwargs):
         super().__init__(**kwargs)
-        # Mirrors the existing MWGG_FRONTEND pattern: an explicit constructor
-        # kwarg wins (for when a future caller passes it directly), otherwise
-        # fall back to the MWGG_ROLE env var Launcher.py/MultiWorld.py assign
-        # (never setdefault) before spawning this process.
+        # Explicit kwarg wins; else the MWGG_ROLE env var Launcher.py/
+        # MultiWorld.py assign (never setdefault) before spawning this process.
         self.role = role or os.environ.get("MWGG_ROLE", ROLE_LAUNCHER)
         self.client_type_hint = os.environ.get("MWGG_CLIENT_TYPE", "")
         if self.role == ROLE_LAUNCHER:
             self.base_title = "MultiworldGG Launcher"
-        # Only claim the singleton slot if no live instance owns it. Phantom
-        # subclass instances built post-takeover (so per-game build() side
-        # effects like add_client_tab can run) must not clobber the launcher.
+        # Phantom subclass instances built post-takeover must not clobber the
+        # live launcher's singleton slot.
         if type(self)._active_instance is None:
             type(self)._active_instance = self
-        # Use the existing Kivy Config singleton for Kivy settings
         self.config = MWKVConfig
-        # Create app-specific config
         try:
             self.app_config = ConfigParser(name='app')
         except ValueError:
-            # If parser already exists, get the existing one
             self.app_config = ConfigParser.get_configparser('app')
 
-        # Ensure client.ini exists with default values
         config_path = os.path.join(os.environ["KIVY_HOME"], "client.ini")
         if os.path.exists(config_path):
-            # Read existing config file
             self.app_config.read(config_path)
         else:
             self.build_config(self.app_config)
@@ -293,15 +248,12 @@ class MultiMDApp(MDApp):
         self.ctx = ctx
         self.commandprocessor = self.ctx.command_processor(self.ctx)
 
-        self.icon = os.path.join(os.path.curdir, "icon.ico")
         self.theme_mw = DefaultTheme(self.app_config)
 
-        # Buffer for messages
         self.text_buffer = Queue(maxsize=1000)
         self.ui_hint_data = {}
         self.ui_player_data = {}
 
-        # Initialize local player data from config
         self.local_player_data = UIPlayerData(
             slot_id=-1,  # Use -1 to indicate local/unconnected player
             slot_name=persistent_load().get('client', {}).get('last_username', ''),
@@ -318,11 +270,8 @@ class MultiMDApp(MDApp):
         self._show_all_hints = False
 
     def __getattr__(self, name: str):
-        # If this is a phantom subclass instance (post-takeover, build()
-        # short-circuited), forward attribute lookups to the live launcher
-        # instance so that methods like on_connect(), update_hints(), etc.
-        # can reach top_appbar_layout, screen_manager, and other live-app
-        # attributes without crashing.
+        # Phantom post-takeover instances forward attribute lookups to the live
+        # launcher instance so live-app attributes (screen_manager, ...) resolve.
         live = type(self)._active_instance
         if live is not None and live is not self:
             try:
@@ -375,7 +324,6 @@ class MultiMDApp(MDApp):
             elif key == 'primary_palette':
                 self.theme_cls.primary_palette = value
             elif key == 'font_scale':
-                # Update font sizes based on scale
                 scale_factor = float(value)
                 self.theme_cls.font_styles = {
                     style: {
@@ -419,19 +367,15 @@ class MultiMDApp(MDApp):
     def on_start(self):
         """Set up additional build necessities that
         cannot be done in the constructor"""
-        # Custom titlebar restore/maximize bindings are Windows-only; on other
-        # platforms the system window manager handles those events itself and
-        # the Titlebar widget isn't rendered (see build()).
+        # Windows-only: the Titlebar widget isn't rendered elsewhere (see build()).
         if sys.platform == "win32":
             Window.bind(on_restore=self.title_bar.tb_onres)
             Window.bind(on_maximize=self.title_bar.tb_onmax)
         Window.bind(on_close=lambda x: self.stop())
-        # add binding for countdown timer
         self.bind(countdown_timer=self.on_countdown_timer)
 
         if self.role == ROLE_CLIENT:
-            # Client-direct boot: no game-select screen, straight to the
-            # console for the game/patch/URI this process was spawned with.
+            # Client-direct boot: straight to the console for the spawned game.
             self.client_console_init()
             self.change_screen("console")
         else:
@@ -440,7 +384,6 @@ class MultiMDApp(MDApp):
         def on_start(*args):
             self.root.md_bg_color = self.theme_cls.surfaceColor
 
-            # Initialize and show loading animation
             self.loading_layout = MWGGLoadingLayout()
             self.loading_layout.size = (self.root.width, self.root.height)
             self.loading_layout.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
@@ -453,8 +396,6 @@ class MultiMDApp(MDApp):
                 # through frontend_protocol) calls hide_loading().
                 self.loading_layout.show_loading(display_logs=True)
             else:
-                # Launcher role only: app-installer update check, in the
-                # background once the UI is up. Never blocks startup.
                 self._start_update_check()
 
         super().on_start()
@@ -512,10 +453,8 @@ class MultiMDApp(MDApp):
         '''
         live = type(self)._active_instance
         if live is not None and live is not self:
-            # Phantom subclass instance constructed after takeover purely to
-            # invoke per-game build() side effects (add_client_tab, kv binds).
-            # Skip the destructive layout construction and let the subclass
-            # mutate the live app's screen_manager via add_client_tab.
+            # Phantom post-takeover instance: skip the destructive layout build
+            # and let the subclass mutate the live app's screen_manager.
             self.screen_manager = live.screen_manager
             return live.root_layout
 
@@ -536,14 +475,10 @@ class MultiMDApp(MDApp):
         self.main_layout.anchor_x='left'
         self.main_layout.anchor_y='top'
 
-        # The Titlebar widget tree contains TitleBlur (an EffectWidget) — and
-        # constructing an EffectWidget triggers FBO creation at first layout,
-        # which fails on llvmpipe (WSLg's software GL) with
-        # GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT 36054 and kills the Kivy main
-        # loop. So we skip the Titlebar entirely on non-Windows platforms;
-        # the system window manager already provides the titlebar there, and
-        # all other self.title_bar accesses are gated to sys.platform=="win32"
-        # to match.
+        # Titlebar contains TitleBlur (an EffectWidget), whose FBO creation
+        # fails on llvmpipe/WSLg (GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT) and
+        # kills the main loop -- skip it off-Windows; every other title_bar
+        # access is win32-gated to match.
         if sys.platform == "win32":
             self.title_bar = Titlebar()
             Window.set_custom_titlebar(self.title_bar)
@@ -568,12 +503,12 @@ class MultiMDApp(MDApp):
         # Add user interface elements to main layout
         self.main_layout.add_widget(self.navigation_layout)
         self.main_layout.add_widget(self.top_appbar_layout)
-        # Windows-only: see comment in `build()` above on the titlebar gate.
+        # Windows-only: see the titlebar gate above.
         if sys.platform == "win32":
             self.main_layout.add_widget(self.title_bar)
 
-        # Add the main layout directly to root layout when no effects are active
-        # This prevents matrix transformation interference with StencilView
+        # Direct child while no effects are active: the EffectWidget's matrix
+        # transform interferes with StencilView.
         self.root_layout.add_widget(self.main_layout)
 
         return self.root_layout
@@ -581,43 +516,31 @@ class MultiMDApp(MDApp):
     def enable_effects(self):
         """Enable EffectWidget with pixelate effect for loading screen"""
         if hasattr(self, 'pixelate_effect') and hasattr(self, 'main_layout'):
-            # Remove main_layout from root_layout
             self.root_layout.remove_widget(self.main_layout)
-            # Add main_layout to EffectWidget
             self.pixelate_effect.add_widget(self.main_layout)
-            # Add EffectWidget to root_layout
             self.root_layout.add_widget(self.pixelate_effect)
-            # Add pixelate effect
             if hasattr(self, 'loading_layout') and self.loading_layout.loading:
                 from kivy.uix.effectwidget import PixelateEffect
                 self.loading_layout.effect_app = PixelateEffect(pixel_size=3)
                 self.pixelate_effect.effects = [self.loading_layout.effect_app]
 
-            # Ensure loading_layout is on top of the EffectWidget (img_box needs to be above pixelated content)
-            # Remove from current parent if it exists
+            # loading_layout must sit above the pixelated content
             if hasattr(self, 'loading_layout') and self.loading_layout.parent:
                 self.loading_layout.parent.remove_widget(self.loading_layout)
-            # Add to root_layout to be on top of the EffectWidget
             if hasattr(self, 'loading_layout'):
                 self.root_layout.add_widget(self.loading_layout)
 
     def disable_effects(self):
         """Disable EffectWidget to prevent matrix transformation interference with StencilView"""
         if hasattr(self, 'pixelate_effect') and hasattr(self, 'main_layout'):
-            # Remove EffectWidget from root_layout
             self.root_layout.remove_widget(self.pixelate_effect)
-            # Remove main_layout from EffectWidget
             self.pixelate_effect.remove_widget(self.main_layout)
-            # Add main_layout directly to root_layout
             self.root_layout.add_widget(self.main_layout)
-            # Clear effects
             self.pixelate_effect.effects = []
 
-            # Ensure loading_layout is on top of the main_layout (img_box needs to be above content)
-            # Remove from current parent if it exists
+            # loading_layout must sit above the main_layout
             if hasattr(self, 'loading_layout') and self.loading_layout.parent:
                 self.loading_layout.parent.remove_widget(self.loading_layout)
-            # Add to root_layout to be on top of the main_layout
             if hasattr(self, 'loading_layout'):
                 self.root_layout.add_widget(self.loading_layout)
 
@@ -633,15 +556,12 @@ class MultiMDApp(MDApp):
                     client_logger.removeHandler(self.console_handler)
                 except Exception:
                     pass
-            # Set the exit event to signal shutdown
             self.ctx.exit_event.set()
 
         except Exception as e:
-            # Log any errors during shutdown but don't let them prevent shutdown
             import logging
             logger = logging.getLogger("gui")
             logger.warning(f"Error during shutdown: {e}")
-            # Still set the exit event to ensure shutdown proceeds
             self.ctx.exit_event.set()
 
     def update_colors(self):
@@ -702,7 +622,6 @@ class MultiMDApp(MDApp):
         It updates or creates the current screen and dismisses
         the menu with the screen names.
         '''
-        # Check if screen already exists before creating
         if item in self.screen_manager.screen_names:
             return
 
@@ -832,9 +751,9 @@ class MultiMDApp(MDApp):
     def create_custom_screen(self, title: str, content=None, index: int = -1):
         """Two call shapes coexist here:
 
-        * ``create_custom_screen(name)`` — internal launcher use, makes a
+        * ``create_custom_screen(name)`` -- internal launcher use, makes a
           blank named MDScreen and adds it to the screen manager.
-        * ``create_custom_screen(title, content, index)`` — per-world use
+        * ``create_custom_screen(title, content, index)`` -- per-world use
           (kvui.GameManager API), wraps ``content`` in a CustomScreen with
           a bottom-appbar nav button and adds it to the screen manager.
 
@@ -1086,7 +1005,7 @@ class MultiMDApp(MDApp):
         if not "hint" in self.screen_manager.screen_names:
             self._create_screen("hint")
 
-        # YAML creator is for pre-game prep only — drop it once connected.
+        # YAML creator is for pre-game prep only -- drop it once connected.
         if "yaml" in self.screen_manager.screen_names:
             try:
                 self.screen_manager.remove_widget(
@@ -1102,8 +1021,6 @@ class MultiMDApp(MDApp):
 
 
     def print_json(self, data: typing.List[JSONMessagePart]):
-        # Convert the list of JSONMessagePart to a single text message
-        # Use KivyMarkupJSONtoTextParser to convert the JSON message parts to Kivy markup with hex colors
         parser = KivyMarkupJSONtoTextParser(self.ctx)
         markup_text = parser(data)
         plaintext = "".join([node.get("text") for node in data])
@@ -1170,11 +1087,10 @@ class MultiMDApp(MDApp):
 
     def update_hints(self):
         hints_key = f"_read_hints_{self.ctx.team}_{self.ctx.slot}"
-        # Skip the early on_connect call (stored_data not yet populated by
-        # the server's Retrieved response). CommonClient re-fires update_hints
-        # from Retrieved, and that single call drives the screen init —
-        # avoiding a race between two concurrent set_slots_list/set_hints_list
-        # coroutines that would otherwise interleave clear/add and duplicate.
+        # Skip the early on_connect call: stored_data isn't populated until the
+        # server's Retrieved response, which re-fires update_hints. That single
+        # call drives screen init, avoiding two concurrent set_hints_list
+        # coroutines interleaving clear/add.
         if hints_key not in self.ctx.stored_data:
             return
         hints = self.ctx.stored_data.get(hints_key, []) or []
@@ -1245,7 +1161,6 @@ class MultiMDApp(MDApp):
                 for location_id, hint_data in locations.items():
                     mwgg_hints[f"{finding_player}_{location_id}"] = hint_data.mwgg_hint_status.value
 
-        # Only store hints that have non-default MWGG status
         mwgg_data_to_store = {}
         has_changes = False
 

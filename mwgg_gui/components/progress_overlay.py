@@ -43,18 +43,9 @@ Builder.load_string('''
 
 class ProgressOverlay(Widget):
     """
-    Overlay widget that displays a progress bar over an app bar.
-    
-    The widget renders two rectangles:
-    1. A background rectangle covering the full widget size
-    2. A progress rectangle with width determined by progress completion
-    
-    Properties:
-        p_width: Width of the progress rectangle in pixels
-        prog_size: Combined (width, height) for the progress rectangle
-    
-    The widget is transparent to touch events, allowing interactions with
-    underlying app bar elements.
+    Progress bar drawn behind an app bar: a full-size background rectangle
+    plus a progress rectangle sized by prog_size = (p_width, height).
+    Transparent to touch events so the app bar stays interactive.
     """
     
     p_width: NumericProperty = NumericProperty(0)

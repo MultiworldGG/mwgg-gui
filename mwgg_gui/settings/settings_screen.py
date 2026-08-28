@@ -49,9 +49,8 @@ settings_dict = {
     ],
 }
 
-# External (world-contributed) sections registered via
-# register_settings_section(). Keys are lowercased section names; values are
-# {"title": str, "factory": Callable[[], MDBoxLayout], "items": [{"name": ..., "icon": ...}]}.
+# World-contributed sections from register_settings_section(): lowercased name
+# -> {"title", "factory", "items"}.
 _dynamic_sections: dict = {}
 
 
@@ -271,8 +270,6 @@ class SettingsScreen(MDScreen):
                     screen=screen_name
                 ))
 
-            # Divider between sections (skip after the last one to avoid a
-            # stray separator at the bottom).
             self.nav_menu.add_widget(MDNavigationDrawerDivider())
         logger.debug("Finished setting up navigation menu")
 

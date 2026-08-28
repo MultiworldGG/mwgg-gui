@@ -3,14 +3,10 @@ from __future__ import annotations
 import sys
 
 if sys.platform == "win32":
-    # Must run before anything creates or touches the Window: the `.components`
-    # import below pulls in kivymd, which imports kivy.core.window (and thereby
-    # creates the Window) as a side effect. The process is deliberately
-    # DPI-unaware (see the win32 block in app.py), so Windows scales the whole
-    # window for us. Kivy's dynamic DPI handling conflicts with that after a
-    # display reconnects: it can briefly use a zero density and then enter a
-    # resize/layout loop. Keep Kivy's coordinate system at the fixed 96 DPI
-    # that a DPI-unaware process expects.
+    # Must run before the imports below pull in kivymd and create the Window.
+    # The process is deliberately DPI-unaware (see app.py's win32 block); pin
+    # Kivy at 96 DPI, since after a display reconnect its dynamic DPI handling
+    # can hit a zero density and enter a resize/layout loop.
     # Ported from MultiworldGG main kvui.py (4e8effd4e).
     from kivy.core.window import Window
     from kivy.core.window.window_sdl2 import WindowSDL, _WindowsSysDPIWatch
@@ -38,10 +34,8 @@ from .overrides import *
 
 from .loadanimlayout import MWGGLoadingLayout
 
-# Importing this module is a side effect: it patches Kivy's ImageLoader to
-# recognize `ap:` and `ap:zip:` URL prefixes used by world client kvs
-# (Universal Tracker, etc.). Lives under `overrides/` alongside the other
-# kivy/kivymd extension points (screen, expansionlist, markuptextfield, ...).
+# Side-effect import: patches Kivy's ImageLoader to recognize the `ap:` and
+# `ap:zip:` URL prefixes used by world client kvs.
 from .overrides.imageloader import ApAsyncImage, register_url_scheme  # noqa: F401
 
 from .constants import (

@@ -457,7 +457,7 @@ class ConnectionSettings(SettingsScrollBox):
         # Profile section
         profile_section = SettingsSection(name="profile_settings", title="Profile")
 
-        # Avatar — uploaded via the profile dialog's file chooser.
+        # Avatar: uploaded via the profile dialog's file chooser.
         avatar_box = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(55), padding=dp(4), spacing=dp(4))
         avatar_box.add_widget(MDLabel(text="Avatar", theme_text_color="Primary", size_hint_x=0.7))
         avatar_button = MDButton(
@@ -824,7 +824,6 @@ class ThemingSettings(SettingsScrollBox):
             # Create a closure that captures the current attr_name
             def make_save_handler(attr_name):
                 def save_handler(attr_name, color_attr):
-                    print(f"Saving color {attr_name}: {color_attr}")  # Debug print
                     self.theme_mw.save_markup_color(attr_name, color_attr)
                 return save_handler
             

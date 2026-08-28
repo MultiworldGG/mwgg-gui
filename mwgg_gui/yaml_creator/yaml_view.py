@@ -3,15 +3,15 @@ Live YAML preview pane.
 
 Wraps `kivy.uix.codeinput.CodeInput` with a Pygments `YamlLexer`. Exposes:
 
-  - `set_text(text)` — set the preview without re-firing on_text
-  - `get_text()`     — read current text
-  - `dirty`          — True once the user hand-edits the text (programmatic
+  - `set_text(text)` - set the preview without re-firing on_text
+  - `get_text()`     - read current text
+  - `dirty`          - True once the user hand-edits the text (programmatic
     `set_text` writes don't count); the screen consults it before pushing
   - a `[Sync ⇒ Form]` button that calls back to the screen with the parsed
     form state, or shows a parse-error strip beneath the toolbar if the
     text doesn't round-trip
   - a `[Resync]` button, hidden until `show_sync_paused()`, that calls
-    `on_resync` — the screen's resume-live-sync affordance.
+    `on_resync` - the screen's resume-live-sync affordance.
 
 Kivy markup is BBCode under the hood; CodeInput's `BBCodeFormatter` emits
 exactly what the rest of the Kivy label renderer expects, so we don't need
@@ -89,12 +89,12 @@ class YamlPreview(MDBoxLayout):
 
     game_name = StringProperty("")
     on_sync = ObjectProperty(None)
-    """Callback signature: `on_sync(parsed_form_state)` — invoked when the
+    """Callback signature: `on_sync(parsed_form_state)`; invoked when the
     user clicks Sync and the YAML parses cleanly."""
     known_options = ObjectProperty(None)
     """Optional zero-arg callable returning the option names the form owns
     (or None). Game-section keys outside it are preserved as extras rather
-    than parsed as options — see `yaml_io.yaml_to_form_state`."""
+    than parsed as options; see `yaml_io.yaml_to_form_state`."""
     on_resync = ObjectProperty(None)
     """Zero-arg callback fired by the Resync button while sync is paused."""
     dirty = BooleanProperty(False)
@@ -109,10 +109,9 @@ class YamlPreview(MDBoxLayout):
         self.on_resync = on_resync
         self._suppress_on_text = False
 
-        # Detached, not ghosted: an opacity-0 button still reserves its
-        # width (plus toolbar spacing), leaving a dead gap in the toolbar.
-        # `.__self__` unwraps the ids WeakProxy — while detached, this
-        # attribute is the button's only strong reference.
+        # Detached, not ghosted: opacity-0 still reserves toolbar width.
+        # `.__self__` unwraps the ids WeakProxy; while detached this is
+        # the button's only strong reference.
         self._resync_btn = self.ids.resync_btn.__self__
         self.ids.toolbar.remove_widget(self._resync_btn)
 
@@ -130,9 +129,9 @@ class YamlPreview(MDBoxLayout):
         """Replace the YAML text without echoing the change back to the
         form. Use when the form has changed and is pushing into the view.
 
-        Restores cursor and scroll afterwards — TextInput assignment moves
-        the cursor to the end, which yanked the pane to the bottom on
-        every push (including the very first render)."""
+        Restores cursor and scroll afterwards: TextInput assignment moves
+        the cursor to the end, yanking the pane to the bottom on every
+        push."""
         code = self._code
         if text == code.text:
             return
@@ -146,9 +145,7 @@ class YamlPreview(MDBoxLayout):
         code.cursor = (min(cursor[0], len(code._lines[row])), row)
 
         def _restore(_dt):
-            # One frame later: the assignment queued TextInput's own
-            # layout refresh, which scrolls to the cursor and would
-            # overwrite a same-frame restore.
+            # TextInput's queued layout refresh scrolls to the cursor and would overwrite a same-frame restore.
             code.scroll_x = scroll_x
             code.scroll_y = min(scroll_y, max(0, code.minimum_height - code.height))
 
@@ -165,12 +162,9 @@ class YamlPreview(MDBoxLayout):
         """Parse the current text. On success, invoke `on_sync` with the
         parsed form state. On failure, show the error strip.
 
-        Does NOT clear `dirty` — a clean parse doesn't mean the text
-        round-trips losslessly (comments, key order, and anything else
-        the form can't represent survive the parse but not a re-render).
-        The caller (`YamlScreen._on_preview_sync`) re-renders the form's
-        canonical YAML after applying and only clears `dirty` if that
-        matches this text verbatim."""
+        Does NOT clear `dirty`: a clean parse doesn't mean a lossless
+        round-trip. The caller re-renders the canonical YAML after
+        applying and clears `dirty` only on a verbatim match."""
         try:
             known = self.known_options() if self.known_options else None
             state = yaml_to_form_state(
@@ -189,8 +183,7 @@ class YamlPreview(MDBoxLayout):
 
     def show_sync_paused(self):
         if self._resync_btn.parent is None:
-            # children are reverse-ordered: index 1 lands between the
-            # title label and the Sync → Form button.
+            # children are reverse-ordered: index 1 lands between title and Sync button.
             self.ids.toolbar.add_widget(self._resync_btn, index=1)
 
     def hide_sync_paused(self):

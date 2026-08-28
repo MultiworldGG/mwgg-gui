@@ -238,10 +238,9 @@ class HintScreen(MDScreen):
         Clock.schedule_once(lambda x: self.init_components())
 
     def populate_hints_by_type(self):
-        """Initialize and add all components to the screen"""
+        """Rebuild the Hidden/Receiving/Finding hint buckets from player data"""
         # Clear existing data to prevent duplicates on refresh
         self.hints_by_type = {"Hidden": [], "Receiving": [], "Finding": []}
-        # Reorganizing hints for the hint screen
         for slot_id, slot_data in self.app.ctx.ui.ui_player_data.items():
             if hasattr(slot_data, 'hints') and slot_data.hints:
                 for hint in slot_data.hints.values():
@@ -527,7 +526,7 @@ class HintLayout(AutoAdjustHeightBehavior, MDBoxLayout):
 
     def _column_registry(self):
         """The console sidebar (kvui.HintLog in the monorepo) that world code
-        registers column sorters/filters on — e.g. the Universal Tracker's
+        registers column sorters/filters on -- e.g. the Universal Tracker's
         in-logic column."""
         appbar = getattr(getattr(self.app, "console_screen", None), "important_appbar", None)
         if appbar is None or not hasattr(appbar, "column_sorters"):
@@ -652,7 +651,7 @@ class HintLayout(AutoAdjustHeightBehavior, MDBoxLayout):
         # Get secondary key function
         secondary_key = key_functions.get(sort_key) if sort_key else None
         # A registered column sorter (e.g. the tracker's in_logic) sorts by its
-        # own value first — status weight would defeat the column's ordering.
+        # own value first -- status weight would defeat the column's ordering.
         column_sorter = self._registered_sorter(sort_key) if secondary_key is None else None
 
         # Determine if we're filtering by a specific value (e.g., specific player name)
@@ -889,7 +888,7 @@ class HintListPanel(GameListPanel):
             if classification == "Progression":
                 behavior["elevation_level"] = 5
                 behavior["shadow_color"] = item_colors["progression"]
-            if classification == "Progression - Requried for Goal":
+            if classification == "Progression - Required for Goal":
                 behavior["elevation_level"] = 6
                 behavior["shadow_color"] = item_colors["progression_goal"]
             if classification == "Found":

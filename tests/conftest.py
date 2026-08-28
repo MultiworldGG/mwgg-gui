@@ -1,14 +1,14 @@
 """Shared fixtures for the GUI-side unit tests.
 
-Run with the beta venv's python — it has PyYAML and the beta core wheel
+Run with the beta venv's python -- it has PyYAML and the beta core wheel
 set installed:
 
     cd C:/Users/Lindsay/source/repos/mwgg-gui
-    <MultiworldGG>/src/venv/Scripts/python.exe -m pytest tests -q
+    <MultiworldGG>/src/.venv/Scripts/python.exe -m pytest tests -q
 
 The modules under test (world_data.py, yaml_io.py) import zero Kivy, but
 the mwgg_gui package __init__ pulls in the whole GUI including Kivy's
-Window — so tests load them by file path via importlib and never import
+Window -- so tests load them by file path via importlib and never import
 the package.
 """
 from __future__ import annotations

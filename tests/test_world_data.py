@@ -1,4 +1,4 @@
-"""Unit tests for mwgg_gui/yaml_creator/world_data.py (loaded by file path —
+"""Unit tests for mwgg_gui/yaml_creator/world_data.py (loaded by file path --
 see conftest.py).
 
 Covers the LauncherComponents exe delegation (no hardcoded exe literal can
@@ -21,7 +21,7 @@ def _completed(returncode=0, stdout='{"ok": true}', stderr=""):
 
 def _stub_launcher_components(monkeypatch, exe, component="generate-component"):
     """Mount a fake top-level LauncherComponents module that records the
-    delegation calls — the real core module is never imported."""
+    delegation calls -- the real core module is never imported."""
     calls = {}
     lc = types.ModuleType("LauncherComponents")
 

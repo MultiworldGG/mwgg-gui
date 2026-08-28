@@ -148,14 +148,12 @@ class MarkupTextField(TextInput, ThemableBehavior):
     radius = VariableListProperty([dp(4), dp(4), dp(4), dp(4)]) #MD
     required = BooleanProperty(False) #MD
     line_color_normal = ColorProperty(None) #MD
-    line_color_focus = ColorProperty(None) #MD # Remove the invalid truncate parameter
+    line_color_focus = ColorProperty(None) #MD
     effect_cls = ObjectProperty(ScrollEffect, allow_none=True)
     bottom_scroll_button = ObjectProperty(None)
     current_color_tag = None
     all_patterns = {"color": re.compile(r'\[color=[0-9A-Fa-f]{6}\]'), "bold": re.compile(r'\[b\]'), "italic": re.compile(r'\[i\]'), "underline": re.compile(r'\[u\]')}
-    # Pattern to match any valid Kivy markup tag (opening or closing)
-    # Matches: [tag], [/tag], [tag=value], [tag=value,value2], etc.
-    # Pattern: [ or [/ followed by tag name (letters/numbers/underscores), optionally =value, then ]
+    # Any valid Kivy markup tag, opening or closing: [tag], [/tag], [tag=value,...]
     _markup_tag_pattern = re.compile(r'\[/?[a-zA-Z][a-zA-Z0-9_]*(?:[=][^\]]*)?\]')
     
     _helper_text_label = ObjectProperty() #MD
@@ -774,9 +772,8 @@ class MarkupTextField(TextInput, ThemableBehavior):
         if touch.button == 'right':
             return True
         if self.effect_y and self.effect_y.is_manual:
-            # Stop tracking - pass unclamped scroll position for velocity calculation
-            # The effect's history contains the scroll positions, so it can calculate velocity
-            # Use unclamped position (which may be beyond bounds for momentum)
+            # Stop with the unclamped scroll position (may be beyond bounds) so
+            # the effect's history yields the momentum velocity.
             final_scroll = self._unclamped_scroll_y if self._unclamped_scroll_y is not None else self.effect_y.value
             self.effect_y.stop(final_scroll)
             self._unclamped_scroll_y = None  # Reset for next scroll
@@ -1741,21 +1738,18 @@ class MarkupTextField(TextInput, ThemableBehavior):
     def _update_effect_y_bounds(self, *args):
         if not self.effect_y:
             return
-        # Both scroll_y and effect_y use pixel-based coordinates
-        # Direct assignment since coordinate systems match
+        # scroll_y and effect_y share pixel-based coordinates; assign directly.
         self.effect_y.min = 0
         max_scroll = max(0, self.minimum_height - self.height)
         self.effect_y.max = max_scroll
-        # Set current value to current scroll position
         self.effect_y.value = self.scroll_y
 
     def _update_effect_y(self, *args):
         if not self.effect_y:
             return
         if not self.effect_y.is_manual:
-            # During momentum scrolling (after touch ends)
-            # effect_y.scroll is the computed scroll position (pixel-based)
-            # Clamp to bounds and apply directly
+            # Momentum (after touch ends): effect_y.scroll is the computed
+            # pixel position; clamp to bounds and apply.
             max_scroll = max(0, self.minimum_height - self.height)
             self.scroll_y = max(0, min(self.effect_y.scroll, max_scroll))
         # During manual scrolling, scroll_y is updated directly in scroll_text_from_swipe

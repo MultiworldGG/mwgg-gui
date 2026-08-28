@@ -4,15 +4,11 @@ Kivy's :class:`~kivy.core.image.ImageLoader` dispatches purely on filename
 extension and has no notion of URL schemes. World clients (Universal Tracker
 in particular) need ``ap:`` and ``ap:zip:`` prefixes that resolve via
 :func:`importlib.resources` (apworld-bundled resources, including zipimport)
-and :mod:`zipfile` (external poptracker packs). Kivy's :func:`ImageLoader.register`
-only appends a class to ``ImageLoader.loaders`` for extension-based dispatch,
-so it isn't enough on its own — but it's the right hook to combine with a
-small scheme-dispatch table installed by patching ``ImageLoader.load`` exactly
-once.
-
-This module exposes a single public API, :func:`register_url_scheme`, and
-registers ``ap:zip:`` and ``ap:`` at import time. Importing
-:mod:`mwgg_gui` is enough to make AsyncImage understand both prefixes.
+and :mod:`zipfile` (external poptracker packs). :func:`ImageLoader.register`
+only feeds extension-based dispatch, so :func:`register_url_scheme` combines
+it with a scheme-dispatch table installed by patching ``ImageLoader.load``
+exactly once. ``ap:zip:`` and ``ap:`` are registered at import time;
+importing :mod:`mwgg_gui` is enough to make AsyncImage understand both.
 """
 from __future__ import annotations
 
@@ -35,10 +31,8 @@ __all__ = (
 )
 
 
-# Prefix -> loader class. Order matters: scheme dispatch checks each entry in
-# insertion order so longer/more-specific prefixes (e.g. "ap:zip:") must be
-# registered BEFORE shorter ones (e.g. "ap:") to avoid the short prefix
-# greedy-matching everything.
+# Prefix -> loader class. Dispatch checks entries in insertion order, so
+# longer prefixes ("ap:zip:") must be registered BEFORE shorter ones ("ap:").
 _scheme_loaders: "dict[str, type[ImageLoaderBase]]" = {}
 
 
@@ -53,7 +47,7 @@ def _bytes_to_image_data(data: bytes | bytearray) -> typing.List[ImageData]:
 
 
 class ApPkgImageLoader(ImageLoaderBase):
-    """``ap:<dotted.module>/<resource path>`` — loads via
+    """``ap:<dotted.module>/<resource path>``: loads via
     :func:`importlib.resources.files`. Works uniformly for folder-installed
     and zipimport-installed (``.apworld``) packages without touching the
     deprecated :mod:`pkgutil` API.
@@ -76,7 +70,7 @@ class ApPkgImageLoader(ImageLoaderBase):
 
 
 class ApZipImageLoader(ImageLoaderBase):
-    """``ap:zip:<absolute zipfile path>/<internal path>`` — opens the zip on
+    """``ap:zip:<absolute zipfile path>/<internal path>``: opens the zip on
     disk and reads the internal entry.
 
     The zipfile path may itself contain ``/`` or ``\\`` separators (Unix or
@@ -90,7 +84,7 @@ class ApZipImageLoader(ImageLoaderBase):
             normalized = payload.replace("\\", "/").lower()
             anchor = normalized.find(".zip/")
             if anchor == -1:
-                # Last-ditch split — works iff the internal path has no slashes.
+                # Last-ditch split -- works iff the internal path has no slashes.
                 zip_path, internal = payload.rsplit("/", 1)
             else:
                 cut = anchor + len(".zip")
@@ -127,7 +121,7 @@ def register_url_scheme(prefix: str, loader_class: type[ImageLoaderBase]) -> Non
 
     :param prefix: String prefix that identifies the scheme, including the
         trailing colon. Examples: ``"ap:"``, ``"ap:zip:"``, ``"vfs://"``.
-        Order matters — register longer/more-specific prefixes first.
+        Order matters: register longer/more-specific prefixes first.
     :param loader_class: A :class:`~kivy.core.image.ImageLoaderBase` subclass
         whose ``load(filename)`` resolves the URL to image data. The class is
         constructed each time a matching URL is loaded.
@@ -138,12 +132,9 @@ def register_url_scheme(prefix: str, loader_class: type[ImageLoaderBase]) -> Non
     Kivy's extension-based dispatch. Calling this twice with the same prefix
     overwrites the previous registration.
     """
-    if prefix in _scheme_loaders:
-        # Replace existing — common during hot-reload / re-imports.
-        if loader_class is not _scheme_loaders[prefix]:
-            logger.debug(f"Replacing image loader for scheme {prefix!r}")
-    else:
-        _scheme_loaders[prefix] = loader_class
+    if prefix in _scheme_loaders and loader_class is not _scheme_loaders[prefix]:
+        # Replace existing -- common during hot-reload / re-imports.
+        logger.debug(f"Replacing image loader for scheme {prefix!r}")
     _scheme_loaders[prefix] = loader_class
     ImageLoader.register(loader_class)
     _install_scheme_dispatch()
@@ -157,8 +148,8 @@ def _install_scheme_dispatch() -> None:
     original_load = ImageLoader.load
 
     def dispatch(filename: str, default_load=original_load, **kwargs):
-        # Iterate in insertion order so "ap:zip:" wins over "ap:" without
-        # forcing callers to manage prefix ordering manually.
+        # Insertion order is registration order: "ap:zip:" is registered
+        # before "ap:", so the longer prefix wins.
         for prefix, loader_cls in _scheme_loaders.items():
             if filename.startswith(prefix):
                 return loader_cls(filename)

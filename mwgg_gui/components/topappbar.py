@@ -97,14 +97,13 @@ class ClockLabel(MDTopAppBarTitle):
 
 
 class Timer(MDTopAppBarTitle):
-    # Properly declare properties
     start_time = NumericProperty(0)
     elapsed_time = NumericProperty(0)
     is_running = BooleanProperty(False)
     slot_info = ObjectProperty(None)
     has_been_started = BooleanProperty(False)  # Track if timer has ever been started
     ctx = ObjectProperty(None)
-    _update_event = ObjectProperty(None)  # Store the scheduled event
+    _update_event = ObjectProperty(None)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -114,7 +113,6 @@ class Timer(MDTopAppBarTitle):
         self.theme_text_color = "Custom"
         self.text_color = self.theme_cls.onSurfaceVariantColor
         self.text = "00:00:00"
-        # Bind the elapsed_time property to update the display
         self.bind(elapsed_time=self.on_elapsed_time)
         self.bind(is_running=self.on_is_running)
         
@@ -174,11 +172,9 @@ class Timer(MDTopAppBarTitle):
     def update_timer(self):
         """Update the elapsed time and check for goal condition"""
        
-        # Normal timer operation
         if self.is_running:
             self.start_time = self.ctx.timer
             self.elapsed_time = time() - self.start_time
-            # Check for goal completion
             if self.slot_info and self.slot_info.get('game_status') == "GOAL":
                 self.stop()
                 return
@@ -186,13 +182,10 @@ class Timer(MDTopAppBarTitle):
 
     def on_elapsed_time(self, instance, value):
         """Called when elapsed_time property changes"""
-        # Handle negative time (countdown) and positive time
         if value < 0:
-            # Negative countdown - show with minus sign
             abs_value = abs(value)
             self.text = "-" + strftime("%H:%M:%S", gmtime(abs_value))
         else:
-            # Positive time - normal display
             if value > 86400:
                 plural = "s" if value > 172800 else ""
                 self.text = strftime(f"%d day{plural}, %H:%M:%S", gmtime(int(value)))
@@ -235,7 +228,6 @@ class ServerLabel(MDTopAppBarTitle):
         self.ctx = MDApp.get_running_app().ctx
         self.slot_info = self.ctx.slot_info
         self._connected = True
-        # Update server info immediately on connection
         self.update_server_info()
 
     def update_server_info(self, ctx=None):
@@ -269,17 +261,8 @@ class ServerLabel(MDTopAppBarTitle):
 
 class TopAppBar(MDTopAppBar):
     """
-    Custom top app bar with integrated progress tracking.
-    
-    Extends MDTopAppBar to include progress tracking functionality that
-    updates based on location completion in the connected game session.
-    The app bar is made transparent to allow an underlying progress overlay
-    to show completion status.
-    
-    Properties:
-        timer: Reference to the timer widget
-        server_info_label: Reference to the server information label
-        p_width: Current progress width in pixels for the progress bar
+    Top app bar, kept transparent so the underlying progress overlay can
+    show location-completion progress (driven by p_width).
     """
     
     timer: ObjectProperty
@@ -323,14 +306,7 @@ class TopAppBar(MDTopAppBar):
         asyncio.create_task(self.update_progress_info(), name="ProgressBar")
 
     async def update_progress_info(self):
-        """
-        Continuously update progress bar width and tooltip based on location completion.
-        
-        Monitors the connected game session and updates the progress bar width
-        to reflect the percentage of locations that have been checked and the tooltip
-        to reflect the other information that has been received. Updates
-        every 30 seconds while the app is running.
-        """
+        """Update progress width and server info from the game session every 30s."""
         while not self.app.ctx.exit_event.is_set():
             if self.app.ctx and hasattr(self.app.ctx, 'total_locations') and self.app.ctx.total_locations:
                 self.server_info_label.update_server_info(self.app.ctx)
@@ -388,15 +364,8 @@ class TopAppBar(MDTopAppBar):
 
 class TopAppBarLayout(AnchorLayout):
     """
-    Layout container for the top app bar with progress overlay.
-    
-    Manages the layering and positioning of the progress overlay and
-    top app bar components. The progress overlay is positioned behind
-    the transparent app bar to provide visual progress feedback.
-    
-    Properties:
-        top_appbar: The main app bar widget
-        progress_overlay: The progress tracking overlay widget
+    Layers the progress overlay behind the transparent top app bar and
+    keeps their size, position, and progress in sync.
     """
     
     top_appbar: ObjectProperty
@@ -409,21 +378,18 @@ class TopAppBarLayout(AnchorLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         
-        # Add progress overlay FIRST (provides both background and progress)
+        # Overlay first, so the transparent app bar draws over it.
         self.progress_overlay = ProgressOverlay()
         self.progress_overlay.size_hint = (None, None)
         self.add_widget(self.progress_overlay)
         
-        # Add the app bar on top of the progress overlay
         self.top_appbar = TopAppBar()
         self.top_appbar.id = "top_appbar"
         self.add_widget(self.top_appbar)
         
-        # Size and position the overlay to match the app bar
         self.progress_overlay.size = self.top_appbar.size
         self.progress_overlay.pos = self.top_appbar.pos
         
-        # Bind the progress overlay to the app bar's progress and size
         self.top_appbar.bind(p_width=self._update_progress_overlay)
         self.top_appbar.bind(size=self._update_progress_overlay_size)
         self.top_appbar.bind(pos=self._update_progress_overlay_pos)
