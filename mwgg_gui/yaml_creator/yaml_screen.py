@@ -79,14 +79,16 @@ Builder.load_string(
     height: dp(64)
     padding: [dp(8), dp(6)]
     spacing: dp(8)
+    pos_hint: {"top": 1}
     radius: dp(8)
     elevation: 1
     md_bg_color: app.theme_cls.surfaceVariantColor
     MDTextField:
         id: player_name
         size_hint_x: 0.4
+        height: dp(56)
         MDTextFieldHintText:
-            text: "Player name"
+            text: "Player Name"
     MDSegmentedButton:
         id: mode_toggle
         size_hint_x: 0.6
@@ -115,6 +117,7 @@ class YamlScreen(InnerMDScreen):
 
     def __init__(self, selected_game: tuple, **kwargs):
         self.app = MDApp.get_running_app()
+        self.adjust_bottom_appbar = False #hmmmmm
         super().__init__(**kwargs)
         self.selected_game = selected_game  # (module_name, display_name)
         self.module_name, self.game_name = selected_game
@@ -146,6 +149,8 @@ class YamlScreen(InnerMDScreen):
             size_hint=(1, 1),
             spacing=dp(6),
             padding=[dp(6), dp(6)],
+            theme_bg_color = "Custom",
+            md_bg_color=self.theme_cls.surfaceContainerLowColor
         )
 
         # Left pane: pixel-sized wrapper boxes per region. MDScrollView's
@@ -156,6 +161,8 @@ class YamlScreen(InnerMDScreen):
             size_hint=(0.58, None),
             height=self._left_height(),
             spacing=dp(6),
+            # theme_bg_color = "Custom",
+            # md_bg_color = self.theme_cls.surfaceContainerColor
         )
 
         # --- header box: pixel-sized wrapper holding the HeaderCard.
@@ -165,7 +172,7 @@ class YamlScreen(InnerMDScreen):
             height=dp(64),
         )
         self._header = HeaderCard()
-        self._header.ids.player_name.text = "Player"
+        self._header.ids.player_name.text = ""
         self._header.ids.player_name.bind(
             text=lambda *_: self._push_to_preview()
         )
@@ -225,11 +232,10 @@ class YamlScreen(InnerMDScreen):
         save_btn.bind(on_release=lambda *_: self.save())
         bar.add_widget(cancel_btn)
         bar.add_widget(save_btn)
-
+        self._left.add_widget(bar)
         # One vertical container: two-pane grid + action bar.
-        root = MDBoxLayout(orientation="vertical", size_hint=(1, 1))
+        root = MDBoxLayout(orientation="vertical", size_hint=(1, 1), padding=dp(20))
         root.add_widget(self._grid)
-        root.add_widget(bar)
         self.add_widget(root)
 
         # The form is built in _on_world_data_loaded once the worker responds.
@@ -240,14 +246,15 @@ class YamlScreen(InnerMDScreen):
 
     # Chrome (title + top + bottom bars) reserved by every screen; raw
     # pixels, NOT dp; same constant as launcher.kv:8 and hintscreen.py:229.
-    _CHROME_PX = 185
+    # god I hate hardcoding. We added a height calculator but sure, whatever.
+    _CHROME_PX = 142
 
     def _left_height(self) -> float:
         """Total height of the _left pane: window minus chrome minus
         the bottom action bar minus the grid's vertical padding."""
         return max(
             dp(180),
-            Window.height - self._CHROME_PX - dp(56) - dp(12),
+            Window.height - self._CHROME_PX - dp(64) - dp(12),
         )
 
     def _scroll_box_height(self) -> float:

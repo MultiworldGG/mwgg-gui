@@ -32,7 +32,7 @@ Builder.load_string('''
     MDSliverAppbarHeader:
         Image:
             source: os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "logo_bg.png")
-            pos_hint: {"center_y": 0.6}
+            pos_hint: {"center_y": 0.55}
             fit_mode: "scale-down"
     SearchBar:
         type: "small"

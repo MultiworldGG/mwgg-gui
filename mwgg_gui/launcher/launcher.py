@@ -172,7 +172,7 @@ class LauncherPatchContent(MDBoxLayout):
     pass
 
 @dataclass(frozen=True)
-class YamlComponent:
+class YamlComponent: #TODO: AAAAAAAAAAA noooo it was supposed to be a component in LauncherComponents not added here
     """Synthetic strip entry for the YAML creator.
 
     Not a world-declared component: it applies to whichever game is selected,
@@ -1083,7 +1083,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         logger.info(f"Starting patch with command: {' '.join(cmd)}")
         
         # Show loading screen
-        Clock.schedule_once(lambda dt: self.app.loading_layout.show_loading(), 0)
+        Clock.schedule_once(lambda dt: self.app.loading_layout.show_loading(display_logs=True), 0)
         
         def run_patch():
             """Run patch in background thread and stream output to logger"""
