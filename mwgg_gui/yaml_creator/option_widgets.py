@@ -786,7 +786,7 @@ class OptionDictRow(OptionRow):
         msg = MDLabel(
             text=(
                 "This option is a dictionary. Edit it directly in the YAML "
-                "pane on the right — the form can't safely represent its "
+                "pane on the right - the form can't safely represent its "
                 "structure."
             ),
             theme_text_color="Secondary",

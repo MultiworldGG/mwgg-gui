@@ -88,9 +88,11 @@ def _run_generate(game_name: str, visibility: str, module: str = "") -> subproce
     # get_settings() prefers a host.yaml in cwd; run at the exe's dir (parity with launcher.py).
     cwd = os.path.dirname(prefix[-1])
     env = os.environ.copy()
-    # Gates only ModuleUpdate.update(): a frozen child would otherwise
+    # Gates ModuleUpdate.update(): a frozen child would otherwise
     # respawn a detached duplicate Generate console and exit 10.
     env["SKIP_REQUIREMENTS_UPDATE"] = "1"
+    # Keep the child's piped output UTF-8 regardless of locale.
+    env["PYTHONIOENCODING"] = "utf-8"
     if not is_frozen():
         # Disable Kivy's argument parser when running from source.
         env["KIVY_NO_ARGS"] = "1"
@@ -103,7 +105,8 @@ def _run_generate(game_name: str, visibility: str, module: str = "") -> subproce
         return subprocess.run(
             cmd,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_TIMEOUT_SECONDS,
             cwd=cwd,
             env=env,

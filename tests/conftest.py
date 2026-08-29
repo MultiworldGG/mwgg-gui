@@ -47,7 +47,7 @@ def _load_by_path(name: str, filename: str):
 def world_data():
     pytest.importorskip(
         "BaseUtils",
-        reason="beta core not importable — set MWGG_BETA_SRC to the "
+        reason="beta core not importable - set MWGG_BETA_SRC to the "
                "MultiworldGG/src checkout or run under the beta venv",
     )
     return _load_by_path("yaml_creator_world_data", "world_data.py")
@@ -56,7 +56,7 @@ def world_data():
 @pytest.fixture(scope="session")
 def yaml_io():
     pytest.importorskip(
-        "yaml", reason="PyYAML not installed — run under the beta venv"
+        "yaml", reason="PyYAML not installed - run under the beta venv"
     )
     return _load_by_path("yaml_creator_yaml_io", "yaml_io.py")
 

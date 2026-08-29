@@ -15,6 +15,7 @@ import logging
 import mimetypes
 import os
 import ssl
+import threading
 import uuid
 from typing import Optional, Tuple
 from urllib import request
@@ -30,8 +31,34 @@ from mwgg_gui.constants import (
 logger = logging.getLogger("MultiWorld")
 
 
+# Negative cache for missing avatars: Kivy's Loader re-fetches a 404ing URL
+# on every widget rebuild and logs a full traceback each time. The first
+# sighting of a URL probes it off-thread; once a probe fails, every later
+# safe_avatar_source call collapses to '' (the default avatar) so the Loader
+# never retries it this session.
+_probe_lock = threading.Lock()
+_probe_results: dict[str, bool] = {}
+_probes_in_flight: set[str] = set()
+
+
+def _probe_avatar(url: str) -> None:
+    ok = False
+    try:
+        with request.urlopen(request.Request(url), timeout=10, context=_ssl_context()) as resp:
+            resp.read(1)
+            ok = True
+    except HTTPError as exc:
+        logger.info("Avatar %s unavailable (HTTP %s); using the default avatar", url, exc.code)
+    except (URLError, OSError) as exc:
+        logger.info("Avatar %s unreachable (%s); using the default avatar", url, exc)
+    with _probe_lock:
+        _probe_results[url] = ok
+        _probes_in_flight.discard(url)
+
+
 def safe_avatar_source(url: str) -> str:
-    """Return `url` only if it is HTTPS on the trusted-host allowlist."""
+    """Return `url` only if it is HTTPS on the trusted-host allowlist and not
+    known to 404; unknown URLs pass optimistically while a probe runs."""
     if not url:
         return ""
     try:
@@ -43,6 +70,14 @@ def safe_avatar_source(url: str) -> str:
     host = (parsed.hostname or "").lower()
     if host not in TRUSTED_AVATAR_HOSTS:
         return ""
+    with _probe_lock:
+        if _probe_results.get(url) is False:
+            return ""
+        if url not in _probe_results and url not in _probes_in_flight:
+            _probes_in_flight.add(url)
+            threading.Thread(
+                target=_probe_avatar, args=(url,), name="mwgg-avatar-probe", daemon=True,
+            ).start()
     return url
 
 
