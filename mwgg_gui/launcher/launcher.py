@@ -65,6 +65,9 @@ from mwgg_gui.components.nav_drawer import NavDrawerMenu, NavDrawerLabel
 from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar
 from mwgg_gui.launcher.launcher_favorite_bar import FavoritesScroll, Favorite
 from mwgg_gui.components.dialog import MessageBox
+from mwgg_gui.launcher.setup_guide import (extract_bundled_setup_doc,
+                                           open_with_desktop,
+                                           setup_guide_url)
 import Utils
 from Utils import (get_available_worlds,
                    user_path,
@@ -178,6 +181,16 @@ class YamlComponent:
     module: str
     name: str = "Create YAML"
     type: str = "yaml"
+    description: str = ""
+
+
+@dataclass(frozen=True)
+class SetupGuideComponent:
+    """Synthetic strip entry for the selected game's setup guide, appended
+    alongside YamlComponent and read by the strip the same way."""
+    module: str
+    name: str = "Setup Guide"
+    type: str = "setup"
     description: str = ""
 
 
@@ -1190,10 +1203,48 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 is_error=True,
             ).open()
 
+    def open_setup_guide(self):
+        """Open the selected game's setup guide: a webhost page for an index
+        game, and for an added (custom_worlds/) world the `docs/setup*.md` it
+        ships, handed to the desktop's default handler.
+        """
+        if not self.selected_game:
+            MessageBox("No Game Selected", "Please select a game before opening a setup guide.").open()
+            return
+
+        module, game_name = self.selected_game
+        if module not in self._custom_world_modules:
+            webbrowser.open(setup_guide_url(game_name))
+            return
+
+        try:
+            doc_path = extract_bundled_setup_doc(module)
+        except Exception as e:
+            logger.error(f"Failed to extract the setup doc for {module}: {e}", exc_info=True)
+            MessageBox("Setup Guide", f"Could not read the setup document: {e}", is_error=True).open()
+            return
+
+        if doc_path is None:
+            MessageBox(
+                "Setup Guide",
+                "No setup document included, please ask the apworld owner for instructions.",
+            ).open()
+            return
+
+        try:
+            open_with_desktop(doc_path)
+        except OSError as e:
+            logger.error(f"Failed to open the setup doc for {module}: {e}", exc_info=True)
+            MessageBox(
+                "Setup Guide",
+                f"Could not open the setup document. It is saved at:\n{doc_path}",
+                is_error=True,
+            ).open()
+
     # Play-page component strip: the selected game's manifest tools/adjusters,
     # run in-process behind the arbitrary-code warning. The declared client
     # names the Play button (update_connect_button_text), not a strip button.
-    _COMPONENT_TYPE_ICONS = {"client": "play-network", "tool": "wrench", "adjuster": "tune", "yaml": "file-document-edit-outline"}
+    _COMPONENT_TYPE_ICONS = {"client": "play-network", "tool": "wrench", "adjuster": "tune", "yaml": "file-document-edit-outline", "setup": "book-open-page-variant"}
 
     def refresh_world_components(self):
         """One background manifest scan, cached per-module for the play strip.
@@ -1265,11 +1316,12 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         # second client such as a map tracker.
         primary_client = self._selected_game_client()
         tools = [c for c in components if c is not primary_client]
-        # The YAML creator needs a game, not a world declaration, so every
-        # selected game gets one appended -- including worlds that declare
-        # nothing at all.
+        # The YAML creator and the setup guide need a game, not a world
+        # declaration, so every selected game gets both appended -- including
+        # worlds that declare nothing at all.
         if module:
             tools.append(YamlComponent(module))
+            tools.append(SetupGuideComponent(module))
         self._component_buttons = [self._make_component_button(tool) for tool in tools]
         for button in self._component_buttons:
             box.add_widget(button)
@@ -1284,6 +1336,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         component_type = getattr(tool, "type", "tool")
         if component_type == "yaml":
             self.create_yaml()
+            return
+        if component_type == "setup":
+            self.open_setup_guide()
             return
         if component_type == "client":
             self._spawn_component_client(tool)
