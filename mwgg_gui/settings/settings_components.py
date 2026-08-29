@@ -1100,19 +1100,22 @@ class InterfaceSettings(SettingsScrollBox):
 
     def get_age_rating(self):
         items = ["Not Rated", "16 (Teen)", "12 (Everyone)"]
-        from importlib.metadata import distribution
+        # All variants install as one dist named mwgg_igdb; the variant lives in
+        # the __variant__ attr the Index build bakes into the module.
         try:
-            rating = distribution('mwgg_igdb').name.split('_')[-1]
-            if rating == "sixteen":
-                return items[1], items
-            elif rating == "twelve":
-                return items[2], items
-            elif rating == "ao":
-                return "AO (Adult Only)", items
+            import mwgg_igdb
+            variant = getattr(mwgg_igdb, "__variant__", None)
+        except ImportError:
+            variant = None
+        if variant == "nr":
             return items[0], items
-        except Exception as e:
-            logger.error(f"Error in get_age_rating: {e}", exc_info=True)
-            return items[0], items
+        if variant == "twelve":
+            return items[2], items
+        if variant == "ao":
+            return "AO (Adult Only)", items
+        # sixteen, plus undetectable installs, which ModuleUpdate resolves to
+        # the sixteen default on the next refresh
+        return items[1], items
 
     def on_age_filter_select(self, value):
         # Show dialog to confirm age filter selection
