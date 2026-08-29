@@ -33,7 +33,10 @@ from kivymd.uix.navigationdrawer import (MDNavigationLayout,
                                          MDNavigationDrawerDivider)
 from kivymd.uix.navigationdrawer.navigationdrawer import MDNavigationDrawerItem
 from kivymd.uix.textfield import MDTextField
-from kivymd.uix.dialog import MDDialog, MDDialogHeadlineText, MDDialogButtonContainer
+from kivymd.uix.dialog import (MDDialog, 
+                               MDDialogHeadlineText, 
+                               MDDialogContentContainer,
+                               MDDialogButtonContainer)
 from kivymd.uix.button import MDButton, MDButtonText
 from kivymd.uix.label import MDLabel
 from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
@@ -232,7 +235,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     saved_games: ListProperty = ListProperty([])
     _password_as_text: bool = False  # raw vs masked password in server_address
 
-    # Launch button label/icon per client_type, see update_connect_button_text.
+    # Launch button label/icon per client_type, see update_connect_ok_text.
     _CLIENT_TYPE_LABELS = {
         "game": ("Launch & Play", "rocket-launch"),
         "text": ("Launch Text Client", "console-line"),
@@ -440,6 +443,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             self.saved_games = []
         logger.debug(f"Loaded {len(self.favorite_games)} favorite games")
 
+#####################FAVORITES#############################
+
     def save_favorite_games(self, module_name: str = None):
         """Save favorite games to app config"""
         try:
@@ -539,6 +544,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         if favorite_widget:
             favorite_widget.highlight()
 
+############### TOOL FUNCTIONS ###################
+
     def generate(self):
         """Generate a new game"""
         # Step 1: Select files (multiple .zip/.yaml files)
@@ -611,17 +618,18 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             MDDialogHeadlineText(
                 text="Generation Options",
             ),
-            content,
+            MDDialogContentContainer(content),
             MDDialogButtonContainer(
                 MDButton(
-                    MDButtonText(text="CANCEL"),
+                    MDButtonText(text="Cancel"),
                     on_release=lambda x: self._on_generation_options_cancel(dialog)
                 ),
                 MDButton(
-                    MDButtonText(text="GENERATE"),
+                    MDButtonText(text="Generate"),
                     on_release=lambda x: self._on_generation_options_confirm(dialog, seed_field, output_field)
                 ),
-                spacing=dp(8)
+                spacing=dp(8),
+                pos_hint={"center_x": 0.5}
             )
         )
         
@@ -847,19 +855,19 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         port_field = content.ids.port
         admin_password_field = content.ids.admin_password
 
-        confirm_text = MDButtonText(text="START SERVER")
+        confirm_text = MDButtonText(text="Start Local Server")
         content.bind(mode=lambda _content, mode: setattr(
             confirm_text, "text",
-            "START SERVER" if mode == "local" else "OPEN UPLOAD PAGE"))
+            "Start Local Server" if mode == "local" else "Open Browser"))
 
         dialog = MDDialog(
             MDDialogHeadlineText(
                 text="Start/Host Game",
             ),
-            content,
+            MDDialogContentContainer(content),
             MDDialogButtonContainer(
                 MDButton(
-                    MDButtonText(text="CANCEL"),
+                    MDButtonText(text="Cancel"),
                     on_release=lambda x: dialog.dismiss()
                 ),
                 MDButton(
@@ -881,7 +889,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             dialog.dismiss()
             # The browser session owns the uploaded seed, so the room lands on
             # the user's own multiworld.gg dashboard -- never upload from here.
-            webbrowser.open("https://multiworld.gg/play/host")
+            webbrowser.open("https://mw.prismativerse.com/play/host") # change to multiworld.gg when promoted
             return
 
         port = port_field.text.strip()
@@ -982,17 +990,18 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             MDDialogHeadlineText(
                 text="Patch Options",
             ),
-            content,
+            MDDialogContentContainer(content),
             MDDialogButtonContainer(
                 MDButton(
-                    MDButtonText(text="CANCEL"),
+                    MDButtonText(text="Cancel"),
                     on_release=lambda x: self._on_patch_options_cancel(dialog)
                 ),
                 MDButton(
-                    MDButtonText(text="PATCH"),
+                    MDButtonText(text="Patch"),
                     on_release=lambda x: self._on_patch_options_confirm(dialog, output_field)
                 ),
-                spacing=dp(8)
+                spacing=dp(8),
+                pos_hint={"center_x": 0.5}
             )
         )
         

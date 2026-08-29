@@ -96,6 +96,7 @@ class MessageBox(MDDialog):
                     on_release=lambda instance: self._ok(instance),
                 ),
                 spacing=dp(8),
+                pos_hint={"center_x": 0.5}
             ),
         )
         self.dialog.state_press = 0
@@ -211,8 +212,7 @@ def confirm_arbitrary_code(title: str, text: str, config_key: str,
 class ConsoleBox(MDDialog):
     """
     Interactive console-style prompt with a text input; used for slot name
-    and password prompts (input is masked when the prompt mentions a
-    password).
+    and password prompts
     """
     
     def __init__(self, title="", prompt=""):
