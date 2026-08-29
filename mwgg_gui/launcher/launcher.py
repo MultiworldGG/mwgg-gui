@@ -35,6 +35,7 @@ from kivymd.uix.navigationdrawer.navigationdrawer import MDNavigationDrawerItem
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.dialog import MDDialog, MDDialogHeadlineText, MDDialogButtonContainer
 from kivymd.uix.button import MDButton, MDButtonText
+from kivymd.uix.label import MDLabel
 from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
 
 
@@ -50,6 +51,7 @@ from pathlib import Path
 import subprocess
 import threading
 import urllib.parse
+import webbrowser
 
 from kivymd.app import MDApp
 from mwgg_igdb import GameIndex
@@ -76,6 +78,12 @@ logger = logging.getLogger("Client")
 # Game-agnostic modules (multi-game or no-game clients) skip pre-flight Connect
 # verification: the server's game name won't match one canonical client identity.
 _SKIP_GAME_VALIDATION_MODULES = {"_bizhawk", "_sni", "_tracker"}
+
+# Shown whenever no game is selected. The backend represents that state as the
+# generic "Archipelago" game (the text-client fallback slots Generate emits for
+# game-less players); the UI deliberately never surfaces that name.
+_NO_GAME_STATUS = ("Game not set, connecting using Text Client. "
+                   "Switch to Universal Tracker or set your game.")
 
 
 def _needs_game_validation(game_module: str, game_label: str) -> bool:
@@ -116,10 +124,7 @@ class LauncherView(MDBoxLayout):
     slot_layout: ObjectProperty
     server_layout: ObjectProperty
     title_layout: ObjectProperty
-    fallback_status = StringProperty(
-        "Game not set, connecting using Text Client. "
-        "Switch to Universal Tracker or set your game."
-    )
+    fallback_status = StringProperty(_NO_GAME_STATUS)
 
 class LauncherAuthTextField(MDTextField):
     pass
@@ -128,7 +133,34 @@ class LauncherGenerateContent(MDBoxLayout):
     pass
 
 class LauncherHostContent(MDBoxLayout):
-    pass
+    """Start/Host dialog body: a segmented Local Host / Upload switch over a
+    fixed-height section box, so the dialog never resizes after opening."""
+    mode = StringProperty("local")
+
+    def on_kv_post(self, base_widget):
+        super().on_kv_post(base_widget)
+        self._local_widgets = [self.ids.port, self.ids.admin_password]
+        self._upload_note = MDLabel(
+            text="Host on multiworld.gg instead: the upload page opens in "
+                 "your browser, where you upload the generated game (.zip) "
+                 "and get a room to share.",
+            theme_text_color="Custom",
+            text_color=self.theme_cls.onSurfaceVariantColor,
+            size_hint_x=0.8,
+            pos_hint={"center_x": 0.5},
+        )
+
+    def set_mode(self, mode: str):
+        if mode == self.mode:
+            return
+        self.mode = mode
+        box = self.ids.mode_box
+        box.clear_widgets()
+        if mode == "local":
+            for widget in self._local_widgets:
+                box.add_widget(widget)
+        else:
+            box.add_widget(self._upload_note)
 
 class LauncherPatchContent(MDBoxLayout):
     pass
@@ -320,17 +352,42 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             self.games_mdlist.add_widget(game)
 
     def on_game_selected(self, game_info: tuple[str, str]):
-        """Handle game selection from the game list"""
+        """Handle game selection from the game list or favorites bar;
+        selecting the already-selected game deselects it."""
+        if self.selected_game and game_info[0] == self.selected_game[0]:
+            self.deselect_game()
+            return
         self.selected_game = game_info
         self.launcher_view.fallback_status = ""
         logger.info(f"Selected game: {game_info[1]}")
         self.launcher_view.module_name = game_info[0]
-        self.update_connect_button_text()
+        self._update_component_strip()
+        self.add_to_favorite_bar(game_info[0])
+        self._highlight_favorite(game_info[0])
+
+    def deselect_game(self):
+        """Return to the no-selection state (see _NO_GAME_STATUS: the backend
+        falls back to the generic Archipelago text client)."""
+        self.selected_game = ""
+        self.launcher_view.fallback_status = _NO_GAME_STATUS
+        self.launcher_view.module_name = ""
+        self.set_favorite_highlight(None)
         self._update_component_strip()
 
-        if not self.is_favorite(game_info[0]):
-            self.add_to_favorite_bar(game_info[0])
-   
+    def _highlight_favorite(self, module_name: str):
+        """Highlight the favorites-bar tile for `module_name`, if present."""
+        for widget in self.favorites_layout.children:
+            if isinstance(widget, Favorite) and widget.game_module == module_name:
+                self.set_favorite_highlight(widget)
+                return
+        self.set_favorite_highlight(None)
+
+    def apply_game_search(self, query: str):
+        """Repopulate the game list for `query`; an empty query falls back to
+        the "popular" set (the same default the launcher starts with)."""
+        self.game_tag_filter = (query or "").strip() or "popular"
+        asynckivy.start(self.set_game_list())
+
     def set_filter(self, active, tag):
         """Set the game search filter based on the game tag filter"""
         if active:
@@ -442,10 +499,6 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             self.remove_from_favorites(module_name)
         else:
             self.save_favorite_games(module_name)
-
-    def is_favorite(self, module_name: str) -> bool:
-        """Check if a game is in favorites"""
-        return module_name in self.saved_games
 
     def swipe_to_favorite(self, module_name: str):
         """Switch to a specific favorite game tab"""
@@ -784,21 +837,24 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             logger.warning(f"Failed to clean up temp directory {temp_dir}: {e}")
 
     def host(self):
-        """Host a new game"""
-        # Show host options dialog
+        """Start/Host a game: locally via MultiServer, or on multiworld.gg"""
         self._show_host_options()
 
     def _show_host_options(self):
-        """Show dialog with host options"""
-        # Create dialog content
+        """Show the Start/Host dialog: Local Host server options, or the
+        multiworld.gg upload route"""
         content = LauncherHostContent()
         port_field = content.ids.port
         admin_password_field = content.ids.admin_password
-        
-        # Create dialog
+
+        confirm_text = MDButtonText(text="START SERVER")
+        content.bind(mode=lambda _content, mode: setattr(
+            confirm_text, "text",
+            "START SERVER" if mode == "local" else "OPEN UPLOAD PAGE"))
+
         dialog = MDDialog(
             MDDialogHeadlineText(
-                text="Server Options",
+                text="Start/Host Game",
             ),
             content,
             MDDialogButtonContainer(
@@ -807,20 +863,27 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     on_release=lambda x: dialog.dismiss()
                 ),
                 MDButton(
-                    MDButtonText(text="START SERVER"),
-                    on_release=lambda x: self._on_host_options_confirm(dialog, port_field, admin_password_field)
+                    confirm_text,
+                    on_release=lambda x: self._on_host_options_confirm(dialog, content, port_field, admin_password_field)
                 ),
                 spacing=dp(8)
             )
         )
-        
+
         # Store dialog reference and open it
         self._host_dialog = dialog
         self._host_result = None
         dialog.open()
 
-    def _on_host_options_confirm(self, dialog, port_field, admin_password_field):
+    def _on_host_options_confirm(self, dialog, content, port_field, admin_password_field):
         """Handle host options confirmation"""
+        if content.mode == "upload":
+            dialog.dismiss()
+            # The browser session owns the uploaded seed, so the room lands on
+            # the user's own multiworld.gg dashboard -- never upload from here.
+            webbrowser.open("https://multiworld.gg/play/host")
+            return
+
         port = port_field.text.strip()
         admin_password = admin_password_field.text.strip()
         
@@ -1266,7 +1329,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     def _rebuild_nav_drawer_menu(self):
         """Repaint everything below the drawer's static Host/Generate/Patch
         items: builtin tool components, tools from client-less worlds, and
-        the Settings tail. Runs once at startup (Settings only -- the tool
+        the Settings/Exit tail. Runs once at startup (tail only -- the tool
         sections need the manifest scan) and again on every scan repaint,
         including the post-Install-APWorld rescan."""
         menu = self.nav_menu
@@ -1277,6 +1340,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         def _add(widget):
             self._drawer_widgets.append(widget)
             menu.add_widget(widget)
+
+        # Core's Export Datapackage dumps only the worlds already loaded in
+        # this process (the generic baseline); route it to the game-selection
+        # dialog, which loads exactly the chosen worlds first.
+        activate_overrides = {"Export Datapackage": self.export_datapackage}
 
         tool_entries = []
         if self._world_components is not None:
@@ -1294,7 +1362,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 button = LauncherNavDrawerButton(
                     icon=self._BUILTIN_DRAWER_ICONS.get(entry.title, "toolbox-outline"),
                     text=entry.title)
-                button.bind(on_release=lambda *_a, entry=entry: entry.activate())
+                activate = activate_overrides.get(entry.title, entry.activate)
+                button.bind(on_release=lambda *_a, activate=activate: activate())
                 _add(button)
 
         installed_tools = self._installed_tools()
@@ -1312,6 +1381,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         settings_button = LauncherNavDrawerButton(icon="cog", text="Settings")
         settings_button.bind(on_release=lambda *_a: self.app.change_screen("settings"))
         _add(settings_button)
+        exit_button = LauncherNavDrawerButton(icon="exit-to-app", text="Exit")
+        exit_button.bind(on_release=lambda *_a: self.app.stop())
+        _add(exit_button)
 
     def _installed_tools(self) -> list:
         """Tools/adjusters from explicitly installed (Install APWorld ->
@@ -1329,6 +1401,12 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             tools.extend(c for c in components
                          if getattr(c, "type", "") in ("tool", "adjuster"))
         return tools
+
+    def export_datapackage(self):
+        """Open the datapackage export dialog: pick any available games
+        (customs included), then load exactly those worlds and export."""
+        from mwgg_gui.launcher.export_datapackage import open_export_dialog
+        open_export_dialog(self)
 
     def get_current_game(self) -> tuple[str, str] | None:
         """Return the currently selected (module_name, display_name) tuple,

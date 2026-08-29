@@ -134,8 +134,9 @@ class Favorite(MDSmartTile):
     def on_touch_up(self, touch):
         if self.click_down_pos:
             if self.collide_point(*self.click_down_pos):
+                # Highlight state is owned by the screen: selection highlights
+                # the matching tile, reselecting toggles the game off again.
                 self.app.launcher_screen.on_favorite_clicked(self.game_module)
-                self.app.launcher_screen.set_favorite_highlight(self)
             self.click_down_pos = []
             return super().on_touch_up(touch)
 
