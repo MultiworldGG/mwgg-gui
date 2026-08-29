@@ -11,6 +11,7 @@ __all__ = (
     "CONSOLE_ACTIONS",
     "LAUNCHER_ACTIONS",
     "MWGG_WEBHOST_BASE",
+    "SETUP_GUIDE_URL",
     "TRUSTED_AVATAR_HOSTS",
     "AVATAR_TOKEN_MINT_URL",
     "AVATAR_UPLOAD_URL",
@@ -26,6 +27,11 @@ ROLE_CLIENT = "client"
 # Host that mints upload tokens and serves uploaded avatars. Will move to
 # https://multiworld.gg once the uploader is rolled out there.
 MWGG_WEBHOST_BASE = "https://mw.prismativerse.com"
+
+# Webhost setup-guide route, /learn/<lang>/tutorial/<game>/<file>. A world's
+# declared guide file names are readable only by importing the world, so the
+# English `setup` guide is the only one the GUI can name.
+SETUP_GUIDE_URL = f"{MWGG_WEBHOST_BASE}/learn/en/tutorial/{{game}}/setup"
 
 # Avatar URLs failing this host check (legacy YAML entries, hand-edited
 # storage, hostile Set values) collapse to the default avatar.
