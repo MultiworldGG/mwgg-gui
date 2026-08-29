@@ -23,6 +23,7 @@ from kivymd.uix.relativelayout import MDRelativeLayout
 from kivy.app import App
 from kivy.uix.effectwidget import PixelateEffect
 from kivymd.uix.label import MDLabel
+from kivy.uix.textinput import TextInput
 
 MIN_SPEED = 0.016  # Fastest speed (60fps)
 MAX_SPEED = 0.050   # Slowest speed (20fps)
@@ -40,13 +41,14 @@ class CallbackHandler(logging.Handler):
         except Exception:
             self.handleError(record)
 
-class UpdateInfoLabel(MDLabel):
+class UpdateInfoLabel(TextInput):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.multiline = True
         self.pos_hint = {'center_x': 0.5, 'center_y': 0.4}
-        self.size_hint_x = None
-        self.size_hint_y = None
-        logger = logging.getLogger("Update")
+        self.size_hint_x = 0.5
+        self.size_hint_y = 0.2
+        logger = logging.getLogger("Patch")
         logger.addHandler(CallbackHandler(self.on_log_update))
 
     def on_log_update(self, record):
@@ -78,7 +80,7 @@ class MWGGLoadingLayout(MDRelativeLayout):
             self.frames.append(Image(texture=core_image.texture))
         self.current_image = None
         self.current_frame = 0
-        self.log_box = UpdateInfoLabel(theme_bg_color="Custom", md_bg_color=(0,0,0,0))
+        self.log_box = UpdateInfoLabel()
 
     def on_start(self):
         self.size = (self.app.root.width, self.app.root.height)
