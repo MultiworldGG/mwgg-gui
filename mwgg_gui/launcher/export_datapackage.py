@@ -4,9 +4,10 @@ Datapackage export dialog for the launcher.
 Core's `Export Datapackage` component dumps `worlds.network_data_package`,
 which in the launcher process only ever holds the generic baseline
 (`Utils._worlds_to_load` defaults to generic + tracker). This dialog lets the
-user pick any available games (customs included), loads exactly those world
-modules with the same install-then-import recipe as `run_world_tool`, and
-writes the combined package to `datapackage_export.json`.
+user pick any available games (customs included) and hands exactly those
+modules to `Generate --export-datapackage` in a child process, which writes
+the combined package to `datapackage_export.json`. Worlds never import into
+the launcher, so exports stay repeatable within one launcher run.
 
 The selection list reuses the yaml creator's `MassSelectViewRow` checkbox
 rows: `ExportGamesContent` implements their `owner._set_selected` contract.
@@ -27,6 +28,7 @@ from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.button import MDButton, MDButtonText
 from kivymd.uix.dialog import (MDDialog,
                                MDDialogHeadlineText,
+                               MDDialogContentContainer,
                                MDDialogButtonContainer)
 from kivymd.uix.label import MDLabel
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
@@ -163,7 +165,7 @@ def open_export_dialog(screen) -> None:
         MDDialogHeadlineText(
             text="Export Datapackage",
         ),
-        content,
+        MDDialogContentContainer(content),
         MDDialogButtonContainer(
             MDButton(
                 MDButtonText(text="CANCEL"),
@@ -205,8 +207,7 @@ def _confirm_export(screen, dialog, content: ExportGamesContent) -> None:
 
 
 def _run_export(modules: list[str]) -> None:
-    """Load and export on a worker thread behind the loading overlay; the
-    launcher stays responsive and widgets are only touched via Clock."""
+    """Run the export child on a worker thread behind the loading overlay."""
     app = MDApp.get_running_app()
     Clock.schedule_once(lambda dt: app.loading_layout.show_loading(display_logs=True), 0)
 
@@ -215,6 +216,8 @@ def _run_export(modules: list[str]) -> None:
             path, failed = export_selected_worlds(modules)
         except Exception as e:
             logger.exception("Datapackage export failed")
+            if getattr(e, "trace", None):
+                logger.error(e.trace)
 
             def show_error(dt, err=e):
                 app.loading_layout.hide_loading()
@@ -243,45 +246,15 @@ def _run_export(modules: list[str]) -> None:
     threading.Thread(target=worker, name="mwgg-datapackage-export", daemon=True).start()
 
 
+# Many worlds plus cold installs: well past world_data's per-world timeout.
+_EXPORT_TIMEOUT_SECONDS = 1800
+
+
 def export_selected_worlds(modules: Iterable[str]) -> tuple[str, list[str]]:
-    """Load exactly `modules` and write their combined data package to
-    `datapackage_export.json` in the user directory.
+    """Export `modules` via `Generate --export-datapackage` in a child process.
+    Returns (path, modules_that_failed_to_load); caller handles the UI."""
+    # Deferred: yaml_creator is the launcher's out-of-process Generate client.
+    from mwgg_gui.yaml_creator.world_data import run_generate_json
 
-    Same recipe per world as core's `run_world_tool`: `install_worlds` (which
-    extracts custom apworlds into the venv) followed by a plain import. The
-    parent `worlds` import also loads the generic baseline, so the export
-    always carries the "Archipelago" game alongside the selection. Returns
-    (path, modules_that_failed_to_load); caller handles the UI.
-    """
-    import importlib
-    import json
-
-    import ModuleUpdate
-    from Utils import user_path
-
-    modules = list(modules)
-    try:
-        ModuleUpdate.install_worlds([f"worlds.{module}" for module in modules])
-    except Exception:
-        logger.exception("Datapackage export: world install pass failed")
-
-    failed: list[str] = []
-    for module in modules:
-        try:
-            importlib.import_module(f"worlds.{module}")
-        except Exception:
-            logger.exception(f"Datapackage export: could not load worlds.{module}")
-            failed.append(module)
-
-    from worlds import AutoWorldRegister
-
-    wanted = set(modules) | {"generic"}
-    games = {}
-    for game_name, world in AutoWorldRegister.world_types.items():
-        if world.__module__.split(".")[1] in wanted:
-            games[game_name] = world.get_data_package_data()
-
-    path = user_path("datapackage_export.json")
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump({"games": games}, f, indent=4)
-    return path, failed
+    payload = run_generate_json(["--export-datapackage", *modules], timeout=_EXPORT_TIMEOUT_SECONDS)
+    return payload["path"], list(payload.get("failed", ()))
