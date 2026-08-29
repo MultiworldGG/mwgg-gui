@@ -208,7 +208,10 @@ class MarkupTextField(TextInput, ThemableBehavior):
             self.effect_y = effect_cls(target_widget=self)
             self.effect_y.bind(scroll=self._update_effect_y)
         self.fbind('height', self._update_effect_y_bounds)
-        self.bottom_scroll_button.bind(on_release=self.scroll_to_bottom)
+        # Only the console passes a button; other users (e.g. the classic hint
+        # screen's autocomplete input) construct without one.
+        if self.bottom_scroll_button is not None:
+            self.bottom_scroll_button.bind(on_release=self.scroll_to_bottom)
 
     def set_texts(self, text, plaintext):
          # Set texts in a function to pass everything through
