@@ -226,6 +226,16 @@ class MultiMDApp(MDApp):
         self.client_type_hint = os.environ.get("MWGG_CLIENT_TYPE", "")
         if self.role == ROLE_LAUNCHER:
             self.base_title = "MultiworldGG Launcher"
+        else:
+            # Client-direct processes have no launcher screen to set the game
+            # cover; resolve it from the module MultiWorld.py exported when
+            # routing the launch.
+            game_module = os.environ.get("MWGG_GAME", "")
+            if game_module:
+                from mwgg_igdb import GameIndex
+                cover_url = GameIndex.get_game(game_module).get("cover_url")
+                if cover_url:
+                    self.logo_png = cover_url
         # Phantom subclass instances built post-takeover must not clobber the
         # live launcher's singleton slot.
         if type(self)._active_instance is None:
