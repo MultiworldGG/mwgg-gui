@@ -600,10 +600,12 @@ class MultiMDApp(MDApp):
     def set_age_filter(self, value: str):
         '''
         This function is called when the age filter is changed.
-        It downloads the new index package and updates the game list.
+        It reinstalls the mwgg_igdb variant matching the selected filter.
         '''
+        # ModuleUpdate maps the bare "mwgg_igdb" token to the sixteen default,
+        # so Not Rated must send the explicit nr token.
         if value == "Not Rated":
-            index = "mwgg_igdb"
+            index = "mwgg_igdb_nr"
         elif value == "16 (Teen)":
             index = "mwgg_igdb_sixteen"
         elif value == "12 (Everyone)":
@@ -611,8 +613,9 @@ class MultiMDApp(MDApp):
         else:
             logging.error(f"Invalid age filter: {value}")
             return
-        from ModuleUpdate import install_worlds, uninstall_worlds
-        uninstall_worlds(["mwgg_igdb", "mwgg_igdb_sixteen", "mwgg_igdb_twelve"])
+        from ModuleUpdate import install_worlds
+        # All variants ship as the single mwgg_igdb dist; the variant token
+        # force-reinstalls it in place, so no prior uninstall is needed.
         install_worlds([index])
 
     def change_screen(self, item: str):

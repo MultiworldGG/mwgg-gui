@@ -36,7 +36,7 @@
                     text: "Launcher"
                 LauncherNavDrawerButton:
                     id: launcher_host_button
-                    text: "Host Game"
+                    text: "Start/Host Game"
                     icon: "router-network"
                     on_release: app.launcher_screen.host()
                 LauncherNavDrawerButton:
@@ -309,30 +309,48 @@
     orientation: 'vertical'
     spacing: dp(15)
     adaptive_height: True
-    LauncherAuthTextField:
-        id: port
-        input_filter: 'int'
+    MDSegmentedButton:
         size_hint_x: 0.8
         pos_hint: {"center_x": 0.5}
-        MDTextFieldHintText:
-            text: "Port (default: 38281)"
-        MDTextFieldLeadingIcon:
-            theme_icon_color: "Custom"
-            icon_color_focus: self.parent.icon_color_focus
-            icon_color_normal: self.parent.icon_color_normal
-            icon: 'numeric'
-    LauncherAuthTextField:
-        id: admin_password
-        password: True
-        size_hint_x: 0.8
-        pos_hint: {"center_x": 0.5}
-        MDTextFieldHintText:
-            text: "Remote Admin Password (optional)"
-        MDTextFieldLeadingIcon:
-            theme_icon_color: "Custom"
-            icon_color_focus: self.parent.icon_color_focus
-            icon_color_normal: self.parent.icon_color_normal
-            icon: 'lock'
+        MDSegmentedButtonItem:
+            active: True
+            on_active: root.set_mode("local") if self.active else None
+            MDSegmentButtonLabel:
+                text: "Local Host"
+        MDSegmentedButtonItem:
+            on_active: root.set_mode("upload") if self.active else None
+            MDSegmentButtonLabel:
+                text: "Upload to multiworld.gg"
+    MDBoxLayout:
+        id: mode_box
+        orientation: 'vertical'
+        spacing: dp(15)
+        size_hint_y: None
+        height: dp(127)
+        LauncherAuthTextField:
+            id: port
+            input_filter: 'int'
+            size_hint_x: 0.8
+            pos_hint: {"center_x": 0.5}
+            MDTextFieldHintText:
+                text: "Port (default: 38281)"
+            MDTextFieldLeadingIcon:
+                theme_icon_color: "Custom"
+                icon_color_focus: self.parent.icon_color_focus
+                icon_color_normal: self.parent.icon_color_normal
+                icon: 'numeric'
+        LauncherAuthTextField:
+            id: admin_password
+            password: True
+            size_hint_x: 0.8
+            pos_hint: {"center_x": 0.5}
+            MDTextFieldHintText:
+                text: "Remote Admin Password (optional)"
+            MDTextFieldLeadingIcon:
+                theme_icon_color: "Custom"
+                icon_color_focus: self.parent.icon_color_focus
+                icon_color_normal: self.parent.icon_color_normal
+                icon: 'lock'
 
 <LauncherPatchContent>:
     orientation: 'vertical'

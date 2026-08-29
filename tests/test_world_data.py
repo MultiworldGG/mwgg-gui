@@ -87,14 +87,14 @@ def spawn_capture(world_data, monkeypatch):
     return captured
 
 
-def test_run_generate_argv_env_cwd_creationflags(world_data, spawn_capture, monkeypatch):
+def test_load_world_data_argv_env_cwd_creationflags(world_data, spawn_capture, monkeypatch):
     monkeypatch.setattr(world_data, "is_frozen", lambda: False)
     monkeypatch.setattr(world_data, "is_windows", True)
     monkeypatch.setattr(
         world_data.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False
     )
 
-    world_data._run_generate("Some Game", "simple", module="some_module")
+    world_data.load_world_data("Some Game", "simple", module="some_module")
 
     prefix = spawn_capture["prefix"]
     assert spawn_capture["cmd"] == prefix + [
@@ -114,17 +114,28 @@ def test_run_generate_argv_env_cwd_creationflags(world_data, spawn_capture, monk
     assert kwargs["creationflags"] == 0x08000000
 
 
-def test_run_generate_frozen_env_omits_kivy_no_args(world_data, spawn_capture, monkeypatch):
+def test_load_world_data_frozen_env_omits_kivy_no_args(world_data, spawn_capture, monkeypatch):
     monkeypatch.setattr(world_data, "is_frozen", lambda: True)
     monkeypatch.setattr(world_data, "is_windows", False)
 
-    world_data._run_generate("Some Game", "complex")
+    world_data.load_world_data("Some Game", "complex")
 
     kwargs = spawn_capture["kwargs"]
     assert kwargs["env"]["SKIP_REQUIREMENTS_UPDATE"] == "1"
     assert "KIVY_NO_ARGS" not in kwargs["env"]
     assert "creationflags" not in kwargs
     assert "--module" not in spawn_capture["cmd"]
+
+
+def test_run_generate_json_passes_args_and_timeout(world_data, spawn_capture, monkeypatch):
+    monkeypatch.setattr(world_data, "is_frozen", lambda: True)
+    monkeypatch.setattr(world_data, "is_windows", False)
+
+    payload = world_data.run_generate_json(["--export-datapackage", "a", "b"], timeout=42)
+
+    assert payload == {"ok": True}
+    assert spawn_capture["cmd"] == spawn_capture["prefix"] + ["--export-datapackage", "a", "b"]
+    assert spawn_capture["kwargs"]["timeout"] == 42
 
 
 # ----- load_world_data: retry-once on the reload exit code -----------------

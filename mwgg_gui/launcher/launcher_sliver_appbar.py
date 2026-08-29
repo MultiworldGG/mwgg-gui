@@ -14,9 +14,10 @@ from kivy.clock import Clock
 from kivy.app import App
 from kivy.lang import Builder
 from kivymd.uix.sliverappbar import MDSliverAppbar, MDSliverAppbarContent
-from kivymd.uix.appbar import MDTopAppBar
+from kivymd.uix.appbar import (MDTopAppBar,
+                               MDTopAppBarTrailingButtonContainer,
+                               MDActionTopAppBarButton)
 from kivymd.uix.textfield import MDTextField
-import asynckivy
 
 Builder.load_string('''
 #:import os os
@@ -80,11 +81,14 @@ class SearchBar(MDTopAppBar):
         super().__init__(**kwargs)
         self.search_box = LauncherTextField(
             id="game_tag_filter",
-            hint_text = "Game Search", 
+            hint_text = "Game Search",
             pos_hint = {"center_y": 0.5}
         )
         self.add_widget(self.search_box)
         self.search_box.bind(on_text_validate=self.on_enter)
+        self.reset_button = MDActionTopAppBarButton(icon="restore")
+        self.reset_button.bind(on_release=self.on_reset)
+        self.add_widget(MDTopAppBarTrailingButtonContainer(self.reset_button))
 
     def add_widget(self, widget):
         if isinstance(widget, MDTextField):
@@ -98,13 +102,15 @@ class SearchBar(MDTopAppBar):
         super()._add_title(widget)
 
     def on_enter(self, instance):
-        # Get the parent screen to access the game list
+        self._apply_search(instance.text)
+
+    def on_reset(self, *args):
+        self.search_box.text = ""
+        self._apply_search("")
+
+    def _apply_search(self, query: str):
         screen = App.get_running_app().screen_manager.current_screen
         # Import here to avoid circular import
         from .launcher import LauncherScreen
         if isinstance(screen, LauncherScreen):
-            # Clear existing game list
-            screen.games_mdlist.clear_widgets()
-            # Update the filter and trigger new search
-            screen.game_tag_filter = instance.text
-            asynckivy.start(screen.set_game_list()) 
+            screen.apply_game_search(query)
