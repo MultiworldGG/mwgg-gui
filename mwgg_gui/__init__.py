@@ -1,6 +1,31 @@
 from __future__ import annotations
 
+import os
 import sys
+
+# kivy.core modules apply Config at import time (core.text registers the
+# default font, core.window sizes/styles the window), so these must be set
+# before ANY kivy.core import below. Setting them later only reaches the
+# persisted file, which left every fresh KIVY_HOME's first boot rendering
+# with vanilla Kivy defaults (Roboto, 800x600, no custom titlebar).
+from kivy.config import Config as MWKVConfig
+
+MWKVConfig.set("input", "mouse", "mouse,disable_multitouch")
+MWKVConfig.set("kivy", "exit_on_escape", "0")
+MWKVConfig.set("kivy", "default_font", ['Inter',
+                                        os.path.join("data", "fonts", "Inter-Regular.ttf"),
+                                        os.path.join("data", "fonts", "Inter-Italic.ttf"),
+                                        os.path.join("data", "fonts", "Inter-Bold.ttf"),
+                                        os.path.join("data", "fonts", "Inter-BoldItalic.ttf")])
+MWKVConfig.set("graphics", "width", "1099")
+MWKVConfig.set("graphics", "height", "699")
+# custom_titlebar only works on Windows; write "0" elsewhere to overwrite a
+# value persisted to KIVY_HOME by a previous Windows run.
+MWKVConfig.set("graphics", "custom_titlebar", "1" if sys.platform == "win32" else "0")
+MWKVConfig.set("graphics", "minimum_height", "700")
+MWKVConfig.set("graphics", "minimum_width", "600")
+MWKVConfig.set("graphics", "focus", "False")
+MWKVConfig.write()
 
 if sys.platform == "win32":
     # Must run before the imports below pull in kivymd and create the Window.

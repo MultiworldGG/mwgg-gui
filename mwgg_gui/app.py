@@ -28,28 +28,11 @@ if sys.platform == "win32":
 # if Utils.is_frozen():
 from BaseUtils import local_path
 
+# Kivy's Config is file-backed (persists to KIVY_HOME) and extensible with
+# app-specific settings; the settings screen edits it live. The launcher's
+# defaults are applied in mwgg_gui/__init__.py, before any kivy.core import.
 from kivy.config import Config as MWKVConfig
 from kivy.config import ConfigParser
-
-# Kivy's Config is file-backed (persists to KIVY_HOME) and extensible with
-# app-specific settings; the settings screen edits it live.
-
-MWKVConfig.set("input", "mouse", "mouse,disable_multitouch")
-MWKVConfig.set("kivy", "exit_on_escape", "0")
-MWKVConfig.set("kivy", "default_font", ['Inter',
-                                    os.path.join("data","fonts","Inter-Regular.ttf"),
-                                    os.path.join("data","fonts","Inter-Italic.ttf"),
-                                    os.path.join("data","fonts","Inter-Bold.ttf"),
-                                    os.path.join("data","fonts","Inter-BoldItalic.ttf")])
-MWKVConfig.set("graphics", "width", "1099")
-MWKVConfig.set("graphics", "height", "699")
-# custom_titlebar only works on Windows; write "0" elsewhere to overwrite a
-# value persisted to KIVY_HOME by a previous Windows run.
-MWKVConfig.set("graphics", "custom_titlebar", "1" if sys.platform == "win32" else "0")
-MWKVConfig.set("graphics", "minimum_height", "700")
-MWKVConfig.set("graphics", "minimum_width", "600")
-MWKVConfig.set("graphics", "focus", "False")
-MWKVConfig.write()
 
 from kivy.core.window import Window
 # Windows-only: the splash process owns the visible UI until Kivy loads (see
