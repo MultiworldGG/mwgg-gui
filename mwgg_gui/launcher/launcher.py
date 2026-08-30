@@ -91,6 +91,11 @@ _SKIP_GAME_VALIDATION_MODULES = {"_bizhawk", "_sni", "_tracker"}
 _NO_GAME_STATUS = ("Game not set, connecting using Text Client. "
                    "Switch to Universal Tracker or set your game.")
 
+# Manual has no concrete game to pair with (selecting it deselects the game).
+_MANUAL_STATUS = "Manual games are chosen inside the Manual Client after launch."
+
+_TRACKER_STATUS = "Game not set, connecting using the Universal Tracker."
+
 
 def _needs_game_validation(game_module: str, game_label: str) -> bool:
     """True if the launcher should pre-flight a Connect handshake against the
@@ -238,9 +243,12 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     game_tag_filter: StringProperty
     bottom_appbar: BottomAppBar
     selected_game: tuple[str, str] = ("", "")
-    # "game" = the selected game's client (text client when none selected); the
-    # radio checkboxes override with "text"/"universal_tracker"/"manual".
-    client_type: str = "game"
+    # Effective CLI client type derived from the checkboxes ("manual" wins,
+    # then "universal_tracker", base "text"). Text is always on -- a selected
+    # game's client is its text client, the tracker rides on top of either:
+    # text = textclient, text+game = gameclient, text+tracker = trackerclient,
+    # text+tracker+game = the game's client with the tracker overlay.
+    client_type: str = "text"
     highlighted_favorite: ObjectProperty(None, allownone=True)
     app: MDApp
     result: Any
@@ -248,12 +256,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     saved_games: ListProperty = ListProperty([])
     _password_as_text: bool = False  # raw vs masked password in server_address
 
-    # Launch button label/icon per client_type, see update_connect_ok_text.
+    # Launch button label/icon per client_type, see update_connect_button_text.
     _CLIENT_TYPE_LABELS = {
-        "game": ("Launch & Play", "rocket-launch"),
-        "text": ("Launch Text Client", "console-line"),
-        "universal_tracker": ("Launch Tracker", "map-marker-radius"),
-        "manual": ("Launch Manual Client", "book-open-variant"),
+        "text": ("Launch Text Client", "text-box-outline"),
+        "universal_tracker": ("Launch Tracker", "map-marker-multiple-outline"),
+        "manual": ("Launch Manual Client", "script-text-outline"),
     }
 
     def __init__(self,**kwargs):
@@ -334,7 +341,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.available_games = get_available_worlds()
         self.load_favorite_games()
         self.launcher_view.bind(fallback_status=self.on_fallback_status_changed)
-        Clock.schedule_once(lambda dt: self.update_connect_button_text(), 0.2)
+        # Text is the always-on base; activating the checkbox also paints the
+        # launch button (via enforce_text_client -> _refresh_client_type).
+        Clock.schedule_once(
+            lambda dt: setattr(self.launcher_view.ids.text_client_checkbox, "active", True), 0.2)
         #Clock.schedule_once(lambda dt: self.update_selected_game(), 0.2)
         Clock.schedule_once(lambda dt: self.populate_favorites(), 0.2)
         # Start game list population after available_games is populated
@@ -373,6 +383,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         if self.selected_game and game_info[0] == self.selected_game[0]:
             self.deselect_game()
             return
+        if self.client_type == "manual":
+            # A concrete game contradicts the game-less Manual Client; fall
+            # back to the game's own client.
+            self.launcher_view.ids.manual_checkbox.active = False
         self.selected_game = game_info
         self.launcher_view.fallback_status = ""
         logger.info(f"Selected game: {game_info[1]}")
@@ -385,7 +399,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         """Return to the no-selection state (see _NO_GAME_STATUS: the backend
         falls back to the generic Archipelago text client)."""
         self.selected_game = ""
-        self.launcher_view.fallback_status = _NO_GAME_STATUS
+        self.launcher_view.fallback_status = self._no_game_status()
         self.launcher_view.module_name = ""
         self.set_favorite_highlight(None)
         self._update_component_strip()
@@ -418,13 +432,23 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     def update_connect_button_text(self):
         """Update the launch button label/icon to match the selected client type."""
         connect_button = self.launcher_view.ids.connect_button
-        text, icon = self._CLIENT_TYPE_LABELS.get(self.client_type, self._CLIENT_TYPE_LABELS["game"])
-        if self.client_type == "game":
-            client = self._selected_game_client()
-            if client is not None:
-                text = client.name
+        text, icon = self._CLIENT_TYPE_LABELS.get(self.client_type, self._CLIENT_TYPE_LABELS["text"])
+        # A selected game names the button with or without the tracker --
+        # either way the game's own client boots -- so only the icon tracks
+        # the checkboxes.
+        label = self._selected_client_label()
+        if label is not None:
+            text = label
         connect_button._button_text.text = text
         connect_button._button_icon.icon = icon
+
+    def _selected_client_label(self) -> str | None:
+        """The selected game's client name ("<Game> Client" when the world
+        declares no client component), or None with nothing selected."""
+        if not self.selected_game:
+            return None
+        client = self._selected_game_client()
+        return client.name if client is not None else f"{self.selected_game[1]} Client"
 
     def _selected_game_client(self) -> Any | None:
         """The selected world's declared client component, or None."""
@@ -436,10 +460,40 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 return component
         return None
 
-    def set_client_type(self, client_type: str):
-        """Set the client type"""
-        self.client_type = client_type
+    def enforce_text_client(self, checkbox):
+        """Every client is a text client; the base checkbox never comes off."""
+        if not checkbox.active:
+            checkbox.active = True
+            return
+        self._refresh_client_type()
+
+    def set_tracker_client(self, active: bool):
+        if active and self.launcher_view.ids.manual_checkbox.active:
+            self.launcher_view.ids.manual_checkbox.active = False
+        self._refresh_client_type()
+
+    def set_manual_client(self, active: bool):
+        if active and self.launcher_view.ids.universal_tracker_checkbox.active:
+            self.launcher_view.ids.universal_tracker_checkbox.active = False
+        self._refresh_client_type()
+        if active and self.selected_game:
+            self.deselect_game()
+
+    def _refresh_client_type(self):
+        ids = self.launcher_view.ids
+        if ids.manual_checkbox.active:
+            self.client_type = "manual"
+        elif ids.universal_tracker_checkbox.active:
+            self.client_type = "universal_tracker"
+        else:
+            self.client_type = "text"
+        if not self.selected_game:
+            self.launcher_view.fallback_status = self._no_game_status()
         self.update_connect_button_text()
+
+    def _no_game_status(self) -> str:
+        return {"manual": _MANUAL_STATUS,
+                "universal_tracker": _TRACKER_STATUS}.get(self.client_type, _NO_GAME_STATUS)
 
     def load_favorite_games(self):
         """Load favorite games from app config"""
@@ -1241,6 +1295,31 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 is_error=True,
             ).open()
 
+    def create_shortcut(self):
+        """Drop a desktop shortcut that boots the current client selection
+        directly, skipping the launcher. Server/slot/password stay out of it;
+        the spawned client falls back to its persisted defaults."""
+        module = self.selected_game[0] if self.selected_game else ""
+        name = self._shortcut_name()
+        from mwgg_gui.launcher.desktop_shortcut import create_client_shortcut
+        try:
+            create_client_shortcut(name, module or None, self.client_type)
+        except Exception as e:
+            logger.error(f"Failed to create desktop shortcut {name!r}: {e}", exc_info=True)
+            MessageBox("Desktop Shortcut",
+                       f"Could not create the shortcut: {str(e)}", is_error=True).open()
+            return
+        self.show_snackbar(f'Added "{name}" to your desktop')
+
+    def _shortcut_name(self) -> str:
+        if self.selected_game:
+            if self.client_type == "universal_tracker":
+                return f"MultiworldGG {self.selected_game[1]} Tracker"
+            return f"MultiworldGG {self._selected_client_label()}"
+        return {"universal_tracker": "MultiworldGG Universal Tracker",
+                "manual": "MultiworldGG Manual Client"}.get(
+                    self.client_type, "MultiworldGG Text Client")
+
     # Play-page component strip: the selected game's manifest tools/adjusters,
     # run in-process behind the arbitrary-code warning. The declared client
     # names the Play button (update_connect_button_text), not a strip button.
@@ -1735,13 +1814,15 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             return
 
         game_module = self.selected_game[0] if self.selected_game else ""
-        game_label = self.selected_game[1] if self.selected_game else "Text Client"
+        game_label = (self.selected_game[1] if self.selected_game
+                      else {"universal_tracker": "Universal Tracker",
+                            "manual": "Manual Client"}.get(self.client_type, "Text Client"))
 
         if self.selected_game:
             self.app.logo_png = GameIndex.get_game(game_module).get("cover_url", None)
             logger.info(f"Attempting to launch module: {game_label}")
         else:
-            logger.info("No game selected; falling back to Text Client.")
+            logger.info(f"No game selected; launching {game_label}.")
 
         # Masked logging only -- never used to build spawn argv, which reads
         # the raw fields via _raw_connect_inputs() instead.

@@ -118,9 +118,8 @@
                                 text_color: app.theme_cls.onSurfaceVariantColor
                             MDCheckbox:
                                 pos_hint: {"center_y": 0.55}
-                                group: 'client_type'
                                 id: text_client_checkbox
-                                on_active: app.launcher_screen.set_client_type('text') if self.active else app.launcher_screen.set_client_type('game')
+                                on_active: app.launcher_screen.enforce_text_client(self)
                         MDDivider:
                             orientation: "vertical"
                             theme_divider_color: "Custom"
@@ -138,9 +137,8 @@
                                 text_color: app.theme_cls.onSurfaceVariantColor
                             MDCheckbox:
                                 pos_hint: {"center_y": 0.55}
-                                group: 'client_type'
                                 id: universal_tracker_checkbox
-                                on_active: app.launcher_screen.set_client_type('universal_tracker') if self.active else app.launcher_screen.set_client_type('game')
+                                on_active: app.launcher_screen.set_tracker_client(self.active)
                         MDDivider:
                             orientation: "vertical"
                             theme_divider_color: "Custom"
@@ -158,9 +156,8 @@
                                 text_color: app.theme_cls.onSurfaceVariantColor
                             MDCheckbox:
                                 pos_hint: {"center_y": 0.55}
-                                group: 'client_type'
                                 id: manual_checkbox
-                                on_active: app.launcher_screen.set_client_type('manual') if self.active else app.launcher_screen.set_client_type('game')
+                                on_active: app.launcher_screen.set_manual_client(self.active)
                     MDScrollView:
                         do_scroll_x: False
                         MDBoxLayout:
@@ -177,10 +174,23 @@
                                 MDButtonText:
                                     theme_text_color: "Custom"
                                     text_color: app.theme_cls.onSurfaceVariantColor
-                                    text: 'Connect & Play'
+                                    text: 'Launch Text Client'
                                     halign: 'center'
                                 MDButtonIcon:
-                                    icon: "play-network"
+                                    icon: "text-box-outline"
+                            MDButton:
+                                id: shortcut_button
+                                pos_hint: {"center_x": 0.5}
+                                on_release: app.launcher_screen.create_shortcut()
+                                width: dp(200)
+                                radius: dp(10)
+                                MDButtonText:
+                                    theme_text_color: "Custom"
+                                    text_color: app.theme_cls.onSurfaceVariantColor
+                                    text: 'Desktop Shortcut'
+                                    halign: 'center'
+                                MDButtonIcon:
+                                    icon: "laptop"
                 MDBoxLayout: # Middle vertical divider
                     orientation: 'vertical'
                     spacing: dp(5)
