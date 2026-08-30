@@ -116,7 +116,10 @@ class ConsoleSliverAppbar(MDSliverAppbar, ColumnSortMixin, ColumnFilterMixin):
         if launcher is not None:
             self.tracker_mode = getattr(launcher, "client_type", "") == "universal_tracker"
         else:
-            self.tracker_mode = getattr(self.app, "client_type_hint", "") == "universal_tracker"
+            # The hint is a space-joined list ("game universal_tracker" for
+            # the overlay pair), so membership, not equality.
+            self.tracker_mode = "universal_tracker" in getattr(
+                self.app, "client_type_hint", "").split()
 
         self.screen_manager = MDScreenManager(size_hint_y=None, height=dp(48))
         self.players_screen = MDScreen(name="players", size_hint_y=None, height=dp(48))
