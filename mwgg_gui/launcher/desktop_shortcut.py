@@ -11,14 +11,17 @@ loads import-light for tests.
 
 import os
 import subprocess
+from collections.abc import Iterable
 
 __all__ = ("client_shortcut_command", "create_client_shortcut")
 
 
-def client_shortcut_command(game_module: str | None, client_type: str) -> list[str]:
+def client_shortcut_command(game_module: str | None, client_types: Iterable[str]) -> list[str]:
     """The direct-launch argv: BaseUtils.spawn_client's flag contract minus
     the per-session server/slot/password -- a persistent shortcut must not
     bake those in; the spawned client falls back to its persisted defaults.
+    --client-type takes one or more values (e.g. "game universal_tracker"
+    for the game client with the tracker overlay).
     """
     from BaseUtils import get_client_exe
     if "APPIMAGE" in os.environ:
@@ -28,14 +31,15 @@ def client_shortcut_command(game_module: str | None, client_type: str) -> list[s
         argv = list(get_client_exe())
     if game_module:
         argv += ["--game", game_module]
-    argv += ["--client-type", client_type]
+    argv += ["--client-type", *client_types]
     return argv
 
 
-def create_client_shortcut(name: str, game_module: str | None, client_type: str) -> None:
+def create_client_shortcut(name: str, game_module: str | None,
+                           client_types: Iterable[str]) -> None:
     from BaseUtils import is_frozen, is_windows, local_path
 
-    command = client_shortcut_command(game_module, client_type)
+    command = client_shortcut_command(game_module, client_types)
     icon = local_path("data", "icon.ico")
     working_dir = None if "APPIMAGE" in os.environ else local_path()
     if is_windows:

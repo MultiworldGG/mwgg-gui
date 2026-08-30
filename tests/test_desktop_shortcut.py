@@ -44,27 +44,34 @@ def stub_base_utils(monkeypatch):
 
 
 def test_game_client_command(desktop_shortcut, stub_base_utils):
-    assert desktop_shortcut.client_shortcut_command("khddd", "text") == [
+    assert desktop_shortcut.client_shortcut_command("khddd", ("game",)) == [
+        "C:/apps/MultiworldGG.exe", "--game", "khddd", "--client-type", "game",
+    ]
+
+
+def test_tracker_overlay_pair_expands_into_one_flag(desktop_shortcut, stub_base_utils):
+    assert desktop_shortcut.client_shortcut_command(
+        "khddd", ("game", "universal_tracker")) == [
+        "C:/apps/MultiworldGG.exe", "--game", "khddd",
+        "--client-type", "game", "universal_tracker",
+    ]
+
+
+def test_forced_text_keeps_the_game_as_context(desktop_shortcut, stub_base_utils):
+    assert desktop_shortcut.client_shortcut_command("khddd", ("text",)) == [
         "C:/apps/MultiworldGG.exe", "--game", "khddd", "--client-type", "text",
     ]
 
 
-def test_tracker_rides_on_the_game_module(desktop_shortcut, stub_base_utils):
-    assert desktop_shortcut.client_shortcut_command("khddd", "universal_tracker") == [
-        "C:/apps/MultiworldGG.exe", "--game", "khddd",
-        "--client-type", "universal_tracker",
-    ]
-
-
 def test_no_game_omits_the_game_flag(desktop_shortcut, stub_base_utils):
-    assert desktop_shortcut.client_shortcut_command(None, "text") == [
+    assert desktop_shortcut.client_shortcut_command(None, ("text",)) == [
         "C:/apps/MultiworldGG.exe", "--client-type", "text",
     ]
 
 
 def test_source_mode_keeps_the_interpreter(desktop_shortcut, stub_base_utils):
     stub_base_utils.get_client_exe = lambda: ["/venv/python", "/src/MultiWorld.py"]
-    assert desktop_shortcut.client_shortcut_command(None, "manual") == [
+    assert desktop_shortcut.client_shortcut_command(None, ("manual",)) == [
         "/venv/python", "/src/MultiWorld.py", "--client-type", "manual",
     ]
 
@@ -73,7 +80,7 @@ def test_appimage_targets_the_appimage_itself(desktop_shortcut, stub_base_utils,
                                               monkeypatch):
     monkeypatch.setenv("APPIMAGE", "/opt/MultiworldGG.AppImage")
     monkeypatch.setenv("ARGV0", "/home/didi/MultiworldGG.AppImage")
-    assert desktop_shortcut.client_shortcut_command("khddd", "text") == [
+    assert desktop_shortcut.client_shortcut_command("khddd", ("game",)) == [
         "/home/didi/MultiworldGG.AppImage", "--game", "khddd",
-        "--client-type", "text",
+        "--client-type", "game",
     ]
