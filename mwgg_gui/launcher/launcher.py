@@ -40,6 +40,7 @@ from kivymd.uix.dialog import (MDDialog,
 from kivymd.uix.button import MDButton, MDButtonText
 from kivymd.uix.label import MDLabel
 from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
+from kivymd.uix.tooltip import MDTooltip
 
 
 import logging
@@ -199,6 +200,14 @@ class SetupGuideComponent:
     description: str = ""
 
 
+class LauncherTooltipLabel(MDTooltip, MDLabel):
+    """Hover-tooltip label. MDTooltip MUST precede MDLabel in the bases:
+    StateLayerBehavior.on_enter doesn't call super(), so with the widget
+    class first in the MRO the tooltip never shows (same ordering as
+    yaml_creator's HelpIcon)."""
+    tooltip_text = StringProperty("")
+
+
 class LauncherComponentButton(MDButton):
     text = ""
     icon = "wrench"
@@ -243,11 +252,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     game_tag_filter: StringProperty
     bottom_appbar: BottomAppBar
     selected_game: tuple[str, str] = ("", "")
-    # Effective CLI client type derived from the checkboxes ("manual" wins,
-    # then "universal_tracker", base "text"). Text is always on -- a selected
-    # game's client is its text client, the tracker rides on top of either:
-    # text = textclient, text+game = gameclient, text+tracker = trackerclient,
-    # text+tracker+game = the game's client with the tracker overlay.
+    # Effective CLI client type: "manual"/"universal_tracker" from the radio
+    # group, else "game" while the Game Client checkbox keeps the selected
+    # game's client in play, else "text". Unchecking Game Client forces the
+    # plain text/tracker client -- the module is withheld from the spawn, so
+    # the SNI/BizHawk registry hooks are dropped too (see _launch_module).
     client_type: str = "text"
     highlighted_favorite: ObjectProperty(None, allownone=True)
     app: MDApp
@@ -258,6 +267,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
     # Launch button label/icon per client_type, see update_connect_button_text.
     _CLIENT_TYPE_LABELS = {
+        "game": ("Launch Game Client", "gamepad"),
         "text": ("Launch Text Client", "text-box-outline"),
         "universal_tracker": ("Launch Tracker", "map-marker-multiple-outline"),
         "manual": ("Launch Manual Client", "script-text-outline"),
@@ -281,6 +291,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         # Python-built nav drawer widgets (everything below the static
         # Host/Generate/Patch items), replaced wholesale on each rebuild.
         self._drawer_widgets: list = []
+        # Latest checkbox gesture, consumed by _reconcile_client_controls.
+        self._client_intent: str | None = None
+        self._client_reconcile = Clock.create_trigger(self._reconcile_client_controls)
 
         # Built only for its .text_input (app._create_screen reaches in), never
         # attached to the tree -- "Launch & Play" covers the bar's one action
@@ -341,10 +354,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.available_games = get_available_worlds()
         self.load_favorite_games()
         self.launcher_view.bind(fallback_status=self.on_fallback_status_changed)
-        # Text is the always-on base; activating the checkbox also paints the
-        # launch button (via enforce_text_client -> _refresh_client_type).
-        Clock.schedule_once(
-            lambda dt: setattr(self.launcher_view.ids.text_client_checkbox, "active", True), 0.2)
+        Clock.schedule_once(lambda dt: self.update_connect_button_text(), 0.2)
         #Clock.schedule_once(lambda dt: self.update_selected_game(), 0.2)
         Clock.schedule_once(lambda dt: self.populate_favorites(), 0.2)
         # Start game list population after available_games is populated
@@ -383,11 +393,19 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         if self.selected_game and game_info[0] == self.selected_game[0]:
             self.deselect_game()
             return
-        if self.client_type == "manual":
+        ids = self.launcher_view.ids
+        if ids.manual_checkbox.active:
             # A concrete game contradicts the game-less Manual Client; fall
             # back to the game's own client.
-            self.launcher_view.ids.manual_checkbox.active = False
+            ids.manual_checkbox.active = False
         self.selected_game = game_info
+        # Any selected game gets its client by default; the Game Client
+        # checkbox is the opt-out (down to the plain text/tracker client).
+        ids.game_client_checkbox.disabled = False
+        ids.game_client_checkbox.active = True
+        if ids.text_client_checkbox.active:
+            ids.text_client_checkbox.active = False
+        self._refresh_client_type()
         self.launcher_view.fallback_status = ""
         logger.info(f"Selected game: {game_info[1]}")
         self.launcher_view.module_name = game_info[0]
@@ -399,9 +417,12 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         """Return to the no-selection state (see _NO_GAME_STATUS: the backend
         falls back to the generic Archipelago text client)."""
         self.selected_game = ""
-        self.launcher_view.fallback_status = self._no_game_status()
         self.launcher_view.module_name = ""
+        game_client = self.launcher_view.ids.game_client_checkbox
+        game_client.active = False
+        game_client.disabled = True
         self.set_favorite_highlight(None)
+        self._refresh_client_type()
         self._update_component_strip()
 
     def _highlight_favorite(self, module_name: str):
@@ -430,15 +451,13 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.game_filter = [(self.game_tag_filter.text, tag) for tag in GameIndex.search(self.game_tag_filter.text)]
 
     def update_connect_button_text(self):
-        """Update the launch button label/icon to match the selected client type."""
+        """Update the launch button label/icon to match the launch state."""
         connect_button = self.launcher_view.ids.connect_button
         text, icon = self._CLIENT_TYPE_LABELS.get(self.client_type, self._CLIENT_TYPE_LABELS["text"])
-        # A selected game names the button with or without the tracker --
-        # either way the game's own client boots -- so only the icon tracks
-        # the checkboxes.
-        label = self._selected_client_label()
-        if label is not None:
-            text = label
+        # A game whose client is in play names the button with or without the
+        # tracker; only the icon tracks the checkboxes.
+        if self._launch_module():
+            text = self._selected_client_label()
         connect_button._button_text.text = text
         connect_button._button_icon.icon = icon
 
@@ -460,24 +479,52 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 return component
         return None
 
-    def enforce_text_client(self, checkbox):
-        """Every client is a text client; the base checkbox never comes off."""
-        if not checkbox.active:
-            checkbox.active = True
-            return
-        self._refresh_client_type()
+    def set_game_client(self, active: bool):
+        self._queue_client_reconcile("game" if active else None)
 
-    def set_tracker_client(self, active: bool):
-        if active and self.launcher_view.ids.manual_checkbox.active:
-            self.launcher_view.ids.manual_checkbox.active = False
-        self._refresh_client_type()
+    def set_text_client(self, active: bool):
+        self._queue_client_reconcile("text" if active else None)
 
-    def set_manual_client(self, active: bool):
-        if active and self.launcher_view.ids.universal_tracker_checkbox.active:
-            self.launcher_view.ids.universal_tracker_checkbox.active = False
-        self._refresh_client_type()
-        if active and self.selected_game:
+    def refresh_client_type(self):
+        """Recompute the launch state after a tracker/manual radio change."""
+        self._queue_client_reconcile(None)
+
+    def _queue_client_reconcile(self, intent: str | None):
+        """Checkbox handlers only record the latest gesture and defer to
+        _reconcile_client_controls on the next frame: repairing widget state
+        synchronously mid-click fights the radio group's release-before-press
+        transition (a releasing radio's `active` lags its `state`)."""
+        if intent:
+            self._client_intent = intent
+        self._client_reconcile()
+
+    def _reconcile_client_controls(self, *_args):
+        """Settle the client-type controls into a consistent state, then
+        recompute the effective client_type. Every rule is idempotent; a
+        mutation here re-queues the trigger and converges next frame."""
+        ids = self.launcher_view.ids
+        game_client = ids.game_client_checkbox
+        text = ids.text_client_checkbox
+        intent, self._client_intent = self._client_intent, None
+
+        if ids.manual_checkbox.active and self.selected_game:
+            # Manual games are chosen inside the Manual Client.
             self.deselect_game()
+        # Game Client vs the plain Text Client: the later gesture wins.
+        if intent == "text" and game_client.active:
+            game_client.active = False
+        elif intent == "game" and text.active:
+            text.active = False
+        game_client.disabled = not self.selected_game
+        if not self.selected_game and game_client.active:
+            game_client.active = False
+        # Declining the game's client falls back to the plain Text Client;
+        # surface that on the radio.
+        if (self.selected_game and not game_client.active and not text.active
+                and not ids.universal_tracker_checkbox.active
+                and not ids.manual_checkbox.active):
+            text.active = True
+        self._refresh_client_type()
 
     def _refresh_client_type(self):
         ids = self.launcher_view.ids
@@ -485,11 +532,22 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             self.client_type = "manual"
         elif ids.universal_tracker_checkbox.active:
             self.client_type = "universal_tracker"
+        elif self.selected_game and ids.game_client_checkbox.active:
+            self.client_type = "game"
         else:
             self.client_type = "text"
         if not self.selected_game:
             self.launcher_view.fallback_status = self._no_game_status()
         self.update_connect_button_text()
+
+    def _launch_module(self) -> str:
+        """The module handed to the spawn: the selected game, but only while
+        the Game Client checkbox keeps its client in play. Unchecking forces
+        the plain text/tracker client -- withholding the module also drops
+        the SNI/BizHawk registry hooks."""
+        if self.selected_game and self.launcher_view.ids.game_client_checkbox.active:
+            return self.selected_game[0]
+        return ""
 
     def _no_game_status(self) -> str:
         return {"manual": _MANUAL_STATUS,
@@ -1299,7 +1357,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         """Drop a desktop shortcut that boots the current client selection
         directly, skipping the launcher. Server/slot/password stay out of it;
         the spawned client falls back to its persisted defaults."""
-        module = self.selected_game[0] if self.selected_game else ""
+        module = self._launch_module()
         name = self._shortcut_name()
         from mwgg_gui.launcher.desktop_shortcut import create_client_shortcut
         try:
@@ -1312,7 +1370,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.show_snackbar(f'Added "{name}" to your desktop')
 
     def _shortcut_name(self) -> str:
-        if self.selected_game:
+        if self._launch_module():
             if self.client_type == "universal_tracker":
                 return f"MultiworldGG {self.selected_game[1]} Tracker"
             return f"MultiworldGG {self._selected_client_label()}"
@@ -1813,16 +1871,16 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             MessageBox("Invalid Port", port_error, is_error=True).open()
             return
 
-        game_module = self.selected_game[0] if self.selected_game else ""
-        game_label = (self.selected_game[1] if self.selected_game
+        game_module = self._launch_module()
+        game_label = (self.selected_game[1] if game_module
                       else {"universal_tracker": "Universal Tracker",
                             "manual": "Manual Client"}.get(self.client_type, "Text Client"))
 
-        if self.selected_game:
+        if game_module:
             self.app.logo_png = GameIndex.get_game(game_module).get("cover_url", None)
             logger.info(f"Attempting to launch module: {game_label}")
         else:
-            logger.info(f"No game selected; launching {game_label}.")
+            logger.info(f"No game client in play; launching {game_label}.")
 
         # Masked logging only -- never used to build spawn argv, which reads
         # the raw fields via _raw_connect_inputs() instead.

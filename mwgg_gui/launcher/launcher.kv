@@ -107,6 +107,27 @@
                         size_hint_y: .3
                         MDBoxLayout:
                             spacing: dp(4)
+                            LauncherTooltipLabel:
+                                text: 'Game Client'
+                                tooltip_text: 'Disabling this will also disable SNI/BizHawk client hooks.'
+                                halign: 'center'
+                                valign: 'top'
+                                theme_font_style: "Custom"
+                                font_style: "Body"
+                                role: "medium"
+                                theme_text_color: "Custom"
+                                text_color: app.theme_cls.onSurfaceVariantColor
+                            MDCheckbox:
+                                pos_hint: {"center_y": 0.55}
+                                id: game_client_checkbox
+                                disabled: True
+                                on_active: app.launcher_screen.set_game_client(self.active)
+                        MDDivider:
+                            orientation: "vertical"
+                            theme_divider_color: "Custom"
+                            color: app.theme_cls.outlineColor
+                        MDBoxLayout:
+                            spacing: dp(4)
                             MDLabel:
                                 text: 'Text Client'
                                 halign: 'center'
@@ -118,8 +139,9 @@
                                 text_color: app.theme_cls.onSurfaceVariantColor
                             MDCheckbox:
                                 pos_hint: {"center_y": 0.55}
+                                group: 'client_type'
                                 id: text_client_checkbox
-                                on_active: app.launcher_screen.enforce_text_client(self)
+                                on_active: app.launcher_screen.set_text_client(self.active)
                         MDDivider:
                             orientation: "vertical"
                             theme_divider_color: "Custom"
@@ -137,8 +159,9 @@
                                 text_color: app.theme_cls.onSurfaceVariantColor
                             MDCheckbox:
                                 pos_hint: {"center_y": 0.55}
+                                group: 'client_type'
                                 id: universal_tracker_checkbox
-                                on_active: app.launcher_screen.set_tracker_client(self.active)
+                                on_active: app.launcher_screen.refresh_client_type()
                         MDDivider:
                             orientation: "vertical"
                             theme_divider_color: "Custom"
@@ -156,8 +179,9 @@
                                 text_color: app.theme_cls.onSurfaceVariantColor
                             MDCheckbox:
                                 pos_hint: {"center_y": 0.55}
+                                group: 'client_type'
                                 id: manual_checkbox
-                                on_active: app.launcher_screen.set_manual_client(self.active)
+                                on_active: app.launcher_screen.refresh_client_type()
                     MDScrollView:
                         do_scroll_x: False
                         MDBoxLayout:
@@ -259,6 +283,18 @@
                             icon: 'lock'
                         MDTextFieldHintText:
                             text: "Password"
+
+<LauncherTooltipLabel>:
+    # MDTooltip.add_widget stashes an MDTooltipPlain child as the tooltip
+    # body; keep tooltip_text short -- MDLabel wrapping is unreliable while
+    # ScaleBehavior animates the tooltip (see yaml_creator's HelpIcon).
+    MDTooltipPlain:
+        text: root.tooltip_text
+        adaptive_height: True
+        theme_text_color: "Custom"
+        theme_bg_color: "Custom"
+        md_bg_color: app.theme_cls.secondaryContainerColor
+        text_color: app.theme_cls.onSecondaryContainerColor
 
 <LauncherComponentButton>:
     pos_hint: {"center_x": 0.5}
