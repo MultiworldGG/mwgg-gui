@@ -1,0 +1,83 @@
+<RefToolTip>:
+    markup: True
+    theme_bg_color: "Custom"
+    md_bg_color: self.theme_cls.surfaceContainerLowestColor
+    theme_text_color: "Custom"
+    theme_font_style: "Custom"
+    text_color: self.theme_cls.onSurfaceVariantColor
+    font_style: "Body"
+
+<HintTooltipLabel>:
+    halign: "left"
+
+<HintLabel>:
+    md_bg_color: (self.theme_cls.primaryColor[0], self.theme_cls.primaryColor[1], self.theme_cls.primaryColor[2], .3) if self.selected else self.theme_cls.surfaceContainerHighColor if self.striped else self.theme_cls.surfaceContainerLowColor
+    adaptive_height: True
+    padding: dp(0), dp(5)
+    receiving_text: "Receiving Player"
+    item_text: "Item"
+    finding_text: "Finding Player"
+    location_text: "Location"
+    entrance_text: "Entrance"
+    status_text: "Status"
+    HintTooltipLabel:
+        id: receiving
+        sort_key: 'receiving'
+        text: root.receiving_text
+        halign: 'center'
+        valign: 'center'
+        pos_hint: {"center_y": 0.5}
+        disabled: root.row_disabled
+    HintTooltipLabel:
+        id: item
+        sort_key: 'item'
+        text: root.item_text
+        halign: 'center'
+        valign: 'center'
+        pos_hint: {"center_y": 0.5}
+        disabled: root.row_disabled
+    HintTooltipLabel:
+        id: finding
+        sort_key: 'finding'
+        text: root.finding_text
+        halign: 'center'
+        valign: 'center'
+        pos_hint: {"center_y": 0.5}
+        disabled: root.row_disabled
+    HintTooltipLabel:
+        id: location
+        sort_key: 'location'
+        text: root.location_text
+        halign: 'center'
+        valign: 'center'
+        pos_hint: {"center_y": 0.5}
+        disabled: root.row_disabled
+    HintTooltipLabel:
+        id: entrance
+        sort_key: 'entrance'
+        text: root.entrance_text
+        halign: 'center'
+        valign: 'center'
+        pos_hint: {"center_y": 0.5}
+        disabled: root.row_disabled
+    HintTooltipLabel:
+        id: status
+        sort_key: 'status'
+        text: root.status_text
+        halign: 'center'
+        valign: 'center'
+        pos_hint: {"center_y": 0.5}
+        disabled: root.row_disabled
+<HintLog>:
+    cols: 1
+    viewclass: 'HintLabel'
+    scroll_y: self.height
+    effect_cls: "ScrollEffect"
+    background_color: self.theme_cls.surfaceContainerLowestColor
+    SelectableRecycleBoxLayout:
+        default_size: None, dp(20)
+        default_size_hint: 1, None
+        padding: dp(0), dp(4),
+        size_hint_y: None
+        height: self.minimum_height
+        orientation: 'vertical'

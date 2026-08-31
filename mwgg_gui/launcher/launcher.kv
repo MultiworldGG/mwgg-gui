@@ -93,128 +93,116 @@
                     role: "small"
                     theme_text_color: "Custom"
                     text_color: app.theme_cls.onSurfaceVariantColor
-            MDBoxLayout: # Game controls | server fields
+            MDBoxLayout: # Client types
+                orientation: 'horizontal'
+                spacing: dp(10)
+                size_hint_y: None
+                height: dp(40)
+                MDBoxLayout:
+                    spacing: dp(4)
+                    LauncherTooltipLabel:
+                        text: 'Game Client'
+                        tooltip_text: 'Disabling this will also disable SNI/BizHawk client hooks.'
+                        halign: 'center'
+                        valign: 'top'
+                        theme_font_style: "Custom"
+                        font_style: "Body"
+                        role: "medium"
+                        theme_text_color: "Custom"
+                        text_color: app.theme_cls.onSurfaceVariantColor
+                    MDCheckbox:
+                        pos_hint: {"center_y": 0.55}
+                        id: game_client_checkbox
+                        disabled: True
+                        on_active: app.launcher_screen.set_game_client(self.active)
+                MDDivider:
+                    orientation: "vertical"
+                    theme_divider_color: "Custom"
+                    color: app.theme_cls.outlineColor
+                MDBoxLayout:
+                    spacing: dp(4)
+                    MDLabel:
+                        text: 'Text Client'
+                        halign: 'center'
+                        valign: 'top'
+                        theme_font_style: "Custom"
+                        font_style: "Body"
+                        role: "medium"
+                        theme_text_color: "Custom"
+                        text_color: app.theme_cls.onSurfaceVariantColor
+                    MDCheckbox:
+                        pos_hint: {"center_y": 0.55}
+                        group: 'client_type'
+                        id: text_client_checkbox
+                        on_active: app.launcher_screen.set_text_client(self.active)
+                MDBoxLayout:
+                    spacing: dp(4)
+                    MDLabel:
+                        text: 'Universal Tracker'
+                        halign: 'center'
+                        valign: 'top'
+                        theme_font_style: "Custom"
+                        font_style: "Body"
+                        role: "medium"
+                        theme_text_color: "Custom"
+                        text_color: app.theme_cls.onSurfaceVariantColor
+                    MDCheckbox:
+                        pos_hint: {"center_y": 0.55}
+                        group: 'client_type'
+                        id: universal_tracker_checkbox
+                        on_active: app.launcher_screen.refresh_client_type()
+                MDBoxLayout:
+                    spacing: dp(4)
+                    MDLabel:
+                        text: 'Manual Client'
+                        halign: 'center'
+                        valign: 'top'
+                        theme_font_style: "Custom"
+                        font_style: "Body"
+                        role: "medium"
+                        theme_text_color: "Custom"
+                        text_color: app.theme_cls.onSurfaceVariantColor
+                    MDCheckbox:
+                        pos_hint: {"center_y": 0.55}
+                        group: 'client_type'
+                        id: manual_checkbox
+                        on_active: app.launcher_screen.refresh_client_type()
+            MDBoxLayout: # launcher components | connection fields
                 orientation: 'horizontal'
                 spacing: 10
-                MDBoxLayout: # Game controls
-                    orientation: 'vertical'
-                    spacing: dp(15)
-                    padding: 0, dp(40), 0, 0
+                MDScrollView: # launcher components
+                    do_scroll_x: False
                     MDBoxLayout:
-                        orientation: 'horizontal'
-                        spacing: dp(10)
-                        height: dp(40)
-                        size_hint_y: .3
-                        MDBoxLayout:
-                            spacing: dp(4)
-                            LauncherTooltipLabel:
-                                text: 'Game Client'
-                                tooltip_text: 'Disabling this will also disable SNI/BizHawk client hooks.'
-                                halign: 'center'
-                                valign: 'top'
-                                theme_font_style: "Custom"
-                                font_style: "Body"
-                                role: "medium"
+                        orientation: 'vertical'
+                        adaptive_height: True
+                        spacing: dp(15)
+                        id: game_components_box
+                        MDButton:
+                            id: connect_button
+                            pos_hint: {"center_x": 0.5}
+                            on_release: app.launcher_screen.connect()
+                            width: dp(200)
+                            radius: dp(10)
+                            MDButtonText:
                                 theme_text_color: "Custom"
                                 text_color: app.theme_cls.onSurfaceVariantColor
-                            MDCheckbox:
-                                pos_hint: {"center_y": 0.55}
-                                id: game_client_checkbox
-                                disabled: True
-                                on_active: app.launcher_screen.set_game_client(self.active)
-                        MDDivider:
-                            orientation: "vertical"
-                            theme_divider_color: "Custom"
-                            color: app.theme_cls.outlineColor
-                        MDBoxLayout:
-                            spacing: dp(4)
-                            MDLabel:
-                                text: 'Text Client'
+                                text: 'Launch Text Client'
                                 halign: 'center'
-                                valign: 'top'
-                                theme_font_style: "Custom"
-                                font_style: "Body"
-                                role: "medium"
+                            MDButtonIcon:
+                                icon: "text-box-outline"
+                        MDButton:
+                            id: shortcut_button
+                            pos_hint: {"center_x": 0.5}
+                            on_release: app.launcher_screen.create_shortcut()
+                            width: dp(200)
+                            radius: dp(10)
+                            MDButtonText:
                                 theme_text_color: "Custom"
                                 text_color: app.theme_cls.onSurfaceVariantColor
-                            MDCheckbox:
-                                pos_hint: {"center_y": 0.55}
-                                group: 'client_type'
-                                id: text_client_checkbox
-                                on_active: app.launcher_screen.set_text_client(self.active)
-                        MDDivider:
-                            orientation: "vertical"
-                            theme_divider_color: "Custom"
-                            color: app.theme_cls.outlineColor
-                        MDBoxLayout:
-                            spacing: dp(4)
-                            MDLabel:
-                                text: 'Universal Tracker'
+                                text: 'Desktop Shortcut'
                                 halign: 'center'
-                                valign: 'top'
-                                theme_font_style: "Custom"
-                                font_style: "Body"
-                                role: "medium"
-                                theme_text_color: "Custom"
-                                text_color: app.theme_cls.onSurfaceVariantColor
-                            MDCheckbox:
-                                pos_hint: {"center_y": 0.55}
-                                group: 'client_type'
-                                id: universal_tracker_checkbox
-                                on_active: app.launcher_screen.refresh_client_type()
-                        MDDivider:
-                            orientation: "vertical"
-                            theme_divider_color: "Custom"
-                            color: app.theme_cls.outlineColor
-                        MDBoxLayout:
-                            spacing: dp(4)
-                            MDLabel:
-                                text: 'Manual Client'
-                                halign: 'center'
-                                valign: 'top'
-                                theme_font_style: "Custom"
-                                font_style: "Body"
-                                role: "medium"
-                                theme_text_color: "Custom"
-                                text_color: app.theme_cls.onSurfaceVariantColor
-                            MDCheckbox:
-                                pos_hint: {"center_y": 0.55}
-                                group: 'client_type'
-                                id: manual_checkbox
-                                on_active: app.launcher_screen.refresh_client_type()
-                    MDScrollView:
-                        do_scroll_x: False
-                        MDBoxLayout:
-                            orientation: 'vertical'
-                            adaptive_height: True
-                            spacing: dp(15)
-                            id: game_components_box
-                            MDButton:
-                                id: connect_button
-                                pos_hint: {"center_x": 0.5}
-                                on_release: app.launcher_screen.connect()
-                                width: dp(200)
-                                radius: dp(10)
-                                MDButtonText:
-                                    theme_text_color: "Custom"
-                                    text_color: app.theme_cls.onSurfaceVariantColor
-                                    text: 'Launch Text Client'
-                                    halign: 'center'
-                                MDButtonIcon:
-                                    icon: "text-box-outline"
-                            MDButton:
-                                id: shortcut_button
-                                pos_hint: {"center_x": 0.5}
-                                on_release: app.launcher_screen.create_shortcut()
-                                width: dp(200)
-                                radius: dp(10)
-                                MDButtonText:
-                                    theme_text_color: "Custom"
-                                    text_color: app.theme_cls.onSurfaceVariantColor
-                                    text: 'Desktop Shortcut'
-                                    halign: 'center'
-                                MDButtonIcon:
-                                    icon: "laptop"
+                            MDButtonIcon:
+                                icon: "laptop"
                 MDBoxLayout: # Middle vertical divider
                     orientation: 'vertical'
                     spacing: dp(5)
@@ -226,7 +214,7 @@
                         orientation: "vertical"
                         theme_divider_color: "Custom"
                         color: app.theme_cls.outlineColor
-                MDBoxLayout: # text fields
+                MDBoxLayout: # connection fields
                     id: server_layout
                     orientation: 'vertical'
                     pos_hint: {"center_y": 0.5}

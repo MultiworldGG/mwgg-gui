@@ -6,3 +6,9 @@ from .hintscreen import (
     HintLayout,
     HintListPanel,
 )
+
+from .legacyhint import (
+    HintLog,
+    HintLayout,
+    HintTooltipLabel,
+)

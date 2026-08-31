@@ -25,7 +25,7 @@ from .markuptextfield import (
     MarkupTextFieldCutCopyPaste,
 )
 
-# `InnerMDScreen` is intentionally NOT re-exported here: it imports from
+# Screens intentionally NOT re-exported here: it imports from
 # mw_theme, which imports this package during its own init -- re-exporting
 # would create a circular import. Import it from the submodule instead.
 
@@ -38,4 +38,8 @@ from .fa_icons import (
 from .imageloader import (
     ApAsyncImage,
     register_url_scheme,
+)
+
+from .hoverlabel import (
+    HoverLabel,
 )

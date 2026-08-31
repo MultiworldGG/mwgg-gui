@@ -193,7 +193,7 @@ class MultiMDApp(MDApp):
     _command_history: typing.Deque[str] = deque(maxlen=MAXIMUM_HISTORY_MESSAGES)
     _command_history_index: int = -1
 
-    _show_all_hints: BooleanProperty(False)
+    _show_all_hints: BooleanProperty = False
     _logo_png: str = ""
     countdown_timer = NumericProperty(0)
 
@@ -1157,19 +1157,15 @@ class MultiMDApp(MDApp):
                 for location_id, hint_data in locations.items():
                     mwgg_hints[f"{finding_player}_{location_id}"] = hint_data.mwgg_hint_status.value
 
-        mwgg_data_to_store = {}
-        has_changes = False
+        # No-arg callers (Retrieved/SetReply) must diff against the client's
+        # stored view; treating None as always-changed re-Set on every SetReply,
+        # an infinite echo (the client is SetNotify-subscribed to its own key).
+        if mwgg_hints_stored is None:
+            mwgg_hints_stored = self.ctx.stored_data.get(
+                f"hints_{self.ctx.team}_{self.ctx.slot}_mwgg", {}) or {}
 
-        if mwgg_hints_stored is not None and mwgg_hints is not None:
-            mwgg_data_to_store = {**mwgg_hints_stored, **mwgg_hints}
-            has_changes = mwgg_data_to_store != mwgg_hints_stored
-        elif mwgg_hints is not None:
-            mwgg_data_to_store = mwgg_hints
-            has_changes = True
-        else:
-            return
-        # Only send update if there are actual changes
-        if has_changes:
+        mwgg_data_to_store = {**mwgg_hints_stored, **mwgg_hints}
+        if mwgg_data_to_store != mwgg_hints_stored:
             asynckivy.start(self.ctx.send_msgs([{
                 "cmd": "Set",
                 "key": f"hints_{self.ctx.team}_{self.ctx.slot}_mwgg",
@@ -1241,6 +1237,25 @@ class MultiMDApp(MDApp):
     @staticmethod
     def set_base_title(instance, value: str):
         Window.set_title(value)
+
+class CompactUIHandler(logging.Handler):
+    def __init__(self, on_log):
+        super(CompactUIHandler, self).__init__(logging.INFO)
+        self.on_log = on_log
+
+    @staticmethod
+    def format_compact(record: logging.LogRecord) -> str:
+        if isinstance(record.msg, Exception):
+            return str(record.msg)
+        return (f"{record.exc_info[1]}\n" if record.exc_info else "") + str(record.msg).split("\n")[0]
+
+    def handle(self, record: logging.LogRecord) -> None:
+        if getattr(record, "skip_gui", False):
+            pass  # skip output
+        elif getattr(record, "compact_gui", False):
+            self.on_log(self.format_compact(record))
+        else:
+            self.on_log(self.format(record))
 
 def is_command_input(string: str) -> bool:
     return len(string) > 0 and string[0] in "/!"

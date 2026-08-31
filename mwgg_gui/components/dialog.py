@@ -1,5 +1,8 @@
 """
 Dialog class - MessageBox override for dialogs
+
+TODO: Pull the 4x dialogs in launcher.py into here - needs to be able to handle
+the dialog switches for 'host' which are all hooked into callbacks
 """
 from __future__ import annotations
 __all__ = ("MessageBox", "CodeWarningBox", "ConsoleBox", "confirm_arbitrary_code")

@@ -27,3 +27,471 @@
 <MDScrollView>:
     -bar_width: dp(10)
     -scroll_type: ["bars", "content"]
+
+<MDTooltipPlain>:
+    markup: True
+
+# ALL OF THE KIVYMD MENU ITEMS ARE BROKEN
+<-MDDropdownTrailingTextItem>:
+    orientation: "vertical"
+
+    MDBoxLayout:
+        id: container
+        spacing: "12dp"
+        padding: "12dp", 0, "12dp", 0
+
+        MDLabel:
+            text: root.text
+            markup: True
+            pos_hint: {"center_y": .5}
+            shorten: True
+            shorten_from: "right"
+            size_hint_x: None
+            width:
+                root.width - \
+                ( \
+                + trailing_container.width \
+                + container.padding[0] \
+                + container.padding[2] \
+                + container.spacing \
+                )
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.text_color else \
+                root.text_color
+
+        MDTrailingTextContainer:
+            id: trailing_container
+            text: root.trailing_text
+            adaptive_width: True
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.trailing_text_color else \
+                root.trailing_text_color
+
+    MDDivider:
+        color:
+            ( \
+            app.theme_cls.outlineVariantColor \
+            if not root.divider_color \
+            else root.divider_color \
+            ) \
+            if root.divider else \
+            (0, 0, 0, 0)
+
+
+<-MDDropdownLeadingIconTrailingTextItem>:
+    orientation: "vertical"
+
+    MDBoxLayout:
+        id: container
+        spacing: "12dp"
+        padding: "10dp", 0, "16dp", 0
+
+        MDIcon:
+            id: leading_icon
+            icon: root.leading_icon
+            size_hint: None, None
+            size: "48dp", "48dp"
+            pos_hint: {"center_y": .5}
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.leading_icon_color else \
+                root.leading_icon_color
+
+        MDLabel:
+            text: root.text
+            markup: True
+            pos_hint: {"center_y": .5}
+            shorten: True
+            shorten_from: "right"
+            size_hint_x: None
+            width:
+                root.width - \
+                ( \
+                leading_icon.width \
+                + trailing_container.width \
+                + container.padding[0] \
+                + container.padding[2] \
+                + container.spacing \
+                + dp(18) \
+                )
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.text_color else \
+                root.text_color
+
+        Widget:
+
+        MDTrailingTextContainer:
+            id: trailing_container
+            text: root.trailing_text
+            adaptive_width: True
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.trailing_text_color else \
+                root.trailing_text_color
+
+    MDDivider:
+        color:
+            ( \
+            app.theme_cls.outlineVariantColor \
+            if not root.divider_color \
+            else root.divider_color \
+            ) \
+            if root.divider else \
+            (0, 0, 0, 0)
+
+
+<-MDDropdownTrailingIconItem>:
+    orientation: "vertical"
+
+    MDBoxLayout:
+        id: container
+        spacing: "12dp"
+        padding: "12dp", 0, "12dp", 0
+
+        MDLabel:
+            id: label
+            text: root.text
+            markup: True
+            shorten: True
+            size_hint_x: None
+            shorten_from: "right"
+            pos_hint: {"center_y": .5}
+            shorten: True
+            shorten_from: "right"
+            width:
+                root.width - \
+                ( \
+                + trailing_icon.width \
+                + container.padding[0] \
+                + container.padding[2] \
+                + container.spacing \
+                + dp(18) \
+                )
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.text_color else \
+                root.text_color
+
+        Widget:
+
+        MDIcon:
+            id: trailing_icon
+            size_hint: None, None
+            size: "48dp", "48dp"
+            pos_hint: {"center_y": .5}
+            icon: root.trailing_icon
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.trailing_icon_color else \
+                root.trailing_icon_color
+
+    MDDivider:
+        color:
+            ( \
+            app.theme_cls.outlineVariantColor \
+            if not root.divider_color \
+            else root.divider_color \
+            ) \
+            if root.divider else \
+            (0, 0, 0, 0)
+
+
+<-MDTrailingIconTextContainer>:
+    adaptive_width: True
+
+    MDIcon:
+        icon: root.trailing_icon
+        size_hint: None, None
+        size: "48dp", "48dp"
+        pos_hint: {"center_y": .5}
+        theme_text_color: "Custom"
+        text_color:
+            app.theme_cls.onSurfaceVariantColor \
+            if not root.trailing_icon_color else \
+            root.trailing_icon_color
+
+    MDLabel:
+        text: root.trailing_text
+        markup: True
+        adaptive_size: True
+        pos_hint: {"center_y": .5}
+        theme_text_color: "Custom"
+        text_color:
+            app.theme_cls.onSurfaceVariantColor \
+            if not root.text_color else \
+            root.text_color
+
+
+<-MDDropdownTrailingIconTextItem>:
+    orientation: "vertical"
+
+    MDBoxLayout:
+        id: container
+        spacing: "12dp"
+        padding: "12dp", 0, "12dp", 0
+
+        MDLabel:
+            id: label
+            text: root.text
+            markup: True
+            shorten: True
+            size_hint_x: None
+            shorten_from: "right"
+            pos_hint: {"center_y": .5}
+            shorten: True
+            shorten_from: "right"
+            width:
+                root.width - \
+                ( \
+                + trailing_container.width \
+                + container.padding[0] \
+                + container.padding[2] \
+                + container.spacing \
+                )
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.text_color else \
+                root.text_color
+
+        MDTrailingIconTextContainer:
+            id: trailing_container
+            trailing_icon: root.trailing_icon
+            trailing_text: root.trailing_text
+            trailing_text_color: root.trailing_text_color
+            trailing_icon_color: root.trailing_icon_color
+
+    MDDivider:
+        color:
+            ( \
+            app.theme_cls.outlineVariantColor \
+            if not root.divider_color \
+            else root.divider_color \
+            ) \
+            if root.divider else \
+            (0, 0, 0, 0)
+
+
+<-MDDropdownTextItem>:
+    orientation: "vertical"
+
+    MDLabel:
+        text: root.text
+        markup: True
+        valign: "center"
+        padding_x: "12dp"
+        shorten: True
+        shorten_from: "right"
+        theme_text_color: "Custom"
+        text_color:
+            app.theme_cls.onSurfaceVariantColor \
+            if not root.text_color else \
+            root.text_color
+
+    MDDivider:
+        color:
+            ( \
+            app.theme_cls.outlineVariantColor \
+            if not root.divider_color \
+            else root.divider_color \
+            ) \
+            if root.divider else \
+            (0, 0, 0, 0)
+
+
+<-MDDropdownLeadingTrailingIconTextItem>:
+    orientation: "vertical"
+
+    MDBoxLayout:
+        id: container
+        spacing: "12dp"
+        padding: "10dp", 0, "16dp", 0
+
+        MDIcon:
+            id: leading_icon
+            icon: root.leading_icon
+            size_hint: None, None
+            size: "48dp", "48dp"
+            pos_hint: {"center_y": .5}
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.leading_icon_color else \
+                root.leading_icon_color
+
+        MDLabel:
+            text: root.text
+            pos_hint: {"center_y": .5}
+            shorten: True
+            markup: True
+            shorten_from: "right"
+            size_hint_x: None
+            width:
+                root.width - \
+                ( \
+                leading_icon.width \
+                + trailing_container.width \
+                + container.padding[0] \
+                + container.padding[2] \
+                + container.spacing \
+                + dp(18) \
+                )
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.text_color else \
+                root.text_color
+
+        Widget:
+
+        MDTrailingIconTextContainer:
+            id: trailing_container
+            trailing_icon: root.trailing_icon
+            trailing_text: root.trailing_text
+            trailing_icon_color: root.trailing_icon_color
+            trailing_text_color: root.trailing_text_color
+
+    MDDivider:
+        color:
+            ( \
+            app.theme_cls.outlineVariantColor \
+            if not root.divider_color \
+            else root.divider_color \
+            ) \
+            if root.divider else \
+            (0, 0, 0, 0)
+
+
+<-MDDropdownLeadingTrailingIconItem>:
+    orientation: "vertical"
+
+    MDBoxLayout:
+        id: container
+        spacing: "12dp"
+        padding: "10dp", 0, "12dp", 0
+
+        MDIcon:
+            id: leading_icon
+            icon: root.leading_icon
+            size_hint: None, None
+            size: "48dp", "48dp"
+            pos_hint: {"center_y": .5}
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.leading_icon_color else \
+                root.leading_icon_color
+
+        MDLabel:
+            id: label
+            text: root.text
+            markup: True
+            shorten: True
+            size_hint_x: None
+            shorten_from: "right"
+            pos_hint: {"center_y": .5}
+            shorten: True
+            shorten_from: "right"
+            width:
+                root.width - \
+                ( \
+                leading_icon.width \
+                + trailing_icon.width \
+                + container.padding[0] \
+                + container.padding[2] \
+                + container.spacing \
+                + dp(18) \
+                )
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.text_color else \
+                root.text_color
+
+        Widget:
+
+        MDIcon:
+            id: trailing_icon
+            size_hint: None, None
+            size: "48dp", "48dp"
+            pos_hint: {"center_y": .5}
+            icon: root.trailing_icon
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.trailing_icon_color else \
+                root.trailing_icon_color
+
+    MDDivider:
+        color:
+            ( \
+            app.theme_cls.outlineVariantColor \
+            if not root.divider_color \
+            else root.divider_color \
+            ) \
+            if root.divider else \
+            (0, 0, 0, 0)
+
+<-MDDropdownLeadingIconItem>:
+    orientation: "vertical"
+
+    MDBoxLayout:
+        id: container
+        spacing: "12dp"
+        padding: "12dp", 0, "12dp", 0
+
+        MDIcon:
+            id: leading_icon
+            icon: root.leading_icon
+            size_hint: None, None
+            size: "48dp", "48dp"
+            pos_hint: {"center_y": .5}
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.leading_icon_color else \
+                root.leading_icon_color
+
+        MDLabel:
+            id: label
+            text: root.text
+            markup: True
+            shorten: True
+            size_hint_x: None
+            shorten_from: "right"
+            pos_hint: {"center_y": .5}
+            shorten: True
+            shorten_from: "right"
+            width:
+                root.width - \
+                ( \
+                leading_icon.width \
+                + container.padding[0] \
+                + container.padding[2] \
+                + container.spacing \
+                )
+            theme_text_color: "Custom"
+            text_color:
+                app.theme_cls.onSurfaceVariantColor \
+                if not root.text_color else \
+                root.text_color
+
+    MDDivider:
+        color:
+            ( \
+            app.theme_cls.outlineVariantColor \
+            if not root.divider_color \
+            else root.divider_color \
+            ) \
+            if root.divider else \
+            (0, 0, 0, 0)
