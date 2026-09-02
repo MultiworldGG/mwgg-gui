@@ -825,6 +825,17 @@ class MultiMDApp(MDApp):
         except Exception:
             pass
 
+    def show_confirm_dialog(self, title: str, message: str, callback,
+                            ok_text: str = "OK", cancel_text: str = "Cancel"):
+        """FrontendProtocol: open a confirm/cancel MessageBox (e.g. the world
+        downpatch offer); `callback` receives True (confirm) or False (cancel).
+        Returns the box as an opaque handle."""
+        from mwgg_gui.components.dialog import MessageBox
+        box = MessageBox(title=title, message=message, callback=callback,
+                         ok_text=ok_text, cancel_text=cancel_text)
+        box.open()
+        return box
+
     def console_init(self):
         '''
         This function is called when the console is initialized.
