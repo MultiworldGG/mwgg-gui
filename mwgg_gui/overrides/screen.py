@@ -5,6 +5,7 @@ CustomLayout
 """
 __all__ = ("CustomScreen", "CustomLayout")
 from kivy.properties import ObjectProperty, StringProperty
+from kivy.metrics import dp
 from kivy.core.window import Window
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -37,6 +38,7 @@ class CustomLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.size_hint_x = 1
+        self.padding = [dp(20), dp(4)]
 
 
 class CustomScreen(MDScreen, ThemableBehavior):

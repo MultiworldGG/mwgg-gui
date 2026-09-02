@@ -24,13 +24,14 @@ from mwgg_gui.constants import CONSOLE_ACTIONS, LAUNCHER_ACTIONS
 
 Builder.load_string('''
 <BottomAppBar>:
+    fab_icon: "chat-outline"
     theme_bg_color: "Custom"
     md_bg_color: app.theme_cls.primaryContainerColor \
                     if app.theme_cls.theme_style == "Light" \
                     else app.theme_cls.onPrimaryColor
     MDFabBottomAppBarButton:
         id: console_text_input_fab
-        icon: "chat-outline"
+        icon: root.fab_icon
         on_release: root.on_bar_action(self)
                     
 <BottomBarTextInput>:
@@ -236,6 +237,7 @@ class BottomAppBar(MDBottomAppBar):
             action_items.append(button)
         self.text_input = BottomBarTextInput(id=f'{screen_name}_text_input')
         self.ids.console_text_input_fab.id = "console_fab_button"
+        self.fab_icon = "chat-outline" if screen_name != "hint" else "map-search"
         # The launcher screen never attaches this bar at all (see
         # LauncherScreen.init_important): the Play pane covers its one action
         # and the chat FAB has no command processor there.
@@ -282,9 +284,13 @@ class BottomAppBar(MDBottomAppBar):
             return
     
         for action in actions:
-            if action["id"] in id_name:
-                action_data = action
-                break
+            try:
+                if action["id"] in id_name:
+                    action_data = action
+                if "fab" in id_name and self.screen_name == "hint" and action["id"] == "hint":
+                    action_data = action
+            except:
+                pass
         
         if not action_data:
             return

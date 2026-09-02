@@ -26,6 +26,7 @@ from kivy.core.window import Window
 from kivy.metrics import dp
 from kivymd.app import MDApp
 from kivymd.uix.tooltip import MDTooltipPlain
+from mwgg_gui.overrides.hoverlabel import SimpleHoverLabel
 
 __all__ = ('ConsoleToolTip', 'ConsoleHoverBehavior',)
 
@@ -45,7 +46,7 @@ class ConsoleToolTip(MDTooltipPlain):
         self.md_bg_color = self.theme_cls.secondaryContainerColor
         self.text_color = self.theme_cls.onSecondaryContainerColor
 
-
+#TODO: This is SO VERY WRONG. Anyway we need to use the SimpleHoverLabel and shove it in the console text instead.
 class ConsoleHoverBehavior:
     """Hover hit-testing + tooltip lifecycle for the console text field.
 

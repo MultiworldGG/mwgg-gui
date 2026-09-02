@@ -451,10 +451,11 @@ class MarkupTextField(TextInput, ThemableBehavior):
             bold_pattern = (re.compile(r'\[b\]'), r"[/b]")
             italic_pattern = (re.compile(r'\[i\]'), r"[/i]")
             underline_pattern = (re.compile(r'\[u\]'), r"[/u]")
+            ref_pattern = (re.compile(r'\[ref=.+\]'), r"[/ref]")
             end_pattern = re.compile(r'\[/.*\]')
-            all_patterns = {"color": color_pattern, "bold": bold_pattern, "italic": italic_pattern, "underline": underline_pattern}
-            start_tag = {"color": {}, "bold": {}, "italic": {}, "underline": {}}
-            end_tag = {"color": {}, "bold": {}, "italic": {}, "underline": {}}
+            all_patterns = {"color": color_pattern, "bold": bold_pattern, "italic": italic_pattern, "underline": underline_pattern, "ref": ref_pattern}
+            start_tag = {"color": {}, "bold": {}, "italic": {}, "underline": {}, "ref": {}}
+            end_tag = {"color": {}, "bold": {}, "italic": {}, "underline": {}, "ref": {}}
             markup_tags = label.markup
             if markup_tags:
                 for i, tag in enumerate(markup_tags):

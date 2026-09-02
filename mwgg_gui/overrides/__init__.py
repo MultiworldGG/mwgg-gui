@@ -42,4 +42,5 @@ from .imageloader import (
 
 from .hoverlabel import (
     HoverLabel,
+    SimpleHoverLabel
 )
