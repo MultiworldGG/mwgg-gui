@@ -44,3 +44,8 @@ from .hoverlabel import (
     HoverLabel,
     SimpleHoverLabel
 )
+
+# Import side effect: ports the upstream ripple FBO fix onto KivyMD 2.0.0.
+from .ripple import (
+    patch_ripple_fbo,
+)
