@@ -3,7 +3,14 @@ __all__ = ("HintTooltipLabel",
            "MarkupDropdown",
            "HintLog",
            "HintLabel",
-           "HintLayout")
+           "HintLayout",
+           "RefToolTip",
+           "status_names", 
+           "status_colors", 
+           "status_sort_weights",
+           "status_icons", 
+           "remove_between_brackets",
+           )
 
 from NetUtils import HintStatus, MWGGUIHintStatus, TEXT_COLORS
 
