@@ -1,5 +1,5 @@
 from __future__ import annotations
-__all__ = ("MarkupTextField", )
+__all__ = ("MarkupTextField", "MarkupTextFieldCutCopyPaste", "MarkupTextFieldHoverBehavior", "MarkupTextFieldTooltip")
 
 import os
 import logging
@@ -25,7 +25,9 @@ from kivy.uix.textinput import TextInput, FL_IS_NEWLINE
 from kivy.core.text.markup import MarkupLabel as Label
 from kivy.cache import Cache
 from kivymd.uix.menu import MDDropdownMenu
+from kivymd.uix.tooltip import MDTooltipPlain
 from kivymd.theming import ThemableBehavior
+from kivymd.uix.behaviors import HoverBehavior
 # import and pass to add it to the new textfield
 from kivymd.uix.textfield import (MDTextFieldHelperText,
                                   MDTextFieldTrailingIcon, 
@@ -65,6 +67,154 @@ if Config:
     _is_desktop = Config.getboolean('kivy', 'desktop')
     _scroll_timeout = Config.getint('widgets', 'scroll_timeout')
     _scroll_distance = '{}sp'.format(Config.getint('widgets', 'scroll_distance'))
+
+class MarkupTextFieldTooltip(MDTooltipPlain):
+    """Tooltip for showing the ref text when hovering over a [ref=] tag in the console"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.theme_text_color = "Custom"
+        self.theme_bg_color = "Custom"
+        self.refresh_colors()
+
+    def refresh_colors(self):
+        self.md_bg_color = self.theme_cls.secondaryContainerColor
+        self.text_color = self.theme_cls.onSecondaryContainerColor
+
+
+class MarkupTextFieldHoverBehavior(HoverBehavior):
+    """Hoverbehavior mixin for ref tracking in the console"""
+    __events__ = ("on_ref_hover",)
+    allow_hover = BooleanProperty(False)
+    # seconds the mouse must rest before the hit-test runs
+    HOVER_HITTEST_DELAY = 0.15
+
+    _tooltip = None
+    _hover_pos = None
+    _ref_span = None
+
+    def __init__(self, *args, **kwargs):
+        self._hover_trigger = Clock.create_trigger(self._hover_hittest, self.HOVER_HITTEST_DELAY)
+        Window.bind(on_cursor_leave=self.remove_tooltip)
+        super().__init__(*args, **kwargs)
+
+    def on_allow_hover(self, instance, value):
+        if not value:
+            # HoverBehavior stops updating these once allow_hover is off.
+            self.hovering = self.hover_visible = False
+            self.on_leave()
+
+    def on_mouse_update(self, window, pos):
+        super().on_mouse_update(window, pos)
+        if not self.hover_visible or not self.get_root_window():
+            return
+        self._hover_pos = pos
+        if self._ref_span is not None and not self._pos_in_ref_span(pos):
+            self.remove_tooltip()
+        # A pending Kivy trigger does not restart on call; cancel so the
+        # hit-test runs once the mouse rests, not mid-motion.
+        self._hover_trigger.cancel()
+        self._hover_trigger()
+
+    def on_leave(self):
+        self.remove_tooltip()
+
+    def on_scroll_y(self, instance, value):
+        self.remove_tooltip()
+
+    def on_ref_hover(self, ref):
+        self._show_tooltip(ref.split("|", maxsplit=1)[-1], self._hover_pos)
+
+    def remove_tooltip(self, *args):
+        self._hover_trigger.cancel()
+        self._ref_span = None
+        tip = self._tooltip
+        if tip is None:
+            return
+        Animation.cancel_all(tip)
+        if tip.parent is not None:
+            Window.remove_widget(tip)
+        tip.opacity = 0
+        tip.scale_value_x = tip.scale_value_y = 0
+
+    def _hover_hittest(self, *args):
+        if not self.hover_visible or not self.get_root_window() \
+                or self._touch_count or self._selection_touch:
+            return
+        span = self._ref_span_at(self._hover_pos)
+        if span is None:
+            self.remove_tooltip()
+            return
+        start, end, key = span
+        self.dispatch("on_ref_hover", key)
+        self._ref_span = (start, end)
+
+    def _markup_index_at(self, pos):
+        """Index into self.text under a window-space pos; None outside the
+        widget or past the text on that row."""
+        x, y = self.to_widget(*pos)
+        lines = self._lines
+        dy = self.line_height + self.line_spacing
+        if not self.collide_point(x, y) or not lines or dy <= 0:
+            return None
+        # get_cursor_from_xy clamps row and col, so blank space below the last
+        # line or right of a line end would otherwise map to a valid index.
+        scroll_y = self.scroll_y if self.scroll_y > 0 else 0
+        row = int(round(((self.top - self.padding[1] + scroll_y) - y) / dy - 0.5))
+        if not 0 <= row < len(lines):
+            return None
+        row_width = self._get_text_width(lines[row], self.tab_width, self._label_cached)
+        if (x - self.x) + self.scroll_x > self.padding[0] + row_width:
+            return None
+        return self._map_cursor_to_markup_position(self.get_cursor_from_xy(x, y))
+
+    def _ref_span_at(self, pos):
+        """(start, end, key) of the [ref=key]...[/ref] under pos, else None.
+        Refs never nest; keys may contain newlines."""
+        index = self._markup_index_at(pos)
+        if index is None:
+            return None
+        text = self.text
+        start = text.rfind("[ref=", 0, index + len("[ref="))  # last tag starting at or before index
+        if start < 0:
+            return None
+        end = text.find("[/ref]", start)
+        if end < 0:
+            return None
+        end += len("[/ref]")
+        if index >= end:
+            return None
+        return start, end, text[start + len("[ref="):text.find("]", start)]
+
+    def _pos_in_ref_span(self, pos):
+        index = self._markup_index_at(pos)
+        return index is not None and self._ref_span[0] <= index < self._ref_span[1]
+
+    def _show_tooltip(self, text, pos):
+        tip = self._tooltip
+        if tip is None:
+            tip = self._tooltip = MarkupTextFieldTooltip()
+            # Back-ref the tracker's clear_stray_tooltips uses to spare a live tooltip.
+            tip._tooltip = self
+        if tip.parent is not None:
+            if tip.text == text:
+                return
+            self.remove_tooltip()
+        tip.refresh_colors()
+        tip.text = text
+        # Force the texture now so adaptive sizing yields the final size before clamping.
+        tip.texture_update()
+        x = pos[0] + dp(12)
+        y = pos[1] + dp(12)
+        if x + tip.width > Window.width:
+            x = Window.width - (tip.width + dp(10))
+        if y + tip.height > Window.height:
+            y = Window.height - (tip.height + dp(10))
+        tip.pos = (x, y)
+        Window.add_widget(tip)
+        Animation.cancel_all(tip)
+        (Animation(scale_value_x=1, scale_value_y=1, d=0.2)
+         + Animation(opacity=1, d=0.2)).start(tip)
 
 class MarkupTextFieldCutCopyPaste(MDDropdownMenu):
     """Internal class used for showing the dropdown menu when
@@ -131,7 +281,7 @@ class MarkupTextFieldCutCopyPaste(MDDropdownMenu):
         if value and not Clipboard and not _is_desktop:
             value._ensure_clipboard()
 
-class MarkupTextField(TextInput, ThemableBehavior):
+class MarkupTextField(MarkupTextFieldHoverBehavior, TextInput, ThemableBehavior):
     ''' Overridden TextInput class to handle markup text. 
     Added Material Design TextField features. '''
 
@@ -152,7 +302,8 @@ class MarkupTextField(TextInput, ThemableBehavior):
     effect_cls = ObjectProperty(ScrollEffect, allow_none=True)
     bottom_scroll_button = ObjectProperty(None)
     current_color_tag = None
-    all_patterns = {"color": re.compile(r'\[color=[0-9A-Fa-f]{6}\]'), "bold": re.compile(r'\[b\]'), "italic": re.compile(r'\[i\]'), "underline": re.compile(r'\[u\]')}
+    all_patterns = {"color": re.compile(r'\[color=[0-9A-Fa-f]{6}\]'), "bold": re.compile(r'\[b\]'), 
+                    "italic": re.compile(r'\[i\]'), "underline": re.compile(r'\[u\]'), "refs": re.compile(r'\[ref=.+\]')}
     # Any valid Kivy markup tag, opening or closing: [tag], [/tag], [tag=value,...]
     _markup_tag_pattern = re.compile(r'\[/?[a-zA-Z][a-zA-Z0-9_]*(?:[=][^\]]*)?\]')
     
@@ -239,9 +390,9 @@ class MarkupTextField(TextInput, ThemableBehavior):
             stripped_parts = [re.sub(r'\^.*]', '', part) for part in parts]
             return ignore_patterns.sub(lambda m: m.group(0), ''.join(stripped_parts))
         # Remove Kivy markup tags for plain text operations, but preserve specified patterns
-        text = re.sub(r'\[/?[a-zA-Z0-9_=,#.\-]+\]', '', text)
+        text = MarkupTextField._markup_tag_pattern.sub('', text)
         # Then remove any partial markup tags (text starting with [)
-        text = re.sub(r'\[.*$', '', text)
+        text = re.sub(r'\[[^\]]*$', '', text)
         text = re.sub(r'\^.*]', '', text)
         return text
 
@@ -723,6 +874,7 @@ class MarkupTextField(TextInput, ThemableBehavior):
 
     def on_touch_down(self, touch):
         """Override to prevent deselection on right-click"""
+        self.remove_tooltip()
         # If right-clicking on a selection, prevent deselection
         # But still allow the event to propagate for menu handling
         if self.disabled:

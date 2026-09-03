@@ -23,7 +23,6 @@ from multiprocessing.queues import Empty
 from kivy.utils import get_hex_from_color
 from mwgg_gui.overrides.markuptextfield import MarkupTextField
 from mwgg_gui.components.guidataclasses import MarkupPair
-from mwgg_gui.console.console_tooltip import ConsoleHoverBehavior
 
 from NetUtils import TEXT_COLORS
 
@@ -48,15 +47,14 @@ class ConsoleFilter(logging.Filter):
             return True
         return False
 
-class TextConsole(ConsoleHoverBehavior, MarkupTextField, ThemableBehavior):
-    # Mixin FIRST: its on_touch_down dismisses the hover tooltip before the
-    # text field's selection handling runs.
+class TextConsole(MarkupTextField, ThemableBehavior):
     text_buffer: Queue
     app: MDApp
 
     def __init__(self, bottom_scroll_button=None, **kwargs):
         super().__init__(bottom_scroll_button=bottom_scroll_button, **kwargs)
         self.app = MDApp.get_running_app()
+        self.allow_hover = self.app.app_config.getboolean('client', 'item_tooltips', fallback=True)
         self.font_name = self.theme_cls.font_styles.Monospace['small']['font-name'] 
         self.font_size = self.theme_cls.font_styles.Monospace['small']['font-size']
         self.line_spacing = self.theme_cls.font_styles.Monospace['small']['line-height']

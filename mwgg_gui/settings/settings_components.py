@@ -1032,11 +1032,11 @@ class InterfaceSettings(SettingsScrollBox):
             logger.error(f"Error in toggle_all_players_chat: {e}", exc_info=True)
 
     def toggle_item_tooltips(self, instance, value):
-        # The hover code re-reads this key on every (throttled) hit-test,
-        # so the switch takes effect immediately -- no rebinding needed.
         try:
             self.app.app_config.set('client', 'item_tooltips', str(value))
             self.app.app_config.write()
+            if getattr(self.app, 'ui_console', None):
+                self.app.ui_console.text_console.allow_hover = value
         except Exception as e:
             logger.error(f"Error in toggle_item_tooltips: {e}", exc_info=True)
 
