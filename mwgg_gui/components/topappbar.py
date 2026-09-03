@@ -265,15 +265,19 @@ class ServerLabel(MDTooltip, MDTopAppBarTitle):
         self.tooltip_display_delay = 0  # This is a delay, it does not verify hovering
         self._update_tooltip_content()
 
-    def on_text(self, instance, value):
-        """Step the title role down when text grows taller than the first
-        text this label held."""
-        if not hasattr(self, 'initial_height'):
-            self.initial_height = self.texture_size[1]
+    def on_texture_size(self, instance, size):
+        """Step the title role down when the text renders taller than the
+        first text this label held. Runs on texture_size, not text: on_text
+        fires before the texture re-renders, and the construction-time
+        texture is 0x0."""
+        if size[1] <= 0:
             return
-        if self.texture_size[1] > self.initial_height and self.role == "large":
+        if not hasattr(self, 'initial_height'):
+            self.initial_height = size[1]
+            return
+        if size[1] > self.initial_height and self.role == "large":
             self.role = "medium"
-        elif self.texture_size[1] > self.initial_height and self.role == "medium":
+        elif size[1] > self.initial_height and self.role == "medium":
             self.role = "small"
 
     def _update_tooltip_content(self):
