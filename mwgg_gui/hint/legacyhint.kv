@@ -21,6 +21,7 @@
     entrance_text: "Entrance"
     status_text: "Status"
     flags_text: "Flags"
+    visible_text: "Visible"
     HintTooltipLabel:
         id: receiving
         sort_key: 'receiving'
@@ -73,6 +74,14 @@
         id: flags
         sort_key: 'flags'
         text: root.flags_text
+        halign: 'center'
+        valign: 'center'
+        pos_hint: {"center_y": 0.5}
+        disabled: root.row_disabled
+    HintTooltipLabel:
+        id: visible
+        text: root.visible_text
+        size_hint_x: 0.6
         halign: 'center'
         valign: 'center'
         pos_hint: {"center_y": 0.5}

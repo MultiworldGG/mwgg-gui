@@ -30,6 +30,7 @@ from kivy.uix.recycleview.views import RecycleDataViewBehavior
 from kivymd.uix.recycleview import MDRecycleView
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.menu.menu import MDDropdownMenu
+from kivymd.uix.selectioncontrol import MDSwitch
 from kivymd.uix.tooltip import MDTooltip, MDTooltipPlain
 from kivy.core.text.markup import MarkupLabel
 from kivy.metrics import dp
@@ -42,8 +43,10 @@ from mwgg_gui.overrides import HoverLabel
 from mwgg_gui.legacy import SelectableRecycleBoxLayout
 from mwgg_gui.components.columns import (
     ColumnSorter, ColumnSortMixin, ColumnFilter, ColumnFilterMixin,
-    ColumnFilterItemClassification, ColumnFilterMulti,
+    ColumnFilterItemClassification, ColumnFilterMulti, ExtraColumn,
+    get_extra_columns, register_extra_column as _register_extra_column,
 )
+from mwgg_gui.hint.hint_visibility import resolve_ui_hint_bucket, row_is_visible
 
 import re
 import os
@@ -265,6 +268,7 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
         self.entrance_text = ""
         self.status_text = ""
         self.flags_text = ""
+        self.visible_text = ""
         self.hint = {}
         self.flag_status = MWGGUIHintStatus.HINT_UNSPECIFIED
         self.dropdown = FixedMDDropdownMenu(caller=self.ids["status"], items=[{
@@ -272,6 +276,14 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
             "leading_icon": status_icons[status],
             "on_release": lambda *_, status=status: self.select_status(status),
         } for status in (HintStatus.HINT_NO_PRIORITY, HintStatus.HINT_PRIORITY, HintStatus.HINT_AVOID)])
+        # World-contributed columns (e.g. the tracker's in-logic status) get one
+        # cell each, appended after the kv-declared ones.
+        self.extra_cells: dict[str, HintTooltipLabel] = {}
+        for column in get_extra_columns():
+            cell = HintTooltipLabel(sort_key=column.key, halign="center", valign="center",
+                                    pos_hint={"center_y": 0.5})
+            self.add_widget(cell)
+            self.extra_cells[column.key] = cell
 
     def select_status(self, status: HintStatus):
         ctx = App.get_running_app().ctx
@@ -300,6 +312,16 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
             "on_toggle": lambda active, flag=flag: self.set_flag(flag, active),
         } for flag in mwggstatus_names])
 
+    def toggle_visible(self):
+        """Flip this hint's hide state, shared with the new hint screen via UIHint.hide."""
+        app = App.get_running_app()
+        bucket_key = resolve_ui_hint_bucket(self.hint, app.ctx.slot_concerns_self)
+        bucket = app.ui_hint_data.get(bucket_key) if bucket_key is not None else None
+        ui_hint = bucket.get(self.hint["location"]) if bucket is not None else None
+        if ui_hint is not None:
+            ui_hint.hide = not ui_hint.hide
+        app.hint_screen.update_hints_list()
+
     def refresh_view_attrs(self, rv, index, data):
         self.index = index
         self.striped = data.get("striped", False)
@@ -312,8 +334,12 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
         flags = data.get("flags") or {}
         self.flags_text = flags.get("text", "")
         self.flag_status = flags.get("status", MWGGUIHintStatus.HINT_UNSPECIFIED)
+        self.visible_text = data.get("visible", {}).get("text", "")
         self.hint = data["status"]["hint"]
         self.row_disabled = index is not None and self.hint["status"] == HintStatus.HINT_FOUND
+        for key, cell in self.extra_cells.items():
+            cell.text = data[key]["text"]
+            cell.disabled = self.row_disabled
         return super().refresh_view_attrs(rv, index, data)
 
     def _owns_hint(self) -> bool:
@@ -350,6 +376,11 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
                 self.open_flags_dropdown()
                 return True
             return False
+        if self.ids["visible"].collide_point(*touch.pos):
+            if found:
+                return True
+            self.toggle_visible()
+            return True
         if self.selected:
             self.parent.clear_selection()
             return True
@@ -407,6 +438,7 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         "status": {"text": "[u]Status[/u]",
                    "hint": {"receiving_player": -1, "location": -1, "finding_player": -1, "status": ""}},
         "flags": {"text": "[u]Flags[/u]", "names": [], "status": MWGGUIHintStatus.HINT_UNSPECIFIED},
+        "visible": {"text": "[u]Visible[/u]", "hidden": False},
         "striped": True,
     }
     data: list[typing.Any]
@@ -418,8 +450,16 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         self.data = []
         self.parser = parser
         self.rows = []
+        self.extra_columns = get_extra_columns()
+        if self.extra_columns:
+            self.header = {**self.header, **{
+                column.key: {"text": f"[u]{column.header_text}[/u]"} for column in self.extra_columns
+            }}
         self.header_widget = self._build_header()
-        # Sorters apply in order, so the last one is the primary sort.
+        # Sorters apply in order, so the last one is the primary sort; extra
+        # columns sort first so a world's column doesn't silently become primary.
+        for column in self.extra_columns:
+            self.column_sorters.append(column.sorter)
         for key in ["entrance", "receiving", "finding", "item", "location"]:
             self.column_sorters.append(ColumnSorter(
                 key,
@@ -447,6 +487,19 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         flags_filter.option_list.update(mwggstatus_names.values())
         flags_filter.option_list.add(NO_FLAGS)
         self.column_filters.append(flags_filter)
+        for column in self.extra_columns:
+            if column.filter is not None:
+                self.column_filters.append(column.filter)
+
+    @classmethod
+    def register_extra_column(cls, column: ExtraColumn) -> None:
+        """Register a world-contributed hint-table column (see columns.ExtraColumn).
+
+        Must be called before a HintLog instance is built (e.g. during a
+        world's UI-extras setup phase), since header/sorters/filters are
+        fixed at construction time.
+        """
+        _register_extra_column(column)
 
     def _build_header(self) -> HintLabel:
         cls = self.viewclass
@@ -475,11 +528,17 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         ctx = app.ctx
         if mwgg_hints is None:
             mwgg_hints = ctx.stored_data.get(f"hints_{ctx.team}_{ctx.slot}_mwgg", {}) or {}
+        show_all = bool(getattr(app, "show_all_hints", False))
         rows = []
         for hint in hints:
             if not hint.get("status"): # Allows connecting to old servers
                 hint["status"] = HintStatus.HINT_FOUND if hint["found"] else HintStatus.HINT_UNSPECIFIED
             editable = hint["status"] != HintStatus.HINT_FOUND and ctx.slot_concerns_self(hint["receiving_player"])
+            bucket_key = resolve_ui_hint_bucket(hint, ctx.slot_concerns_self)
+            bucket = app.ui_hint_data.get(bucket_key) if bucket_key is not None else None
+            ui_hint = bucket.get(hint["location"]) if bucket is not None else None
+            # "row_hidden" (the user's hide toggle) vs hint["hidden"] (spoiler-hidden location/entrance text).
+            row_hidden = bool(ui_hint.hide) if ui_hint is not None else False
             item_flags = hint["item_flags"]
             if hint.get("item_hidden"):
                 item_text = f"Hidden ({get_item_classification_label(item_flags)})"
@@ -502,7 +561,7 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
             if editable:
                 status_text = f"[u]{status_text}[/u]"
                 flags_text = f"[u]{flags_text}[/u]"
-            rows.append({
+            row = {
                 "receiving": {"text": self.parser.handle_node({"type": "player_id", "text": hint["receiving_player"]})},
                 "item": {"text": item_text, "flags": item_flags},
                 "finding": {"text": self.parser.handle_node({"type": "player_id", "text": hint["finding_player"]})},
@@ -517,10 +576,28 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
                              if not hint.get("hidden") else "Hidden"},
                 "status": {"text": status_text, "hint": hint},
                 "flags": {"text": flags_text, "names": [mwggstatus_names[flag] for flag in flags], "status": mwgg_status},
-            })
+                "visible": {"text": self.parser.handle_node({"type": "color",
+                                                             "color": "trap_item_color" if row_hidden else "default_color",
+                                                             "text": "Hidden" if row_hidden else "Visible"}),
+                            "hidden": row_hidden},
+            }
+            for column in self.extra_columns:
+                column.build_value(hint, row)
+            rows.append(row)
 
         self.rows = rows
-        data = self.filter_columns(rows)
+        visible_rows = [row for row in rows if row_is_visible(row["visible"]["hidden"], show_all)]
+        # "show everything" also overrides the Status filter's default Found denylist.
+        status_filter = self.get_filter("status")
+        found_label = status_names[HintStatus.HINT_FOUND]
+        reveal_found = show_all and status_filter is not None and found_label in status_filter.filter_denylist
+        if reveal_found:
+            status_filter.filter_denylist.discard(found_label)
+        try:
+            data = self.filter_columns(visible_rows)
+        finally:
+            if reveal_found:
+                status_filter.filter_denylist.add(found_label)
         self.sort_columns(data)
 
         for i in range(0, len(data), 2):
@@ -532,10 +609,24 @@ class HintLayout(MDBoxLayout):
     orientation = "vertical"
 
     def add_widget(self, widget, *args, **kwargs):
-        # The header sits above the recycle view so it never scrolls away.
+        # The show-all toolbar and header sit above the recycle view so they never scroll away.
         if isinstance(widget, HintLog):
+            super().add_widget(self._build_toolbar())
             super().add_widget(widget.header_widget)
         return super().add_widget(widget, *args, **kwargs)
+
+    @staticmethod
+    def _build_toolbar() -> MDBoxLayout:
+        """Eye/eye-off switch, same semantics as the new hint screen's: on reveals
+        hidden rows and found hints, off restores the per-row/Status filtering."""
+        app = App.get_running_app()
+        switch = MDSwitch(
+            icon_inactive="eye-off",
+            icon_active="eye",
+            active=bool(getattr(app, "show_all_hints", False)),
+            on_active=lambda _inst, active: setattr(app, "show_all_hints", active),
+        )
+        return MDBoxLayout(switch, size_hint_y=None, height=dp(40), padding=[dp(8), dp(4)])
 
 
 with open(

@@ -6,6 +6,7 @@ path here, bypassing mwgg_gui/__init__ (which imports the full Kivy GUI).
 from __future__ import annotations
 
 import importlib.util
+import sys
 from pathlib import Path
 
 _COLUMNS_PATH = (
@@ -16,6 +17,9 @@ _COLUMNS_PATH = (
 def _load_columns():
     spec = importlib.util.spec_from_file_location("columns_under_test", _COLUMNS_PATH)
     module = importlib.util.module_from_spec(spec)
+    # dataclasses resolves annotations via sys.modules[cls.__module__]; register
+    # before exec or ExtraColumn's @dataclass decorator crashes on AttributeError.
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -188,3 +192,36 @@ def test_item_classification_filter_flags_and_names():
 
     items[9]["on_toggle"](False)  # deny the name "Sword"
     assert [filt.filter_data(row) for row in rows] == [False, True, True]
+
+
+def test_extra_column_registry_replaces_by_key():
+    columns.clear_extra_columns()
+    try:
+        first = columns.ExtraColumn("in_logic", "In Logic", lambda hint, row: None, _logic_sorter())
+        columns.register_extra_column(first)
+        assert columns.get_extra_columns() == [first]
+
+        second = columns.ExtraColumn("in_logic", "In Logic", lambda hint, row: None, _logic_sorter())
+        columns.register_extra_column(second)
+        assert columns.get_extra_columns() == [second]
+
+        other = columns.ExtraColumn("other", "Other", lambda hint, row: None, _logic_sorter())
+        columns.register_extra_column(other)
+        assert columns.get_extra_columns() == [second, other]
+    finally:
+        columns.clear_extra_columns()
+
+
+def test_extra_column_build_value_populates_row():
+    calls = []
+
+    def build_value(hint, row):
+        calls.append(hint)
+        row["in_logic"] = {"text": "In Logic", "state": "in_logic"}
+
+    column = columns.ExtraColumn("in_logic", "In Logic", build_value, _logic_sorter())
+    hint = {"location": 5}
+    row = {}
+    column.build_value(hint, row)
+    assert calls == [hint]
+    assert row == {"in_logic": {"text": "In Logic", "state": "in_logic"}}
