@@ -1,8 +1,8 @@
 """
-BottomAppBar class - creates the bottom app bar that will be added to
-the bottom of the screen.  Additionally creates helper functions to bind
-to the mouse and window events to display the appropriate icons and 
-text input fields.
+BottomAppBar class - each screen's bottom bar. The left side carries the
+screen-navigation buttons (model in bottom_nav.py, repainted through
+MultiMDApp.refresh_bottom_nav); the FAB on the right slides the screen's
+text input (chat, hint search, admin command) up from the bar.
 """
 from __future__ import annotations
 
@@ -10,17 +10,22 @@ __all__ = (
     "BottomAppBar",
     "BottomBarTextInput"
 )
-from kivymd.uix.appbar import MDBottomAppBar, MDActionBottomAppBarButton
-from kivy.properties import StringProperty, NumericProperty, ObjectProperty
+from kivymd.uix.appbar import MDBottomAppBar
+from kivy.properties import StringProperty, NumericProperty, ObjectProperty, BooleanProperty
 from kivy.lang import Builder
 from kivymd.app import MDApp
+from kivymd.uix.boxlayout import MDBoxLayout
+from kivymd.uix.button import MDButton, MDIconButton
 from kivymd.uix.floatlayout import MDFloatLayout
 from kivy.animation import Animation
 from kivy.clock import Clock
 from kivy.metrics import dp
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.menu import MDDropdownMenu
-from mwgg_gui.constants import CONSOLE_ACTIONS, LAUNCHER_ACTIONS
+from mwgg_gui.components.admin_commands import (
+    admin_say_line, available_admin_commands, complete_admin_command)
+from mwgg_gui.components.bottom_nav import NavEntry
+from mwgg_gui.constants import TEXT_INPUT_ACTIONS
 
 Builder.load_string('''
 <BottomAppBar>:
@@ -33,7 +38,7 @@ Builder.load_string('''
         id: console_text_input_fab
         icon: root.fab_icon
         on_release: root.on_bar_action(self)
-                    
+
 <BottomBarTextInput>:
     id: text_input
     -height: dp(56)
@@ -44,6 +49,34 @@ Builder.load_string('''
         id: leading_icon
     MDTextFieldHintText:
         text: root.hint_text
+
+<BottomNavBox>:
+    orientation: "horizontal"
+    adaptive_width: True
+    size_hint: None, None
+    height: dp(48)
+    spacing: dp(4)
+    x: dp(16)
+    pos_hint: {"center_y": 0.5}
+
+<BottomNavIconButton>:
+    theme_icon_color: "Custom"
+    icon_color: app.theme_cls.onSecondaryContainerColor if root.selected else app.theme_cls.onPrimaryContainerColor
+    theme_bg_color: "Custom"
+    md_bg_color: app.theme_cls.secondaryContainerColor if root.selected else \
+                 app.theme_cls.primaryContainerColor if app.theme_cls.theme_style == "Dark" else app.theme_cls.onPrimaryColor
+    pos_hint: {"center_y": 0.5}
+
+<BottomNavTextButton>:
+    style: "text"
+    theme_bg_color: "Custom"
+    md_bg_color: app.theme_cls.secondaryContainerColor if root.selected else \
+                 app.theme_cls.primaryContainerColor if app.theme_cls.theme_style == "Dark" else app.theme_cls.onPrimaryColor
+    pos_hint: {"center_y": 0.5}
+    MDButtonText:
+        text: root.nav_label
+        theme_text_color: "Custom"
+        text_color: app.theme_cls.onSecondaryContainerColor if root.selected else app.theme_cls.onPrimaryContainerColor 
 ''')
 
 def is_command_input(string: str) -> bool:
@@ -54,18 +87,16 @@ class BottomBarTextInput(MDTextField):
     leading_icon: ObjectProperty
     icon: StringProperty
     hint_text: StringProperty
-    silent_prefix: StringProperty
     app: MDApp
 
     #hint autocomplete
     min_chars = NumericProperty(3)
     item_names: list[str] = []
     location_names: list[str] = []
-    
+
     #BottomAppBar is a MDFloatLayout already, so we can place the TextField in it without shenanigans
     def __init__(self, *args, **kwargs):
         self.hint_text = ""
-        self.silent_prefix = ""
         self.action_type = "console"
         self.app = MDApp.get_running_app()
         super().__init__(*args, **kwargs)
@@ -96,10 +127,13 @@ class BottomBarTextInput(MDTextField):
         self.leading_icon.icon = value
 
     def on_admin_message(self, text):
-        if "login" in text.lower() or "logout" in text.lower():
-            self.app.on_message("!admin "+text, self)
+        line = admin_say_line(text)
+        if line.startswith("!admin login"):
+            # Straight to the processor: on_message would echo the password
+            # into the console and the up-arrow history.
+            self.app.commandprocessor(line)
         else:
-            self.app.on_message("!admin /"+text, self)
+            self.app.on_message(line, self)
 
     def on_hint_search(self, text):
         if text in self.item_names:
@@ -123,33 +157,32 @@ class BottomBarTextInput(MDTextField):
             return
 
     def on_admin_input(self, instance, value):
+        """List the admin commands matching the bare word typed so far (Tab
+        accepts the match); the dropdown closes once arguments follow."""
         self.dropdown.items.clear()
         ctx = self.app.ctx
         if not ctx.server:
             return
-
-        self.admin_commands = {"login": "Login to the server"} if not ctx.admin else {
-            'collect': 'Usage: collect <username>', 
-            'release': 'Usage: release <username>', 
-            'send_location': 'Usage: send_location <user_with_location> <location_name>', 
-            'hint': 'Usage: hint <username> <item_name>', 
-            'hint_location': 'Usage: hint_location <username> <location_name>', 
-            'option': 'Usage: option <server_option_name> <server_option_value>',
-            'logout': 'Usage: logout'
-        }
-        
-        for command in sorted(self.admin_commands.items()):
+        word = value.strip().lstrip("/").lower()
+        for command, usage in available_admin_commands(bool(ctx.admin)):
+            if word and not command.startswith(word):
+                continue
             self.dropdown.items.append({
-                "text": command[0],
-                "on_release": lambda x, cmd=command: self._select_admin_command(cmd),
+                "text": command,
+                "on_release": lambda cmd=(command, usage): self._select_admin_command(cmd),
             })
+        if word and self.dropdown.items and not self.dropdown.parent:
+            self.dropdown.open()
+        elif not self.dropdown.items:
+            self.dropdown.dismiss()
 
     def _select_admin_command(self, command):
         """Handle selection of an admin command from the dropdown"""
-        self.text = command[0]
+        self.text = f"{command[0]} "
         self.hint_text = command[1]
         self.dropdown.dismiss()
-    
+        Clock.schedule_once(lambda dt: self.do_cursor_movement("cursor_end"))
+
     def on_hint_input(self, instance, value):
         if len(value) >= self.min_chars:
             self.dropdown.items.clear()
@@ -195,6 +228,12 @@ class BottomBarTextInput(MDTextField):
         """
         key, key_string = keycode
 
+        if key == 9 and self.action_type == "admin":
+            completed = complete_admin_command(self.text, bool(getattr(self.app.ctx, "admin", False)))
+            if completed is not None:
+                self.text = completed
+                Clock.schedule_once(lambda dt: self.do_cursor_movement("cursor_end"))
+            return True
         if key == 273 and key_string == 'up':
             self._change_to_history_text_if_available(self.app._command_history_index + 1)
             return True
@@ -214,105 +253,99 @@ class BottomBarTextInput(MDTextField):
             return
         self.text = self.app._command_history[self.app._command_history_index]
 
+
+class BottomNavButtonBehavior:
+    """Nav-button surface shared by the icon and text variants."""
+    screen = StringProperty("")
+    nav_label = StringProperty("")
+    selected = BooleanProperty(False)
+
+
+class BottomNavIconButton(BottomNavButtonBehavior, MDIconButton):
+    pass
+
+
+class BottomNavTextButton(BottomNavButtonBehavior, MDButton):
+    pass
+
+
+class BottomNavBox(MDBoxLayout):
+    pass
+
+
 class BottomAppBar(MDBottomAppBar):
     text_input: BottomBarTextInput
+    nav_box: BottomNavBox
 
     def __init__(self, screen_name: str, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.app = MDApp.get_running_app()
         self.screen_name = screen_name
-        # Per-world tabs (CustomScreen) carry arbitrary screen names; default
-        # them to no fab actions.
-        actions = []
-        if screen_name == "console" or screen_name == "hint":
-            actions = CONSOLE_ACTIONS
-        elif screen_name == "launcher":
-            actions = LAUNCHER_ACTIONS
-        action_items = []
-        text_inputs = []
-        for item in actions:
-            button = MDActionBottomAppBarButton(id=item["id"],
-                                                icon=item["icon"])
-            button.bind(on_release=lambda instance: self.on_bar_action(instance))
-            action_items.append(button)
+        # Per-world tabs (CustomScreen) have no text input; their FAB stays inert.
+        self.input_action = TEXT_INPUT_ACTIONS.get(screen_name)
         self.text_input = BottomBarTextInput(id=f'{screen_name}_text_input')
         self.ids.console_text_input_fab.id = "console_fab_button"
-        self.fab_icon = "chat-outline" if screen_name != "hint" else "map-search"
-        # The launcher screen never attaches this bar at all (see
-        # LauncherScreen.init_important): the Play pane covers its one action
-        # and the chat FAB has no command processor there.
-        Clock.schedule_once(lambda dt: self.set_actions(action_items), 0)
-
-    def set_actions(self, action_items: list[MDActionBottomAppBarButton]):
-        self.action_items = action_items
+        if self.input_action:
+            self.fab_icon = self.input_action["icon"]
+        self.nav_box = BottomNavBox()
+        self.add_widget(self.nav_box)
+        self.app.register_bottom_bar(self)
 
     def add_widget(self, widget, index=0, canvas=None):
-        """Override add_widget to handle MDTextField widgets"""
-        if isinstance(widget, MDTextField):
+        # The text input and nav box position themselves; keep them out of
+        # MDBottomAppBar's action-item layout.
+        if isinstance(widget, (MDTextField, BottomNavBox)):
             MDFloatLayout.add_widget(self, widget, index, canvas)
         else:
             super().add_widget(widget, index, canvas)
 
+    def rebuild_nav(self, entries: list[NavEntry], style: str, current: str) -> None:
+        """Repaint the nav buttons; `style` is "icons" or "text"."""
+        self.nav_box.clear_widgets()
+        button_cls = BottomNavTextButton if style == "text" else BottomNavIconButton
+        for entry in entries:
+            button = button_cls(screen=entry.name, nav_label=entry.label)
+            if button_cls is BottomNavIconButton:
+                button.icon = entry.icon
+            button.bind(on_release=lambda _button, name=entry.name: self.app.change_screen(name))
+            self.nav_box.add_widget(button)
+        self.set_current(current)
+
+    def set_current(self, screen_name: str) -> None:
+        for button in self.nav_box.children:
+            button.selected = button.screen == screen_name
+
     def on_bar_action(self, instance):
-        # 'launch' and 'connect' open a dialog / call the screen directly --
-        # neither has a command processor to send prefilled text to.
-        if instance.id == "launch" and self.screen_name == "launcher":
-            if getattr(self.app, "launcher_screen", None) is not None:
-                self.app.launcher_screen.connect()
-            return
-        if instance.id == "connect":
-            # 'connect' is shared by the console and hint screens (see
-            # constants.py); the dialog only needs app.ctx.
-            self.app.open_connect_dialog()
-            return
-        if self.text_input.parent and self.text_input.y > -50 and "fab" in instance.id:
+        if self.text_input.parent and self.text_input.y > -50:
             self.hide_text_input()
         else:
-            self.animate_text_input(instance.id)
+            self.show_text_input()
 
-    def on_gui_focus(self):
-        self.animate_text_input(self.text_input.id)
+    def show_text_input(self, prefill: str = ""):
+        """Slide this screen's text input up from the bar and focus it."""
+        action = self.input_action
+        if action is None:
+            return
 
-    def animate_text_input(self, id_name: str):
-        """Animate the text input with properties from the clicked action item"""
-        action_data = None
-        if self.screen_name == "console" or self.screen_name == "hint":
-            actions = CONSOLE_ACTIONS
-        elif self.screen_name == "launcher":
-            actions = LAUNCHER_ACTIONS
-        else:
-            return
-    
-        for action in actions:
-            try:
-                if action["id"] in id_name:
-                    action_data = action
-                if "fab" in id_name and self.screen_name == "hint" and action["id"] == "hint":
-                    action_data = action
-            except:
-                pass
-        
-        if not action_data:
-            return
-        
-        self.text_input.icon = action_data["icon"]
-        self.text_input.hint_text = action_data["label"]
-        self.text_input.silent_prefix = action_data["prefill"]
-        self.text_input.action_type = action_data["id"]
-        
+        self.text_input.icon = action["icon"]
+        self.text_input.hint_text = action["label"]
+        self.text_input.action_type = self.screen_name
+        if prefill:
+            self.text_input.text = prefill
+
         if not self.text_input.parent:
             self.add_widget(self.text_input)
-        
+
         self.text_input.y = -60
         self.text_input.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
         self.text_input.size_hint = (0.4, None)
-        
+
         def animate_in(dt):
             Animation(y=13, duration=0.2).start(self.text_input)
-        
+
         Clock.schedule_once(animate_in, 0.1)
         self.text_input.focus = True
-    
+
     def hide_text_input(self):
         """Hide the text input with animation"""
         if self.text_input.parent:

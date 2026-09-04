@@ -44,3 +44,14 @@ from .hoverlabel import (
     HoverLabel,
     SimpleHoverLabel
 )
+
+# Import side effect: ports the upstream ripple FBO fix onto KivyMD 2.0.0.
+from .ripple import (
+    patch_ripple_fbo,
+)
+
+# Import side effect: guards MDTooltip.display_tooltip against text-less
+# rich tooltips, which crash on KivyMD 2.0.0.
+from .tooltip import (
+    patch_rich_tooltip_display,
+)

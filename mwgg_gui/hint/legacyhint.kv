@@ -20,6 +20,7 @@
     location_text: "Location"
     entrance_text: "Entrance"
     status_text: "Status"
+    flags_text: "Flags"
     HintTooltipLabel:
         id: receiving
         sort_key: 'receiving'
@@ -64,6 +65,14 @@
         id: status
         sort_key: 'status'
         text: root.status_text
+        halign: 'center'
+        valign: 'center'
+        pos_hint: {"center_y": 0.5}
+        disabled: root.row_disabled
+    HintTooltipLabel:
+        id: flags
+        sort_key: 'flags'
+        text: root.flags_text
         halign: 'center'
         valign: 'center'
         pos_hint: {"center_y": 0.5}

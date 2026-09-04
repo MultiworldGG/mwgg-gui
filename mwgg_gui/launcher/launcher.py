@@ -61,7 +61,6 @@ from kivymd.app import MDApp
 from mwgg_igdb import GameIndex
 
 from mwgg_gui.overrides.expansionlist import *
-from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.components.nav_drawer import NavDrawerMenu, NavDrawerLabel
 from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar
 from mwgg_gui.launcher.launcher_favorite_bar import FavoritesScroll, Favorite
@@ -250,7 +249,6 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     game_filter: list
     available_games: list
     game_tag_filter: StringProperty
-    bottom_appbar: BottomAppBar
     selected_game: tuple[str, str] = ("", "")
     # Effective client type: "manual"/"universal_tracker" from the radio
     # group, else "game" while the Game Client checkbox keeps the selected
@@ -297,10 +295,6 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self._client_intent: str | None = None
         self._client_reconcile = Clock.create_trigger(self._reconcile_client_controls)
 
-        # Built only for its .text_input (app._create_screen reaches in), never
-        # attached to the tree -- "Launch & Play" covers the bar's one action
-        # and the chat FAB has no command processor on this screen.
-        self.bottom_appbar = BottomAppBar(screen_name="launcher")
         self.important_appbar = LauncherSliverAppbar()
         self.launcher_view = LauncherView()
         Clock.schedule_once(lambda x: self.init_important())
@@ -1316,7 +1310,6 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             if existing is not None and getattr(existing, "selected_game", None) != self.selected_game:
                 self.app.screen_manager.remove_widget(existing)
                 self.app.yaml_screen = None
-                self.app._invalidate_top_appbar_menu()
 
             if "yaml" not in self.app.screen_manager.screen_names:
                 self.app._create_screen("yaml")

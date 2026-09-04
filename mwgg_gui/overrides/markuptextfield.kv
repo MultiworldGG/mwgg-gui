@@ -218,3 +218,9 @@
     default_text_color: self.theme_cls.onSurfaceColor
     size_hint_y: None if not self.multiline else 1
     height: dp(56) if not self.multiline else 550
+
+<MarkupTextFieldTooltip>:
+    theme_text_color: "Custom"
+    theme_bg_color: "Custom"
+    md_bg_color: self.theme_cls.secondaryContainerColor
+    text_color: self.theme_cls.onSecondaryContainerColor

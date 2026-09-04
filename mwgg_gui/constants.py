@@ -2,14 +2,13 @@ from __future__ import annotations
 """
 Constants for the MultiworldGG GUI application
 
-Contains the actions for the console and launcher.
+Contains the bottom-bar text-input actions.
 """
 
 __all__ = (
     "ROLE_LAUNCHER",
     "ROLE_CLIENT",
-    "CONSOLE_ACTIONS",
-    "LAUNCHER_ACTIONS",
+    "TEXT_INPUT_ACTIONS",
     "MWGG_WEBHOST_BASE",
     "SETUP_GUIDE_URL",
     "TRUSTED_AVATAR_HOSTS",
@@ -42,58 +41,10 @@ AVATAR_UPLOAD_URL = f"{MWGG_WEBHOST_BASE}/api/avatar/upload"
 
 AVATAR_FILE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".webp", ".gif")
 
-CONSOLE_ACTIONS = [
-{
-    "id":           "console",
-    "buttonicon":   "chat-outline",
-    "icon":         "chat-outline",
-    "prefill":      "!countdown",
-    "label":        "Console",
-    "indicator":    "blank",
-    "type":         "assist",
-},
-{
-    "id":           "hint",
-    "buttonicon":   "map-search",
-    "icon":         "map-search",
-    "prefill":      "!hint",
-    "label":        "Hint",
-    "indicator":    "widgets",
-    "type":         "assist",
-},
-{
-    "id":           "admin",
-    "buttonicon":   "account-lock-outline",
-    "icon":         "wrench",
-    "prefill":      "password",
-    "label":        "Host Administration",
-    "indicator":    "server-network",
-    "type":         "assist",
-},
-{
-    # Client-direct reconnect (see components/connect_dialog.py); special-cased
-    # in BottomAppBar.on_bar_action to open the dialog instead of animating the
-    # text input.
-    "id":           "connect",
-    "buttonicon":   "lan-connect",
-    "icon":         "lan-connect",
-    "prefill":      "",
-    "label":        "Connect",
-    "indicator":    "blank",
-    "type":         "assist",
-}]
-
-
-LAUNCHER_ACTIONS = [
-{
-    # Special-cased in BottomAppBar.on_bar_action to call the launcher screen's
-    # connect() directly -- no live connection for the command processor.
-    "id":           "launch",
-    "buttonicon":   "rocket-launch",
-    "icon":         "rocket-launch",
-    "prefill":      "",
-    "label":        "Launch",
-    "indicator":    "blank",
-    "type":         "assist",
-},
-]
+# Text inputs the bottom bar's FAB slides up, keyed by screen name; the key
+# doubles as BottomBarTextInput.action_type.
+TEXT_INPUT_ACTIONS = {
+    "console": {"icon": "chat-outline", "label": "Console"},
+    "hint": {"icon": "map-search", "label": "Hint"},
+    "admin": {"icon": "wrench", "label": "Host Administration"},
+}

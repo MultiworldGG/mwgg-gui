@@ -41,9 +41,8 @@ from kivy.properties import (
     StringProperty,
 )
 from kivymd.uix.boxlayout import MDBoxLayout
-from kivymd.uix.button import MDButton, MDButtonText, MDIconButton
+from kivymd.uix.button import MDButton, MDButtonIcon, MDButtonText, MDIconButton
 from kivymd.uix.chip import MDChip, MDChipText
-from kivymd.uix.dropdownitem import MDDropDownItem, MDDropDownItemText
 from kivymd.uix.expansionpanel import (
     MDExpansionPanel,
     MDExpansionPanelContent,
@@ -357,10 +356,14 @@ class ChoiceRow(OptionRow):
 
     def _build_dropdown(self, choices):
         self._label_by_key = {k: l for k, _m, l in choices}
-        self._dropdown_item = MDDropDownItem(
-            MDDropDownItemText(text=""),
-            size_hint_y=None,
-            height=dp(40),
+        # MDDropDownItem sizes itself from its text texture and draws no surface.
+        self._dropdown_text = MDButtonText(text="")
+        self._dropdown_item = MDButton(
+            MDButtonIcon(icon="menu-down"),
+            self._dropdown_text,
+            style="outlined",
+            theme_width="Custom",
+            size_hint_x=1,
         )
         self._dropdown_item.bind(on_release=lambda *_: self._open_menu())
 
@@ -381,11 +384,9 @@ class ChoiceRow(OptionRow):
         item = getattr(self, "_items_by_key", {}).get(getattr(self, "_default_key", None))
         if item is not None:
             item.active = True
-        # Dropdown: set the visible label from the default key.
-        if hasattr(self, "_dropdown_item") and hasattr(self, "_label_by_key"):
-            self._dropdown_item.children[0].text = self._label_by_key.get(
-                self._default_key, ""
-            )
+        self._set_dropdown_text(
+            getattr(self, "_label_by_key", {}).get(getattr(self, "_default_key", None), "")
+        )
 
     def apply_value(self, value):
         machine_by_key = getattr(self, "_machine_by_key", None)
@@ -401,20 +402,23 @@ class ChoiceRow(OptionRow):
             # Programmatic `.active = True` doesn't deactivate siblings (only a click does); clear them ourselves.
             for k, item in items_by_key.items():
                 item.active = (k == key)
-        if hasattr(self, "_dropdown_item") and hasattr(self, "_label_by_key"):
-            self._dropdown_item.children[0].text = self._label_by_key.get(key, "")
+        self._set_dropdown_text(getattr(self, "_label_by_key", {}).get(key, ""))
 
     def is_default(self) -> bool:
         # Descriptor default is the id (int); self.value is the machine_name string.
         default_machine = self._machine_by_key.get(self._default_key)
         return self.value == default_machine
 
+    def _set_dropdown_text(self, text):
+        if hasattr(self, "_dropdown_text"):
+            self._dropdown_text.text = text
+
     def _open_menu(self):
         self._menu.open()
 
     def _pick(self, key, label):
         self.value = self._machine_by_key[key]
-        self._dropdown_item.children[0].text = label
+        self._dropdown_text.text = label
         self._menu.dismiss()
 
 
@@ -443,8 +447,7 @@ class TextChoiceRow(ChoiceRow):
         self._custom_field.focus = True
         if hasattr(self, "_menu"):
             self._menu.dismiss()
-        if hasattr(self, "_dropdown_item"):
-            self._dropdown_item.children[0].text = "Custom…"
+        self._set_dropdown_text("Custom…")
 
     def _on_custom_text(self, _instance, text):
         if text:
@@ -464,8 +467,7 @@ class TextChoiceRow(ChoiceRow):
         self._custom_field.opacity = 1
         self._custom_field.disabled = False
         self._custom_field.text = str(value)
-        if hasattr(self, "_dropdown_item"):
-            self._dropdown_item.children[0].text = "Custom…"
+        self._set_dropdown_text("Custom…")
 
 
 # ----- Range / NamedRange --------------------------------------------------

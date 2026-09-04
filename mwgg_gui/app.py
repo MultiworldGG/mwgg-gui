@@ -3,6 +3,7 @@ import logging
 import sys
 import threading
 import typing
+import weakref
 import asynckivy
 from datetime import datetime, UTC
 from multiprocessing import Queue
@@ -123,7 +124,10 @@ from mwgg_gui.components.topappbar import TopAppBarLayout
 from mwgg_gui.launcher.launcher import LauncherScreen
 from mwgg_gui.loadanimlayout import MWGGLoadingLayout
 from mwgg_gui.components.bottomappbar import BottomAppBar, BottomBarTextInput
+from mwgg_gui.components.bottom_nav import ClientTab, nav_entries
 from mwgg_gui.components.guidataclasses import UIPlayerData, UIHint, MarkupPair
+from mwgg_gui.console.adminscreen import AdminScreen
+from mwgg_gui.console.textconsole import ConsolePair
 
 if typing.TYPE_CHECKING:
     import CommonClient
@@ -172,11 +176,9 @@ class MultiMDApp(MDApp):
     hint_screen: HintScreen
     settings_screen: SettingsScreen
     launcher_screen: LauncherScreen
-
-    custom_screens: dict[str, MDScreen]
+    admin_screen: AdminScreen
 
     bottom_appbar: BottomAppBar
-    launcher_text_input: BottomBarTextInput
     console_text_input: BottomBarTextInput
     hint_text_input: BottomBarTextInput
 
@@ -261,6 +263,17 @@ class MultiMDApp(MDApp):
         )
 
         self._show_all_hints = False
+        # Live-app state only (see _resolve_live_app): every screen's bottom
+        # bar registers here, and per-world tabs order the nav after the
+        # builtin slots.
+        self._bottom_bars: weakref.WeakSet[BottomAppBar] = weakref.WeakSet()
+        self._client_tabs: list[ClientTab] = []
+        # Latest `players` / `options` payloads from admin replies, so an
+        # Admin screen built later starts populated.
+        self._admin_snapshot: dict = {}
+        # Where the client-role menu's Back item returns from Settings, the
+        # one screen without a bottom bar.
+        self._screen_before_settings = "console"
 
     def __getattr__(self, name: str):
         # Phantom post-takeover instances forward attribute lookups to the live
@@ -301,7 +314,11 @@ class MultiMDApp(MDApp):
             'hint_screen': 'classic',
             # Item-hover progression tooltips in the console. Reads pass
             # fallback=True for pre-existing client.ini files.
-            'item_tooltips': '1'
+            'item_tooltips': '1',
+            # Bottom-bar navigation: button style ("icons"/"text") and the
+            # opt-in Admin screen. Reads pass fallbacks for old client.ini.
+            'bottom_nav_style': 'icons',
+            'admin_console': '0',
         })
         # Tool-run suppression uses dynamic per-world keys
         # (tool_warning_ok_<slug>) read with fallback=False -- no defaults.
@@ -489,6 +506,7 @@ class MultiMDApp(MDApp):
         # Screen manager
         # Screens are under the appbar and titlebar
         self.screen_manager = MainScreenMgr(transition=SwapTransition())
+        self.screen_manager.bind(current=self._on_screen_changed)
 
         # Set up navigation layout
         self.navigation_layout.add_widget(self.screen_manager)
@@ -603,20 +621,21 @@ class MultiMDApp(MDApp):
 
     def change_screen(self, item: str):
         '''
-        This function is called when the screen is changed.
-        It updates the current screen and dismisses menu
-        with the screen names.
+        Switch to the named screen, creating it on first use. The bottom
+        bars follow the screen manager's current binding.
         '''
+        if item == "admin" and not getattr(self.ctx, "admin", False):
+            from mwgg_gui.components.admin_login_dialog import AdminLoginDialog
+            AdminLoginDialog(on_success=lambda: self.change_screen("admin")).open()
+            return
         if item not in self.screen_manager.screen_names:
             self._create_screen(item)
         self.screen_manager.current = item
-        self._invalidate_top_appbar_menu()
 
     def _create_screen(self, item: str):
         '''
-        This function is called when the screen is changed.
-        It updates or creates the current screen and dismisses
-        the menu with the screen names.
+        Build the named screen if it does not exist yet and repaint the
+        bottom-bar navigation.
         '''
         if item in self.screen_manager.screen_names:
             return
@@ -640,7 +659,9 @@ class MultiMDApp(MDApp):
         elif item == "launcher":
             self.launcher_screen = LauncherScreen()
             self.screen_manager.add_widget(self.launcher_screen)
-            self.launcher_text_input = self.launcher_screen.bottom_appbar.text_input
+        elif item == "admin":
+            self.admin_screen = AdminScreen()
+            self.screen_manager.add_widget(self.admin_screen)
         elif item == "yaml":
             # Lazy-created on demand by the launcher's Create YAML button.
             # Torn down again in on_connect once a game session is live.
@@ -658,7 +679,7 @@ class MultiMDApp(MDApp):
         else:
             self.create_custom_screen(item)
             return
-        self._invalidate_top_appbar_menu()
+        self.refresh_bottom_nav()
 
     def _build_hint_screen(self):
         """Instantiate the hint screen variant selected by the client
@@ -705,7 +726,6 @@ class MultiMDApp(MDApp):
             )
             return
         self.hint_screen = None
-        self._invalidate_top_appbar_menu()
         self._create_screen("hint")
         self.hint_screen.update_hints_list()
         if was_current:
@@ -750,8 +770,11 @@ class MultiMDApp(MDApp):
         * ``create_custom_screen(name)`` -- internal launcher use, makes a
           blank named MDScreen and adds it to the screen manager.
         * ``create_custom_screen(title, content, index)`` -- per-world use
-          (kvui.GameManager API), wraps ``content`` in a CustomScreen with
-          a bottom-appbar nav button and adds it to the screen manager.
+          (kvui.GameManager API), wraps ``content`` in a CustomScreen, adds
+          it to the screen manager and puts a nav button for it on every
+          bottom bar. ``index`` orders the screen, not the button: builtin
+          slots come first, then tabs in registration order. A
+          ``content.nav_icon`` attribute picks the button's icon.
 
         Either way, the screen lands on the *live* launcher app's
         screen_manager, so a phantom subclass instance constructed after
@@ -762,31 +785,32 @@ class MultiMDApp(MDApp):
         if content is None:
             screen = MDScreen(name=title)
             live.screen_manager.add_widget(screen)
-            self._invalidate_top_appbar_menu()
+            live.refresh_bottom_nav()
             return screen
 
         if title in live.screen_manager.screen_names:
             return None
 
         from mwgg_gui.overrides.screen import CustomScreen
-        from kivymd.uix.appbar import MDFabBottomAppBarButton
 
-        button = MDFabBottomAppBarButton(text=title)
-        button.content = content
         screen = CustomScreen(name=title)
         screen.custom_layout.add_widget(content)
-        screen.bottom_appbar.add_widget(button)
-        button.bind(on_release=lambda *_: setattr(live.screen_manager, "current", title))
         live.screen_manager.add_widget(screen, index=index)
-        self._invalidate_top_appbar_menu()
-        return button
+        tab = ClientTab(title, content, getattr(content, "nav_icon", None) or ClientTab.icon)
+        live._client_tabs.append(tab)
+        live.refresh_bottom_nav()
+        return tab
 
     def remove_custom_screen(self, handle) -> None:
         live = self._resolve_live_app()
-        name = getattr(handle, "text", None) or getattr(handle, "name", None)
-        if name and name in live.screen_manager.screen_names:
-            live.screen_manager.remove_widget(live.screen_manager.get_screen(name))
-            self._invalidate_top_appbar_menu()
+        name = getattr(handle, "name", None) or getattr(handle, "text", None)
+        if not name or name not in live.screen_manager.screen_names:
+            return
+        if live.screen_manager.current == name and "console" in live.screen_manager.screen_names:
+            live.screen_manager.current = "console"
+        live.screen_manager.remove_widget(live.screen_manager.get_screen(name))
+        live._client_tabs = [tab for tab in live._client_tabs if tab.name != name]
+        live.refresh_bottom_nav()
 
     def is_on_console_screen(self) -> bool:
         """FrontendProtocol: true iff the console screen is the active screen."""
@@ -872,42 +896,83 @@ class MultiMDApp(MDApp):
             self.console_screen = ConsoleScreen()
             self.screen_manager.add_widget(self.console_screen)
             self.console_text_input = self.console_screen.bottom_appbar.text_input
-            self._invalidate_top_appbar_menu()
+            self.refresh_bottom_nav()
 
-    def _create_menu_item(self, item):
-        """Create a menu item with proper binding
-        to change screens when the item is pressed"""
-        return {
-            "text": item.capitalize(),
-            "divider": None,
-            "on_release": lambda x=item: self._menu_item_callback(x)
-        }
-
-    def _menu_item_callback(self, item):
-        """Callback for menu items to change screens"""
-        self.change_screen(item.lower())
-        if self.top_appbar_menu:
-            self.top_appbar_menu.dismiss()
-
-    def _invalidate_top_appbar_menu(self) -> None:
-        """Drop the cached dropdown so the next open() rebuilds it from the
-        current screen_manager.screen_names. Always operates on the live
-        launcher instance: writing through `self` on a phantom subclass
-        instance would put None in the phantom's __dict__ and leave the
-        live cache intact."""
+    def register_bottom_bar(self, bar: BottomAppBar) -> None:
+        """Track a screen's bottom bar and paint its nav buttons; a bar
+        leaves the set with its screen."""
         live = self._resolve_live_app()
-        if live.top_appbar_menu is not None:
-            try:
-                live.top_appbar_menu.dismiss()
-            except Exception:
-                pass
-            live.top_appbar_menu = None
+        live._bottom_bars.add(bar)
+        bar.rebuild_nav(live.bottom_nav_entries(), live.bottom_nav_style(),
+                        live.screen_manager.current)
+
+    def bottom_nav_style(self) -> str:
+        return self.app_config.get(
+            'client', 'bottom_nav_style', fallback='icons').strip().lower()
+
+    def bottom_nav_entries(self) -> list:
+        """Ordered nav entries for the bottom bars; empty until a console
+        screen exists (the launcher role never shows a bar)."""
+        live = self._resolve_live_app()
+        names = live.screen_manager.screen_names
+        if "console" not in names:
+            return []
+        admin = live.app_config.getboolean('client', 'admin_console', fallback=False)
+        return nav_entries(names, live._client_tabs, admin)
+
+    def refresh_bottom_nav(self) -> None:
+        """Repaint every bar's nav buttons from the current screens, client
+        tabs, and settings. Always operates on the live launcher instance."""
+        live = self._resolve_live_app()
+        entries = live.bottom_nav_entries()
+        style = live.bottom_nav_style()
+        current = live.screen_manager.current
+        for bar in list(live._bottom_bars):
+            bar.rebuild_nav(entries, style, current)
+
+    def set_admin_console_enabled(self, enabled: bool) -> None:
+        """Settings hook. The Admin screen is built lazily on first visit,
+        so enabling only adds its button; disabling tears the screen down."""
+        live = self._resolve_live_app()
+        if not enabled and "admin" in live.screen_manager.screen_names:
+            if live.screen_manager.current == "admin":
+                live.screen_manager.current = "console"
+            live.screen_manager.remove_widget(live.screen_manager.get_screen("admin"))
+            live.admin_screen = None
+        live.refresh_bottom_nav()
+
+    def _on_screen_changed(self, manager, name: str) -> None:
+        if name != "settings":
+            self._screen_before_settings = name
+        for bar in list(self._bottom_bars):
+            bar.set_current(name)
+
+    def leave_settings(self) -> None:
+        target = self._screen_before_settings
+        if target not in self.screen_manager.screen_names:
+            target = "console"
+        self.change_screen(target)
+
+    def on_admin_command_result(self, args: dict) -> None:
+        """FrontendProtocol: an admin reply packet. MultiServer attaches
+        `players` to /players, `options` to /options and /option, and
+        `status` (team, tag) to /status replies; the Admin screen parses
+        /status text itself so older servers work too."""
+        live = self._resolve_live_app()
+        for key in ("players", "options"):
+            if key in args:
+                live._admin_snapshot[key] = args[key]
+        screen = getattr(live, "admin_screen", None)
+        if screen is not None:
+            screen.receive_admin_result(args)
 
     def open_top_appbar_menu(self, menu_button):
         """Appbar hamburger hook. Launcher role: the nav drawer replaced the
         dropdown menu -- toggle it, first walking back to the launcher screen
         when some other screen is up (the drawer carries the way back, like
-        the old menu's back item did). Client role: dropdown of screen names.
+        the old menu's back item did). Client role: Reconnect / Settings /
+        Exit, with Back in place of Settings while Settings (the one screen
+        without a bottom bar) is up; other screens are reached from the bar.
         """
         if self.role == ROLE_LAUNCHER:
             nav_drawer = self.launcher_screen.nav_drawer
@@ -918,21 +983,27 @@ class MultiMDApp(MDApp):
                 nav_drawer.set_state("toggle")
             return
 
-        if not self.top_appbar_menu:
-            menu_items = []
-            for item in self.screen_manager.screen_names:
-                menu_items.append(self._create_menu_item(item))
-            menu_items.sort(key=lambda x: x["text"].lower())
-            menu_items.append({"text": "Exit",
-                               "divider": "Full",
-                               "on_release": lambda x=None: self.stop()})
-
-            self.top_appbar_menu = MDDropdownMenu(
-                caller=menu_button,
-                items=menu_items,
-                width_mult=3,
-            )
+        if self.top_appbar_menu is not None:
+            self.top_appbar_menu.dismiss()
+        self.top_appbar_menu = MDDropdownMenu(
+            caller=menu_button, items=self._client_menu_items(), width_mult=3)
         self.top_appbar_menu.open()
+
+    def _client_menu_items(self) -> list:
+        def item(text, icon, action, divider=None):
+            def on_release(*_args):
+                self.top_appbar_menu.dismiss()
+                action()
+            return {"text": text, "leading_icon": icon, "divider": divider,
+                    "on_release": on_release}
+
+        items = [item("Reconnect", "lan-connect", self.open_connect_dialog)]
+        if self.screen_manager.current == "settings":
+            items.insert(0, item("Back", "arrow-left", self.leave_settings))
+        else:
+            items.append(item("Settings", "cog-outline", lambda: self.change_screen("settings")))
+        items.append(item("Exit", "exit-to-app", self.stop, divider="Full"))
+        return items
 
     def update_history(self, new_entry: str) -> None:
         self._command_history_index = -1
@@ -1024,15 +1095,16 @@ class MultiMDApp(MDApp):
                 )
             if hasattr(self, "yaml_screen"):
                 self.yaml_screen = None
-            self._invalidate_top_appbar_menu()
 
 
     def print_json(self, data: typing.List[JSONMessagePart]):
         parser = KivyMarkupJSONtoTextParser(self.ctx)
         markup_text = parser(data)
         plaintext = "".join([node.get("text") for node in data])
-        # Always use the text buffer for consistency
-        self.text_buffer.put_nowait(MarkupPair(markup_text, plaintext))
+        # Item sends, cheats, and hints all carry an item node; the Admin
+        # screen's mirror drops those lines.
+        item_traffic = any(node.get("type") == "item_id" for node in data)
+        self.text_buffer.put_nowait(ConsolePair(markup_text, plaintext, item_traffic))
 
     def set_pronouns(self):
         pronouns = self.local_player_data.pronouns
