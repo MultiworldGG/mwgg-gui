@@ -40,7 +40,7 @@ _active_dialog: "ConnectDialog | None" = None
 
 
 class ConnectDialog(MDDialog):
-    """Reconnect dialog for client-direct processes (see module docstring)."""
+    """Connect dialog for client-direct processes (see module docstring)."""
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -88,7 +88,7 @@ class ConnectDialog(MDDialog):
         )
 
         self.dialog = MDDialog(
-            MDDialogHeadlineText(text="Reconnect"),
+            MDDialogHeadlineText(text="Connect to MWGG"),
             MDDialogContentContainer(fields),
             MDDialogButtonContainer(
                 MDButton(
@@ -96,7 +96,7 @@ class ConnectDialog(MDDialog):
                     on_release=lambda *_: self.dismiss(),
                 ),
                 MDButton(
-                    MDButtonText(text="Reconnect"),
+                    MDButtonText(text="Connect"),
                     on_release=lambda *_: self._confirm(),
                 ),
                 spacing=dp(8),
