@@ -359,7 +359,10 @@ class ServerLabel(MDTooltip, MDTopAppBarTitle):
             name = ctx.player_names[ctx.slot]
             if hasattr(ctx.slot_info[ctx.slot], 'alias') and ctx.slot_info[ctx.slot].alias:
                 name = ctx.slot_info[ctx.slot].alias
-            self.text = f"{server_address} hosting {name} and friends"
+            if MDApp.get_running_app().layout_mode.compact:
+                self.text = f"{name}@{server_address}"
+            else:
+                self.text = f"{server_address} hosting {name} and friends"
         else:
             self.text = f"{server_address}"
 
@@ -467,11 +470,21 @@ class TopAppBar(MDTopAppBar):
         # Role switch: the kv rule carries only the common chrome; the
         # role-specific pieces are constructed here, never pruned after.
         trailing = self.ids.trailing_container
+        if self.app.layout_mode.compact:
+            # One-line, smaller server text so the bar never grows into the
+            # screen below (the launcher's YAML creator retitles it too).
+            self.server_info_label.role = "medium"
+            self.server_info_label.shorten = True
+            self.server_info_label.shorten_from = "right"
+            self.server_info_label.pos_hint = {"center_y": 0.5}
         if self.app.role == ROLE_LAUNCHER:
             # The launcher process never connects (every launch spawns a
             # separate client process) -- no server text, no timer. The
             # trailing slots hold the Website/Discord shortcuts instead.
             self.server_info_label.text = ""
+            # Empty adaptive-height label keeps Kivy's 100px default and
+            # would stretch the bar to 116 (see the kv height rule).
+            self.server_info_label.height = 0
             self.timer = None
             self.timer_button = None
             for icon, component_name in (("web", "MultiworldGG Website"),
@@ -481,6 +494,9 @@ class TopAppBar(MDTopAppBar):
                 trailing.add_widget(button)
         else:
             self.timer = Timer(size_hint_x=.15)
+            if self.app.layout_mode.compact:
+                # The timer sizes to its text (see _drop_compact_titles).
+                self.timer.role = "small"
             self.add_widget(self.timer)
             self.timer_button = MDActionTopAppBarButton(icon="timer-outline")
             self.timer_button.bind(on_release=lambda *_a: self.toggle_timer(),
@@ -489,7 +505,17 @@ class TopAppBar(MDTopAppBar):
         profile_button = MDActionTopAppBarButton(icon="account-circle-outline")
         profile_button.bind(on_release=lambda *_a: self.open_profile())
         trailing.add_widget(profile_button)
+        if self.app.layout_mode.compact:
+            # No room for the energy link and clock at compact widths. The
+            # titles land in the bar a frame later (MDTopAppBar._add_title),
+            # and their adaptive width ignores a zero size hint.
+            Clock.schedule_once(lambda dt: self._drop_compact_titles())
         asyncio.create_task(self.update_progress_info(), name="ProgressBar")
+
+    def _drop_compact_titles(self):
+        for label in (self.energy_link_label, self.ids.clock_label):
+            if label.parent is not None:
+                label.parent.remove_widget(label)
 
     async def update_progress_info(self):
         """Update progress width and server info from the game session every 30s."""

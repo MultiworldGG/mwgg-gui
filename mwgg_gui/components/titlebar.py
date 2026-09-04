@@ -71,10 +71,12 @@ KV = '''
             MDLabel:
                 pos_hint: {"center_x": .5, "center_y": .45}
                 id: tblabel_title
-                text: app.base_title
+                text: "MWGG" if app.layout_mode.compact else app.base_title
                 font_style: "TitleBar"
                 role: "small"
                 text_size: self.width, None
+                shorten: True
+                shorten_from: "right"
                 outline_width: 2
                 outline_color: app.theme_cls.shadowColor
                 theme_text_color: "Custom"
@@ -85,9 +87,11 @@ KV = '''
             pos_hint: {"center_x": .499, "center_y": .47}
             size_hint: 1, 1
             id: tblabeltext
-            text: app.base_title
+            text: "MWGG" if app.layout_mode.compact else app.base_title
             font_style: "TitleBar"
             text_size: self.width, None
+            shorten: True
+            shorten_from: "right"
             role: "small"
             outline_width: 1
             outline_color: app.theme_cls.inverseOnSurfaceColor

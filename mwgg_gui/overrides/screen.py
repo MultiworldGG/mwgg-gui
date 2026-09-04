@@ -26,7 +26,7 @@ from mwgg_gui.components.mw_theme import AutoAdjustHeightBehavior
 Builder.load_string('''
 <CustomLayout>:
     id: custom_layout
-    pos: 0,82
+    pos: 0, 82 + app.layout_mode.docked_input
 ''')
 
 class CustomLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
@@ -37,7 +37,7 @@ class CustomLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.size_hint_x = .9
+        self.size_hint_x = 1 if MDApp.get_running_app().layout_mode.compact else .9
         self.pos_hint = {"center_x": 0.5}
 
 class CustomScreen(MDScreen, ThemableBehavior):

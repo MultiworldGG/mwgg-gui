@@ -12,6 +12,9 @@ auxiliary view). Here:
     | BottomAppBar (Save / Cancel / Mode)     |
     +-----------------------------------------+
 
+Compact Mode keeps only the left pane: the form takes the full width and
+Save renders the YAML straight from it.
+
 Screen lifecycle is lazy: registered into the screen manager only when
 the launcher's "Create YAML" button fires (see app._create_screen), and
 torn down on game connect.
@@ -144,6 +147,7 @@ class YamlScreen(InnerMDScreen):
 
     def _build(self):
         # Two-pane split + action bar; InnerMDScreen already reserves the chrome space.
+        compact = self.app.layout_mode.compact
         self._grid = MDBoxLayout(
             orientation="horizontal",
             size_hint=(1, 1),
@@ -158,7 +162,7 @@ class YamlScreen(InnerMDScreen):
         # (the inner MDList renders at full minimum_height).
         self._left = MDBoxLayout(
             orientation="vertical",
-            size_hint=(0.58, None),
+            size_hint=(1 if compact else 0.58, None),
             height=self._left_height(),
             spacing=dp(6),
             # theme_bg_color = "Custom",
@@ -169,9 +173,15 @@ class YamlScreen(InnerMDScreen):
         self._header_box = MDBoxLayout(
             orientation="vertical",
             size_hint=(1, None),
-            height=dp(64),
+            height=self._header_height(),
         )
         self._header = HeaderCard()
+        if compact:
+            # Name over toggle: the segmented button needs the full width.
+            self._header.orientation = "vertical"
+            self._header.height = self._header_height()
+            for child in self._header.children:
+                child.size_hint_x = 1
         self._header.ids.player_name.text = ""
         self._header.ids.player_name.bind(
             text=lambda *_: self._push_to_preview()
@@ -203,15 +213,17 @@ class YamlScreen(InnerMDScreen):
 
         self._grid.add_widget(self._left)
 
-        # Right pane: YAML preview
-        self._preview = YamlPreview(
-            game_name=self.game_name,
-            on_sync=self._on_preview_sync,
-            on_resync=self._resume_sync,
-            known_options=self._known_option_names,
-            size_hint_x=0.42,
-        )
-        self._grid.add_widget(self._preview)
+        # Right pane: YAML preview; Compact Mode has no room for it.
+        self._preview = None
+        if not compact:
+            self._preview = YamlPreview(
+                game_name=self.game_name,
+                on_sync=self._on_preview_sync,
+                on_resync=self._resume_sync,
+                known_options=self._known_option_names,
+                size_hint_x=0.42,
+            )
+            self._grid.add_widget(self._preview)
 
         # Bottom action bar (plain Save / Cancel).
         bar = MDBoxLayout(
@@ -234,7 +246,8 @@ class YamlScreen(InnerMDScreen):
         bar.add_widget(save_btn)
         self._left.add_widget(bar)
         # One vertical container: two-pane grid + action bar.
-        root = MDBoxLayout(orientation="vertical", size_hint=(1, 1), padding=dp(20))
+        root = MDBoxLayout(orientation="vertical", size_hint=(1, 1),
+                           padding=dp(8) if compact else dp(20))
         root.add_widget(self._grid)
         self.add_widget(root)
 
@@ -257,10 +270,13 @@ class YamlScreen(InnerMDScreen):
             Window.height - self._CHROME_PX - dp(64) - dp(12),
         )
 
+    def _header_height(self) -> float:
+        """HeaderCard height: one row, or the stacked compact layout."""
+        return dp(124) if self.app.layout_mode.compact else dp(64)
+
     def _scroll_box_height(self) -> float:
-        """Height of the scroll box: _left height minus the header
-        box's dp(64)."""
-        return max(dp(120), self._left_height() - dp(64))
+        """Height of the scroll box: _left height minus the header box."""
+        return max(dp(120), self._left_height() - self._header_height())
 
     def _on_window_resize(self, _window, _height):
         if getattr(self, "_left", None) is not None:
@@ -410,8 +426,15 @@ class YamlScreen(InnerMDScreen):
             game_extras=self._game_extras,
         )
 
+    def _yaml_text(self) -> str:
+        """YAML to save: the preview pane's text, or the form's canonical
+        render when Compact Mode built no preview."""
+        if self._preview is None:
+            return self._render_canonical_yaml()
+        return self._preview.get_text()
+
     def _push_to_preview(self):
-        if self._form is None or self._sync_paused:
+        if self._form is None or self._preview is None or self._sync_paused:
             return
         text = self._render_canonical_yaml()
         if not self._preview.dirty or text == self._preview.get_text():
@@ -484,7 +507,7 @@ class YamlScreen(InnerMDScreen):
 
     def save(self):
         try:
-            text = self._preview.get_text()
+            text = self._yaml_text()
             # Parse once to validate before writing.
             yaml.safe_load(text)
 

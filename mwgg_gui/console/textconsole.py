@@ -141,8 +141,9 @@ class ConsoleView(MDFloatLayout):
                  line_filter: Optional[Callable[[object], bool]] = None, **kwargs):
         super().__init__(**kwargs)
         self.bottom_scroll_button = BottomScrollButton(opacity=0, x=Window.width - dp(60), y=dp(10))
+        chrome = 185 + MDApp.get_running_app().layout_mode.docked_input
         self.text_console = TextConsole(bottom_scroll_button=self.bottom_scroll_button, pos_hint={"x": 0, "y": 0},
-                                        size_hint=(1-(4/Window.width),1-(185/Window.height)),
+                                        size_hint=(1-(4/Window.width),1-(chrome/Window.height)),
                                         pull_buffer=mirror_of is None, line_filter=line_filter)
         if mirror_of is not None:
             mirror_of.mirrors.append(self.text_console)
