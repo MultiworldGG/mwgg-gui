@@ -117,7 +117,7 @@ from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
 from mwgg_gui.components.layout_mode import get_layout_mode, read_compact_mode
 
-from mwgg_gui.components.titlebar import Titlebar
+from mwgg_gui.components.titlebar import LiveTitleMeta, Titlebar
 from mwgg_gui.console.console import ConsoleScreen
 from mwgg_gui.hint.hintscreen import HintScreen
 from mwgg_gui.settings.settings_screen import SettingsScreen
@@ -150,7 +150,7 @@ class MainScreenMgr(MDScreenManager):
         super().__init__(*args, **kwargs)
         # self.transition = MDFadeSlideTransition()
 
-class MultiMDApp(MDApp):
+class MultiMDApp(MDApp, metaclass=LiveTitleMeta):
 
     # Without `title` Kivy derives it from the class name minus "App" ("MultiMD").
     title = "MultiworldGG"
