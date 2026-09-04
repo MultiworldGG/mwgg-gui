@@ -45,7 +45,7 @@ from mwgg_gui.components.columns import (
     ColumnFilterItemClassification, ColumnFilterMulti, ExtraColumn,
     get_extra_columns, register_extra_column as _register_extra_column,
 )
-from mwgg_gui.hint.hint_visibility import hidden_payload, is_hidden, with_hidden
+from mwgg_gui.hint.hint_visibility import is_hidden, resolve_ui_hint_bucket, row_visible, with_hidden
 
 import re
 import os
@@ -304,9 +304,9 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
             "on_toggle": lambda active, flag=flag: self.set_flag(flag, active),
         } for flag in mwggstatus_names])
 
-    def hide_row(self):
-        """Set this hint's client-owned hidden flag; the SetReply re-renders the table without it."""
-        self._send_status(MWGGUIHintStatus(with_hidden(self.flag_status, True)))
+    def toggle_hidden(self):
+        """Flip this hint's client-owned hidden flag; the SetReply re-renders the table."""
+        self._send_status(MWGGUIHintStatus(with_hidden(self.flag_status, not is_hidden(self.flag_status))))
 
     def fit_height(self, *_args) -> None:
         """Size the sticky header to its cells' rendered text. The header is built
@@ -373,7 +373,7 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
         if self.ids["visible"].collide_point(*touch.pos):
             if found:
                 return True
-            self.hide_row()
+            self.toggle_hidden()
             return True
         if self.selected:
             self.parent.clear_selection()
@@ -444,7 +444,6 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         self.data = []
         self.parser = parser
         self.rows = []
-        self.hints = []
         self.extra_columns = get_extra_columns()
         if self.extra_columns:
             self.header = {**self.header, **{
@@ -475,7 +474,6 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
             else:
                 filt = ColumnFilter(key, conv)
             if key == "status":
-                filt.filter_denylist.add(status_names[HintStatus.HINT_FOUND])
                 filt.option_list.update(status_names.values())
             self.column_filters.append(filt)
         flags_filter = ColumnFilterMulti("flags", lambda row: row["flags"]["names"] or [NO_FLAGS])
@@ -495,16 +493,6 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         fixed at construction time.
         """
         _register_extra_column(column)
-
-    def set_all_hidden(self, hidden: bool) -> None:
-        """Flip the client-owned hidden flag on every hint at once (the toolbar switch)."""
-        app = App.get_running_app()
-        if app is None or not self.hints:
-            return
-        ctx = app.ctx
-        mwgg_hints = ctx.stored_data.get(f"hints_{ctx.team}_{ctx.slot}_mwgg", {}) or {}
-        keys = [f"{hint['finding_player']}_{hint['location']}" for hint in self.hints]
-        ctx.update_mwgg_hints(hidden_payload(keys, mwgg_hints, hidden))
 
     def _build_header(self) -> HintLabel:
         cls = self.viewclass
@@ -536,14 +524,23 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         ctx = app.ctx
         if mwgg_hints is None:
             mwgg_hints = ctx.stored_data.get(f"hints_{ctx.team}_{ctx.slot}_mwgg", {}) or {}
-        self.hints = hints
+        show_all = bool(getattr(app, "show_all_hints", False))
+        ui_hint_data = getattr(app, "ui_hint_data", None) or {}
         rows = []
         for hint in hints:
             if not hint.get("status"): # Allows connecting to old servers
                 hint["status"] = HintStatus.HINT_FOUND if hint["found"] else HintStatus.HINT_UNSPECIFIED
             editable = hint["status"] != HintStatus.HINT_FOUND and ctx.slot_concerns_self(hint["receiving_player"])
             mwgg_status = MWGGUIHintStatus(mwgg_hints.get(f"{hint['finding_player']}_{hint['location']}") or 0)
-            if is_hidden(mwgg_status):
+            # The UIHint (app.ui_hint_data) is the shared source of found/hide;
+            # fall back to the raw hint before the data package has built it.
+            bucket = resolve_ui_hint_bucket(hint, ctx.slot_concerns_self)
+            ui_hint = ui_hint_data.get(bucket, {}).get(hint["location"]) if bucket is not None else None
+            if ui_hint is not None:
+                found, hidden = bool(ui_hint.found), bool(ui_hint.hide)
+            else:
+                found, hidden = hint["status"] == HintStatus.HINT_FOUND or bool(hint["found"]), is_hidden(mwgg_status)
+            if not row_visible(found, hidden, show_all):
                 continue
             item_flags = hint["item_flags"]
             if hint.get("item_hidden"):
@@ -581,7 +578,8 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
                              if not hint.get("hidden") else "Hidden"},
                 "status": {"text": status_text, "hint": hint},
                 "flags": {"text": flags_text, "names": [mwggstatus_names[flag] for flag in flags], "status": mwgg_status},
-                "visible": {"text": "Hide" if hint["status"] == HintStatus.HINT_FOUND else "[u]Hide[/u]"},
+                "visible": {"text": ("Unhide" if hidden else "Hide") if hint["status"] == HintStatus.HINT_FOUND
+                            else f"[u]{'Unhide' if hidden else 'Hide'}[/u]"},
             }
             for column in self.extra_columns:
                 column.build_value(hint, row)
@@ -608,15 +606,15 @@ class HintLayout(MDBoxLayout):
 
     @staticmethod
     def _build_toolbar(log: HintLog) -> MDBoxLayout:
-        """Eye switch: on marks every hint visible, off marks every hint hidden;
-        rows then hide one at a time through their Hide cell."""
+        """Eye switch = app.show_all_hints: on shows every hint for this slot, off
+        drops found and hidden ones (its setter re-renders the hint screen)."""
+        app = App.get_running_app()
         # active is set after construction: passing it as a kwarg fires on_active
         # before the switch has built its ids.
         switch = MDSwitch(icon_inactive="eye-off", icon_active="eye")
-        switch.active = True
-        switch.bind(active=lambda _inst, active: log.set_all_hidden(not active))
+        switch.active = bool(getattr(app, "show_all_hints", False))
+        switch.bind(active=lambda _inst, active: setattr(app, "show_all_hints", active))
         return MDBoxLayout(switch, size_hint_y=None, height=dp(40), padding=[dp(8), dp(4)])
-
 
 with open(
     os.path.join(os.path.dirname(__file__), "legacyhint.kv"), encoding="utf-8"

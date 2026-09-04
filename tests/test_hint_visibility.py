@@ -1,4 +1,4 @@
-"""Tests for mwgg_gui/hint/hint_visibility.py (classic table hidden flag helpers).
+"""Tests for mwgg_gui/hint/hint_visibility.py (classic table visibility helpers).
 
 hint_visibility.py is import-light (no kivy), so it is loaded by file path
 here, bypassing mwgg_gui/hint/__init__ (which imports the full Kivy GUI).
@@ -32,8 +32,15 @@ def test_hidden_bit_is_independent_of_the_flag_bits():
     assert hv.with_hidden(hidden, False) == shop_goal
 
 
-def test_hidden_payload_covers_every_key_and_keeps_flags():
-    stored = {"2_10": 0b100, "2_11": 0b1001, "3_5": None}
-    keys = ["2_10", "2_11", "3_5", "4_1"]
-    assert hv.hidden_payload(keys, stored, True) == {"2_10": 0b1100, "2_11": 0b1001, "3_5": 0b1000, "4_1": 0b1000}
-    assert hv.hidden_payload(keys, stored, False) == {"2_10": 0b100, "2_11": 0b001, "3_5": 0, "4_1": 0}
+def test_row_visible_switch_semantics():
+    assert hv.row_visible(found=False, hidden=False, show_all=False) is True
+    assert hv.row_visible(found=True, hidden=False, show_all=False) is False
+    assert hv.row_visible(found=False, hidden=True, show_all=False) is False
+    assert hv.row_visible(found=True, hidden=True, show_all=True) is True
+
+
+def test_resolve_ui_hint_bucket_is_the_other_player():
+    hint = {"receiving_player": 1, "finding_player": 2}
+    assert hv.resolve_ui_hint_bucket(hint, lambda slot: slot == 1) == 2
+    assert hv.resolve_ui_hint_bucket(hint, lambda slot: slot == 2) == 1
+    assert hv.resolve_ui_hint_bucket(hint, lambda slot: False) is None

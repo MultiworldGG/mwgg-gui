@@ -645,7 +645,7 @@ class GameListPanel(MDExpansionPanel):
             "progression_goal": self.app.theme_mw.markup_tags_theme.progression_goal_item_color[i],
             }
         for hint in self.item_data.hints.values():
-            if not hint.hide or self.app.show_all_hints:
+            if self.app.show_all_hints or not (hint.hide or hint.found):
                 item_widget = SlotListItem(hint_data=hint, game_status=self.item_data.game_status, shadow_colors=item_colors)
                 self.panel_content.add_widget(item_widget)
 
