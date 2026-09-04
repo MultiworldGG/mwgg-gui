@@ -13,18 +13,23 @@ Includes the following:
 __all__ = ('LauncherScreen', 
            'LauncherLayout', 
            'LauncherView', 
-           'LauncherAuthTextField'
+           'CompactLauncherView',
+           'LauncherAuthTextField',
+           'LauncherConnectField',
            )
 import asynckivy
 from kivy.clock import Clock
 from kivy.metrics import dp
-from kivy.properties import StringProperty, ObjectProperty, ListProperty
+from kivy.properties import StringProperty, ObjectProperty, ListProperty, ColorProperty
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.floatlayout import MDFloatLayout
 from kivy.lang import Builder
 from kivy.core.window import Window
 from kivy.properties import ObjectProperty
+from kivy.uix.screenmanager import NoTransition
+from kivymd.uix.screenmanager import MDScreenManager
+from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.sliverappbar import MDSliverAppbar
 from kivymd.theming import ThemableBehavior
 from kivymd.uix.list import MDList
@@ -62,7 +67,7 @@ from mwgg_igdb import GameIndex
 
 from mwgg_gui.overrides.expansionlist import *
 from mwgg_gui.components.nav_drawer import NavDrawerMenu, NavDrawerLabel
-from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar
+from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar, SearchBar
 from mwgg_gui.launcher.launcher_favorite_bar import FavoritesScroll, Favorite
 from mwgg_gui.components.dialog import MessageBox
 from mwgg_gui.launcher.setup_guide import (extract_bundled_setup_doc,
@@ -131,14 +136,30 @@ with open(os.path.join(os.path.dirname(__file__), "launcher.kv"), encoding="utf-
 class LauncherLayout(MDNavigationLayout):
     pass
 
-class LauncherView(MDBoxLayout):
+class LauncherViewBase(MDBoxLayout):
+    """Play pane surface LauncherScreen reads through `ids`; each variant
+    carries its own kv rule, so neither inherits the other's widgets."""
     slot_layout: ObjectProperty
     server_layout: ObjectProperty
     title_layout: ObjectProperty
     fallback_status = StringProperty(_NO_GAME_STATUS)
 
-class LauncherAuthTextField(MDTextField):
+class LauncherView(LauncherViewBase):
     pass
+
+class CompactLauncherView(LauncherViewBase):
+    """Compact Mode play side: favorites, client types, buttons, and the
+    connection fields in one scrolling column."""
+
+class LauncherAuthTextField(MDTextField):
+    # Leading-icon colors; declared here so kv children can bind to them
+    # regardless of which class rule applies first.
+    icon_color_focus = ColorProperty([1, 1, 1, 1])
+    icon_color_normal = ColorProperty([1, 1, 1, 1])
+
+class LauncherConnectField(LauncherAuthTextField):
+    icon = StringProperty("")
+    hint_text = StringProperty("")
 
 class LauncherGenerateContent(MDBoxLayout):
     pass
@@ -199,7 +220,11 @@ class SetupGuideComponent:
     description: str = ""
 
 
-class LauncherTooltipLabel(MDTooltip, MDLabel):
+class LauncherOptionLabel(MDLabel):
+    pass
+
+
+class LauncherTooltipLabel(MDTooltip, LauncherOptionLabel):
     """Hover-tooltip label. MDTooltip MUST precede MDLabel in the bases:
     StateLayerBehavior.on_enter doesn't call super(), so with the widget
     class first in the MRO the tooltip never shows (same ordering as
@@ -208,13 +233,8 @@ class LauncherTooltipLabel(MDTooltip, MDLabel):
 
 
 class LauncherComponentButton(MDButton):
-    text = ""
-    icon = "wrench"
-
-    def __init__(self, **kwargs):
-        self.text = kwargs.pop("text", "")
-        self.icon = kwargs.pop("icon", "wrench")
-        super().__init__(**kwargs)
+    text = StringProperty("")
+    icon = StringProperty("wrench")
 
 class LauncherNavDrawerButton(MDNavigationDrawerItem):
     """Nav drawer action item. Unlike a navigation item it tracks no
@@ -239,13 +259,15 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     Left side has the game list/sorter
     Right contains the previously selected game
     with options to connect to the MW server
+    Compact Mode stacks both behind a pinned search bar and flips between
+    them (see _build_compact_content).
     '''
     name = "launcher"
     launchergrid: LauncherLayout
     nav_drawer: MDNavigationDrawer
     nav_menu: NavDrawerMenu
     important_appbar: MDSliverAppbar
-    launcher_view: LauncherView
+    launcher_view: LauncherViewBase
     game_filter: list
     available_games: list
     game_tag_filter: StringProperty
@@ -295,8 +317,12 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self._client_intent: str | None = None
         self._client_reconcile = Clock.create_trigger(self._reconcile_client_controls)
 
-        self.important_appbar = LauncherSliverAppbar()
-        self.launcher_view = LauncherView()
+        if self.app.layout_mode.compact:
+            self.important_appbar = None
+            self.launcher_view = CompactLauncherView()
+        else:
+            self.important_appbar = LauncherSliverAppbar()
+            self.launcher_view = LauncherView()
         Clock.schedule_once(lambda x: self.init_important())
 
     def show_snackbar(self, message: str, is_error: bool = False):
@@ -318,23 +344,14 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
         self.add_widget(self.launchergrid)
 
-        self.important_appbar.size_hint_x = 260/Window.width
-        self.important_appbar.size_hint_y=1
-        self.launcher_view.size_hint_x = 1-(264/Window.width)
-        self.launcher_view.size_hint_y =1
-
-        self.important_appbar.ids.scroll.scroll_wheel_distance = 40
-        #self.important_appbar.ids.scroll.y = 82
-
-        self.important_appbar.content.add_widget(self.games_mdlist)
-
         # MDNavigationLayout accepts only the screen manager and the drawer, so
         # the launcher UI lands on the content screen inside the manager; the
         # drawer slides over it all (sliver appbar included) as a modal overlay.
         content_screen = self.launchergrid.ids.launcher_content
-        content_screen.add_widget(self.important_appbar)
-        self.launcher_view.pos_hint={"y": 0, "x": 260/Window.width}
-        content_screen.add_widget(self.launcher_view)
+        if self.app.layout_mode.compact:
+            self._build_compact_content(content_screen)
+        else:
+            self._build_content(content_screen)
 
         self.nav_drawer = self.launchergrid.ids.launcher_nav_drawer
         self.nav_menu = self.launchergrid.ids.launcher_nav_menu
@@ -359,12 +376,54 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         # usually finds it already loaded.
         self.refresh_world_components()
 
+    def _build_content(self, content_screen):
+        self.important_appbar.size_hint_x = 260/Window.width
+        self.important_appbar.size_hint_y=1
+        self.launcher_view.size_hint_x = 1-(264/Window.width)
+        self.launcher_view.size_hint_y =1
+
+        self.important_appbar.ids.scroll.scroll_wheel_distance = 40
+        #self.important_appbar.ids.scroll.y = 82
+
+        self.important_appbar.content.add_widget(self.games_mdlist)
+
+        content_screen.add_widget(self.important_appbar)
+        self.launcher_view.pos_hint={"y": 0, "x": 260/Window.width}
+        content_screen.add_widget(self.launcher_view)
+
+    def _build_compact_content(self, content_screen):
+        """Search bar pinned over a two-sided flip: the play side (the
+        compact launcher view) and the game list. Enter in the search bar
+        shows the list; picking a game or clearing the search returns to
+        the play side (see apply_game_search / on_game_selected)."""
+        self.search_bar = SearchBar()
+        self.compact_manager = MDScreenManager(transition=NoTransition())
+        play = MDScreen(name="play")
+        play.add_widget(self.launcher_view)
+        games = MDScreen(name="games")
+        scroll = MDScrollView(do_scroll_x=False, scroll_wheel_distance=40)
+        self.games_mdlist.size_hint_x = 1
+        scroll.add_widget(self.games_mdlist)
+        games.add_widget(scroll)
+        self.compact_manager.add_widget(play)
+        self.compact_manager.add_widget(games)
+        column = MDBoxLayout(orientation="vertical")
+        column.add_widget(self.search_bar)
+        column.add_widget(self.compact_manager)
+        content_screen.add_widget(column)
+
+    def _show_compact_side(self, name: str):
+        manager = getattr(self, "compact_manager", None)
+        if manager is not None and manager.current != name:
+            manager.current = name
+
     def on_fallback_status_changed(self, instance, value):
         """Update the padding of the launcher view based on the fallback status"""
+        wide = dp(12) if self.app.layout_mode.compact else dp(50)
         if value:
-            self.launcher_view.padding = dp(50), dp(10), dp(50), dp(50)
+            self.launcher_view.padding = wide, dp(10), wide, wide
         else:
-            self.launcher_view.padding = dp(50)
+            self.launcher_view.padding = wide
 
     async def set_game_list(self):
         """Set the game list based on the game tag filter"""
@@ -386,6 +445,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     def on_game_selected(self, game_info: tuple[str, str]):
         """Handle game selection from the game list or favorites bar;
         selecting the already-selected game deselects it."""
+        self._show_compact_side("play")
         if self.selected_game and game_info[0] == self.selected_game[0]:
             self.deselect_game()
             return
@@ -429,11 +489,13 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 return
         self.set_favorite_highlight(None)
 
-    def apply_game_search(self, query: str):
+    def apply_game_search(self, query: str, show_list: bool = True):
         """Repopulate the game list for `query`; an empty query falls back to
-        the "popular" set (the same default the launcher starts with)."""
+        the "popular" set (the same default the launcher starts with).
+        `show_list` picks the compact side to show afterwards."""
         self.game_tag_filter = (query or "").strip() or "popular"
         asynckivy.start(self.set_game_list())
+        self._show_compact_side("games" if show_list else "play")
 
     def set_filter(self, active, tag):
         """Set the game search filter based on the game tag filter"""

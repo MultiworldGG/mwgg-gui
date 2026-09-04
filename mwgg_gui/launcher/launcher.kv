@@ -272,6 +272,146 @@
                         MDTextFieldHintText:
                             text: "Password"
 
+<LauncherOptionLabel>:
+    halign: 'center'
+    valign: 'top'
+    theme_font_style: "Custom"
+    font_style: "Body"
+    role: "medium"
+    theme_text_color: "Custom"
+    text_color: app.theme_cls.onSurfaceVariantColor
+
+<LauncherConnectField>:
+    size_hint_x: 0.9
+    pos_hint: {"center_x": 0.5}
+    MDTextFieldLeadingIcon:
+        theme_icon_color: "Custom"
+        icon: root.icon
+        icon_color_focus: root.icon_color_focus
+        icon_color_normal: root.icon_color_normal
+    MDTextFieldHintText:
+        text: root.hint_text
+
+<CompactLauncherView>:
+    server_layout: server_layout
+    title_layout: title_layout
+    fallback_status_label: fallback_status_label
+    module_name: ""
+    orientation: 'vertical'
+    padding: dp(12), dp(8), dp(12), dp(12)
+    MDLabel:
+        id: fallback_status_label
+        text: root.fallback_status
+        size_hint_y: None
+        height: dp(40) if self.text else 0
+        opacity: 1 if self.text else 0
+        halign: 'center'
+        theme_font_style: "Custom"
+        font_style: "Body"
+        role: "medium"
+        theme_text_color: "Custom"
+        text_color: app.theme_cls.errorColor
+    MDScrollView:
+        do_scroll_x: False
+        MDBoxLayout:
+            orientation: 'vertical'
+            adaptive_height: True
+            spacing: dp(16)
+            padding: dp(12)
+            theme_bg_color: "Custom"
+            md_bg_color: app.theme_cls.surfaceVariantColor
+            MDBoxLayout: # Favorites
+                id: title_layout
+                orientation: 'vertical'
+                size_hint_y: None
+                height: dp(80)
+            MDBoxLayout: # Client types, label over checkbox
+                orientation: 'horizontal'
+                spacing: dp(4)
+                size_hint_y: None
+                height: dp(88)
+                MDBoxLayout:
+                    orientation: 'vertical'
+                    LauncherTooltipLabel:
+                        text: 'Game Client'
+                        tooltip_text: 'Disabling this will also disable SNI/BizHawk client hooks.'
+                    MDCheckbox:
+                        id: game_client_checkbox
+                        pos_hint: {"center_x": 0.5}
+                        disabled: True
+                        on_active: app.launcher_screen.set_game_client(self.active)
+                MDBoxLayout:
+                    orientation: 'vertical'
+                    LauncherOptionLabel:
+                        text: 'Text Client'
+                    MDCheckbox:
+                        id: text_client_checkbox
+                        group: 'client_type'
+                        pos_hint: {"center_x": 0.5}
+                        on_active: app.launcher_screen.set_text_client(self.active)
+                MDBoxLayout:
+                    orientation: 'vertical'
+                    LauncherOptionLabel:
+                        text: 'Universal Tracker'
+                    MDCheckbox:
+                        id: universal_tracker_checkbox
+                        group: 'client_type'
+                        pos_hint: {"center_x": 0.5}
+                        on_active: app.launcher_screen.refresh_client_type()
+                MDBoxLayout:
+                    orientation: 'vertical'
+                    LauncherOptionLabel:
+                        text: 'Manual Client'
+                    MDCheckbox:
+                        id: manual_checkbox
+                        group: 'client_type'
+                        pos_hint: {"center_x": 0.5}
+                        on_active: app.launcher_screen.refresh_client_type()
+            MDBoxLayout: # Launch and component buttons
+                id: game_components_box
+                orientation: 'vertical'
+                adaptive_height: True
+                spacing: dp(12)
+                LauncherComponentButton:
+                    id: connect_button
+                    text: 'Launch Text Client'
+                    icon: "text-box-outline"
+                    on_release: app.launcher_screen.connect()
+                LauncherComponentButton:
+                    id: shortcut_button
+                    text: 'Desktop Shortcut'
+                    icon: "laptop"
+                    on_release: app.launcher_screen.create_shortcut()
+            MDBoxLayout: # Connection fields
+                id: server_layout
+                orientation: 'vertical'
+                adaptive_height: True
+                spacing: dp(12)
+                LauncherConnectField:
+                    id: server
+                    icon: 'router-network'
+                    hint_text: "Server Address"
+                    text: app.ctx.hostname
+                LauncherConnectField:
+                    id: port
+                    icon: 'numeric'
+                    hint_text: "Port"
+                    input_filter: 'int'
+                    text: app.ctx.port
+                LauncherConnectField:
+                    id: slot_name
+                    icon: 'ticket-account'
+                    hint_text: "Username"
+                    text: app.ctx.username
+                    on_text_validate: app.launcher_screen.connect()
+                LauncherConnectField:
+                    id: slot_password
+                    icon: 'lock'
+                    hint_text: "Password"
+                    password: True
+                    text: app.app_config.get("client", "slot_password", fallback="")
+                    on_text_validate: app.launcher_screen.connect()
+
 <LauncherTooltipLabel>:
     # MDTooltip.add_widget stashes an MDTooltipPlain child as the tooltip
     # body; keep tooltip_text short -- MDLabel wrapping is unreliable while

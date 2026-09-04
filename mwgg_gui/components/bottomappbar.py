@@ -2,7 +2,9 @@
 BottomAppBar class - each screen's bottom bar. The left side carries the
 screen-navigation buttons (model in bottom_nav.py, repainted through
 MultiMDApp.refresh_bottom_nav); the FAB on the right slides the screen's
-text input (chat, hint search, admin command) up from the bar.
+text input (chat, hint search, admin command) up from the bar. Compact
+Mode drops the FAB, centers the buttons, and docks the text input
+permanently above the bar (see layout_mode.docked_input).
 """
 from __future__ import annotations
 
@@ -289,7 +291,28 @@ class BottomAppBar(MDBottomAppBar):
             self.fab_icon = self.input_action["icon"]
         self.nav_box = BottomNavBox()
         self.add_widget(self.nav_box)
+        self.docked = self.app.layout_mode.compact
+        if self.docked:
+            self._dock_layout()
         self.app.register_bottom_bar(self)
+
+    def _dock_layout(self):
+        self.remove_widget(self.ids.console_text_input_fab)
+        self._fab_bottom_app_bar_button = None
+        self.nav_box.pos_hint = {"center_x": 0.5, "center_y": 0.5}
+        if self.input_action is None:
+            return
+        self._configure_text_input()
+        self.text_input.size_hint = (0.94, None)
+        self.text_input.pos_hint = {"center_x": 0.5}
+        self.text_input.y = self.height + dp(8)
+        self.add_widget(self.text_input)
+
+    def _configure_text_input(self):
+        action = self.input_action
+        self.text_input.icon = action["icon"]
+        self.text_input.hint_text = action["label"]
+        self.text_input.action_type = self.screen_name
 
     def add_widget(self, widget, index=0, canvas=None):
         # The text input and nav box position themselves; keep them out of
@@ -316,6 +339,8 @@ class BottomAppBar(MDBottomAppBar):
             button.selected = button.screen == screen_name
 
     def on_bar_action(self, instance):
+        if self.docked:
+            return
         if self.text_input.parent and self.text_input.y > -50:
             self.hide_text_input()
         else:
@@ -323,16 +348,15 @@ class BottomAppBar(MDBottomAppBar):
 
     def show_text_input(self, prefill: str = ""):
         """Slide this screen's text input up from the bar and focus it."""
-        action = self.input_action
-        if action is None:
+        if self.input_action is None:
             return
-
-        self.text_input.icon = action["icon"]
-        self.text_input.hint_text = action["label"]
-        self.text_input.action_type = self.screen_name
         if prefill:
             self.text_input.text = prefill
+        if self.docked:
+            self.text_input.focus = True
+            return
 
+        self._configure_text_input()
         if not self.text_input.parent:
             self.add_widget(self.text_input)
 
@@ -348,7 +372,7 @@ class BottomAppBar(MDBottomAppBar):
 
     def hide_text_input(self):
         """Hide the text input with animation"""
-        if self.text_input.parent:
+        if self.text_input.parent and not self.docked:
             def animate_out(dt):
                 Animation(y=-60, duration=0.2).start(self.text_input)
                 def remove_widget(dt2):

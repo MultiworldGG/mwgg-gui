@@ -15,6 +15,8 @@ from kivy.metrics import dp
 import logging
 import os
 
+from kivymd.app import MDApp
+from kivymd.uix.button import MDIconButton
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.navigationdrawer import MDNavigationDrawerDivider
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -149,7 +151,10 @@ class SettingsScreenSection(MDScreen):
         self.nav_drawer = nav_drawer
         self.name = name
         self.title = title
-        Clock.schedule_once(lambda x: self.nav_drawer.set_state("open"))
+        # A modal (Compact Mode) drawer would cover the content; its opener
+        # button brings it up instead.
+        if not MDApp.get_running_app().layout_mode.compact:
+            Clock.schedule_once(lambda x: self.nav_drawer.set_state("open"))
         
         # Create the appropriate settings component based on the section name
         try:
@@ -215,8 +220,29 @@ class SettingsScreen(MDScreen):
         
         logger.debug("Added nav_layout to screen")
         
+        self._drawer_opener = None
+        self.apply_compact(MDApp.get_running_app().layout_mode.compact)
+
         # Set up the navigation menu after everything else is initialized
         Clock.schedule_once(self.setup_navigation_menu)
+
+    def apply_compact(self, compact: bool) -> None:
+        """Compact: the sections drawer turns modal, opened from a button
+        floating bottom-right, so the content keeps the window width."""
+        drawer = self.settings_nav_drawer
+        drawer.drawer_type = "modal" if compact else "standard"
+        if compact:
+            if self._drawer_opener is None:
+                self._drawer_opener = MDIconButton(
+                    icon="menu", style="tonal", pos_hint={"right": 0.98, "y": 0.02})
+                self._drawer_opener.bind(on_release=lambda *_a: drawer.set_state("open"))
+            if self._drawer_opener.parent is None:
+                self.add_widget(self._drawer_opener)
+            drawer.set_state("close")
+        else:
+            if self._drawer_opener is not None and self._drawer_opener.parent is not None:
+                self.remove_widget(self._drawer_opener)
+            drawer.set_state("open")
     
     def setup_sections(self, *args):
         logger.debug("Setting up settings sections")

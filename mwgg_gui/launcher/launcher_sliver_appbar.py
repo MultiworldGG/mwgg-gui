@@ -35,11 +35,13 @@ Builder.load_string('''
             pos_hint: {"center_y": 0.55}
             fit_mode: "scale-down"
     SearchBar:
-        type: "small"
-        height: dp(74)
-        id: games_search_bar,
-        padding: dp(10), dp(0), dp(10), dp(0)
+        id: games_search_bar
                     
+<SearchBar>:
+    type: "small"
+    height: dp(74)
+    padding: dp(10), dp(0), dp(10), dp(0)
+
 <LauncherTextField>:
     -height: dp(56)
     theme_font_name: "Custom"
@@ -102,15 +104,17 @@ class SearchBar(MDTopAppBar):
         super()._add_title(widget)
 
     def on_enter(self, instance):
-        self._apply_search(instance.text)
+        self._apply_search(instance.text, show_list=True)
 
     def on_reset(self, *args):
         self.search_box.text = ""
-        self._apply_search("")
+        self._apply_search("", show_list=False)
 
-    def _apply_search(self, query: str):
+    def _apply_search(self, query: str, show_list: bool):
+        """`show_list` drives Compact Mode's play/list flip: Enter brings
+        the game list up, the clear button puts it away."""
         screen = App.get_running_app().screen_manager.current_screen
         # Import here to avoid circular import
         from .launcher import LauncherScreen
         if isinstance(screen, LauncherScreen):
-            screen.apply_game_search(query)
+            screen.apply_game_search(query, show_list)

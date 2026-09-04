@@ -30,6 +30,8 @@ from kivymd.uix.dialog import MDDialog, MDDialogHeadlineText, MDDialogSupporting
 from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText 
 
 from mwgg_gui.components.mw_theme import THEME_OPTIONS, DEFAULT_TEXT_COLORS, RegisterFonts
+from mwgg_gui.components.layout_mode import read_compact_mode
+from mwgg_gui.constants import ROLE_LAUNCHER
 from mwgg_gui.overrides.colorpicker import MWColorPicker
 from mwgg_gui.components.dialog import MessageBox
 from mwgg_gui.components.profile import show_profile
@@ -443,6 +445,23 @@ class SettingsScrollBox(MDScrollView):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.layout = self.ids.layout
+
+    def show_feedback(self, message: str, is_error: bool = False):
+        """Show feedback message to user"""
+        try:
+            app = MDApp.get_running_app()
+            snackbar = MDSnackbar(
+                MDSnackbarText(
+                    text=message,
+                ),
+                y=dp(24),
+                pos_hint={"center_x": 0.5},
+                size_hint_x=0.8,
+                md_bg_color=app.theme_cls.errorColor if is_error else app.theme_cls.primaryColor,
+            )
+            snackbar.open()
+        except Exception as e:
+            logger.error(f"Error showing feedback: {e}", exc_info=True)
 
 class ConnectionSettings(SettingsScrollBox):
     """Connection settings section
@@ -907,23 +926,6 @@ class ThemingSettings(SettingsScrollBox):
         except Exception as e:
             logger.error(f"Error changing monospace font: {e}", exc_info=True)
             self.show_feedback("Error changing monospace font", is_error=True)
-    
-    def show_feedback(self, message: str, is_error: bool = False):
-        """Show feedback message to user"""
-        try:
-            # Create snackbar with message
-            snackbar = MDSnackbar(
-                MDSnackbarText(
-                    text=message,
-                ),
-                y=dp(24),
-                pos_hint={"center_x": 0.5},
-                size_hint_x=0.8,
-                md_bg_color=self.app.theme_cls.errorColor if is_error else self.app.theme_cls.primaryColor,
-            )
-            snackbar.open()
-        except Exception as e:
-            logger.error(f"Error showing feedback: {e}", exc_info=True)
 
 class InterfaceSettings(SettingsScrollBox):
     """Interface settings section"""
@@ -947,8 +949,8 @@ class InterfaceSettings(SettingsScrollBox):
         layout_section.add_widget(LabeledSwitch(
             text="Compact Mode",
             theme_text_color="Secondary",
-            active=self.app.app_config.get('client', 'device_orientation', fallback="Landscape") == "Portrait",
-            on_switch=self.toggle_device_orientation
+            active=read_compact_mode(self.app.app_config),
+            on_switch=self.toggle_compact_mode
         ))
         layout_section.add_widget(LabeledSwitch(
             text="All Players Chat",
@@ -1007,19 +1009,23 @@ class InterfaceSettings(SettingsScrollBox):
             ).strip().lower() == "text",
             on_switch=self.toggle_bottom_nav_text
         ))
-        nav_section.add_widget(LabeledSwitch(
-            text="Admin Console",
-            theme_text_color="Secondary",
-            active=self.app.app_config.getboolean('client', 'admin_console', fallback=False),
-            on_switch=self.toggle_admin_console
-        ))
+        # Compact Mode fixes the classic hint screen and drops the Admin screen.
+        compact = self.app.layout_mode.compact
+        if not compact:
+            nav_section.add_widget(LabeledSwitch(
+                text="Admin Console",
+                theme_text_color="Secondary",
+                active=self.app.app_config.getboolean('client', 'admin_console', fallback=False),
+                on_switch=self.toggle_admin_console
+            ))
 
         # Add all sections to the layout
         self.layout.add_widget(display_section)
         self.layout.add_widget(layout_section)
         self.layout.add_widget(scroll_section)
         self.layout.add_widget(age_filter_section)
-        self.layout.add_widget(hint_section)
+        if not compact:
+            self.layout.add_widget(hint_section)
         self.layout.add_widget(nav_section)
     
     def toggle_fullscreen(self, instance, value):
@@ -1031,14 +1037,15 @@ class InterfaceSettings(SettingsScrollBox):
         except Exception as e:
             logger.error(f"Error in toggle_fullscreen: {e}", exc_info=True)
     
-    def toggle_device_orientation(self, instance, value):
-        def orientation_to_string(value: bool) -> str:
-            return "Portrait" if value else "Landscape"
+    def toggle_compact_mode(self, instance, value):
         try:
-            self.app.app_config.set('client', 'device_orientation', orientation_to_string(value))
+            self.app.app_config.set('client', 'compact_mode', "1" if value else "0")
             self.app.app_config.write()
+            self.app.set_compact_mode(value)
+            if self.app.role != ROLE_LAUNCHER:
+                self.show_feedback("Compact Mode applies to the next client you launch")
         except Exception as e:
-            logger.error(f"Error in toggle_device_orientation: {e}", exc_info=True) 
+            logger.error(f"Error in toggle_compact_mode: {e}", exc_info=True)
 
     def toggle_all_players_chat(self, instance, value):
         try:

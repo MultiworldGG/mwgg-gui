@@ -32,7 +32,7 @@ import asynckivy
 Builder.load_string('''
 <ConsoleLayout>:
     id: console_layout
-    pos: 0,82
+    pos: 0, 82 + app.layout_mode.docked_input
 
 <ConsoleSliverAppbar>:
     pos_hint: {"x": 0, "top": 1}
@@ -209,6 +209,8 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
     This is the main screen for the console.
     Left side has the players, with expansion for hints
     Right contains the console
+    Compact Mode: the console alone fills the screen. The side pane is still
+    built (kvui.HintLog registrations land on it) but never attached.
     '''
     name = "console"
     app: MDApp
@@ -240,10 +242,14 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
 
     def update_slots_list(self):
         """Update the slots list when hints data becomes available"""
+        if self.app.layout_mode.compact:
+            return
         asynckivy.start(self.set_slots_list())
 
     def update_tracker_locations(self):
         """Repopulate the tracker region list from the current ctx.tracker_core state."""
+        if self.app.layout_mode.compact:
+            return
         self.tracker_regions_mdlist.populate_from_ctx(self.app.ctx)
 
     def init_important(self):
@@ -251,6 +257,11 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         self.add_widget(self.consolegrid)
         self.add_widget(self.bottom_appbar)
 
+        if self.app.layout_mode.compact:
+            self.ui_console = ConsoleView(pos_hint={"x": 0, "y": 0},
+                                          size_hint=(1, 1-(8/Window.height)))
+            self.consolegrid.add_widget(self.ui_console)
+            return
 
         self.important_appbar.size_hint_x = 260/Window.width
         self.important_appbar.size_hint_y=1-(8/Window.height)

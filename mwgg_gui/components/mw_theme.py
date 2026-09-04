@@ -17,7 +17,7 @@ from kivy.core.text import LabelBase
 from kivymd.app import MDApp
 from kivymd.theming import ThemableBehavior
 from kivy.metrics import sp, dp, Metrics
-from kivy.properties import StringProperty, BooleanProperty, BoundedNumericProperty
+from kivy.properties import StringProperty, BoundedNumericProperty
 from kivy.lang import Builder
 from kivy.utils import hex_colormap
 from kivy.core.window import Window
@@ -171,7 +171,6 @@ class DefaultTheme(ThemableBehavior):
     _theme_style_index: int
     _primary_palette: StringProperty
     dynamic_scheme_name: StringProperty
-    compact_mode: BooleanProperty
     _font_scale: BoundedNumericProperty
     app_config: None
     def __init__(self, app_config):
@@ -281,9 +280,6 @@ class DefaultTheme(ThemableBehavior):
         if primary_palette not in valid_palettes:
             primary_palette = THEME_OPTIONS[theme_style][0][0]
         self.primary_palette = primary_palette
-        
-        compact_mode = self.app_config.getboolean('client', 'compact_mode', fallback=False)
-        self.compact_mode = compact_mode
         
         font_scale = self.app_config.get('client', 'font_scale', fallback='1.0')
         self.font_scale = float(font_scale)
@@ -523,6 +519,14 @@ class AutoAdjustHeightBehavior:
         self._update_adjusted_height()
 
 
+def _docked_input_height() -> float:
+    """Compact mode docks the bottom bar's text input above the bar."""
+    try:
+        return MDApp.get_running_app().layout_mode.docked_input
+    except AttributeError:
+        return 0
+
+
 def adjust_height(title_bar: bool=True, 
                   app_bar: bool=True, 
                   bottom_appbar: bool = False, 
@@ -536,7 +540,7 @@ def adjust_height(title_bar: bool=True,
     if app_bar:
         removed_height += dp(60)
     if bottom_appbar:
-        removed_height += dp(82)
+        removed_height += dp(82) + _docked_input_height()
     if custom:
         removed_height += custom
     new_height = Window.height - removed_height

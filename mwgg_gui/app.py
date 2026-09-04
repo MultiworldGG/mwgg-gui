@@ -115,6 +115,7 @@ from Utils import persistent_load
 # from Utils import async_start, get_input_text_from_response
 from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
+from mwgg_gui.components.layout_mode import get_layout_mode, read_compact_mode
 
 from mwgg_gui.components.titlebar import Titlebar
 from mwgg_gui.console.console import ConsoleScreen
@@ -183,6 +184,9 @@ class MultiMDApp(MDApp):
     hint_text_input: BottomBarTextInput
 
     theme_mw: DefaultTheme
+    # Shared LayoutMode (Compact Mode flag, docked-input height); rebind so
+    # kv rules like `app.layout_mode.compact` stay live.
+    layout_mode = ObjectProperty(None, rebind=True)
     top_appbar_menu: MDDropdownMenu
     pixelate_effect: SafeEffectWidget
     ui_console: ObjectProperty
@@ -239,6 +243,9 @@ class MultiMDApp(MDApp):
             self.app_config.write()
 
         RegisterFonts(self, self.app_config.get('client', 'monospace_font', fallback='Argon'))
+
+        self.layout_mode = get_layout_mode()
+        self.layout_mode.compact = read_compact_mode(self.app_config)
 
         self.ctx = ctx
         self.commandprocessor = self.ctx.command_processor(self.ctx)
@@ -306,7 +313,8 @@ class MultiMDApp(MDApp):
             'primary_palette': 'Purple',
             'font_scale': '1.0',
             'monospace_font': 'Argon',
-            'device_orientation': '0',
+            # Portrait window with stacked panes; see components/layout_mode.
+            'compact_mode': '0',
             # Classic (MAIN-style) hint screen is the migration default; the
             # new screen is opt-in. Every read must also pass
             # fallback='classic' -- build_config never runs for a
@@ -352,7 +360,7 @@ class MultiMDApp(MDApp):
 
     def set_opacity(self, dt):
         Window.opacity = 1
-        Window.size = (1100, 700)
+        self.layout_mode.apply_window_geometry()
         Window.clearcolor = [0,0,0,1]
 
     def terminate_splash_screen_wrapper(self):
@@ -624,6 +632,9 @@ class MultiMDApp(MDApp):
         Switch to the named screen, creating it on first use. The bottom
         bars follow the screen manager's current binding.
         '''
+        if item == "admin" and self.layout_mode.compact:
+            logging.getLogger("Client").warning("Admin screen is unavailable in Compact Mode")
+            return
         if item == "admin" and not getattr(self.ctx, "admin", False):
             from mwgg_gui.components.admin_login_dialog import AdminLoginDialog
             AdminLoginDialog(on_success=lambda: self.change_screen("admin")).open()
@@ -685,11 +696,15 @@ class MultiMDApp(MDApp):
         """Instantiate the hint screen variant selected by the client
         hint_screen setting: "classic" -> kvui.ClassicHintScreen when the
         installed core provides it, anything else -> the new HintScreen.
+        Compact Mode always takes the classic table.
 
         fallback='classic' is load-bearing: build_config never runs for a
         pre-existing client.ini, so the key may be missing there."""
         from mwgg_gui.hint.select import resolve_hint_screen_class
-        style = self.app_config.get('client', 'hint_screen', fallback='classic')
+        if self.layout_mode.compact:
+            style = 'classic'
+        else:
+            style = self.app_config.get('client', 'hint_screen', fallback='classic')
         cls = resolve_hint_screen_class(style)
         if cls is not None:
             try:
@@ -917,7 +932,8 @@ class MultiMDApp(MDApp):
         names = live.screen_manager.screen_names
         if "console" not in names:
             return []
-        admin = live.app_config.getboolean('client', 'admin_console', fallback=False)
+        admin = (live.app_config.getboolean('client', 'admin_console', fallback=False)
+                 and not live.layout_mode.compact)
         return nav_entries(names, live._client_tabs, admin)
 
     def refresh_bottom_nav(self) -> None:
@@ -940,6 +956,28 @@ class MultiMDApp(MDApp):
             live.screen_manager.remove_widget(live.screen_manager.get_screen("admin"))
             live.admin_screen = None
         live.refresh_bottom_nav()
+
+    def set_compact_mode(self, enabled: bool) -> None:
+        """Settings hook. The launcher rebuilds its screen for the new
+        layout; a client process keeps the screens it built, so there the
+        persisted value only reaches the next launched client."""
+        if self.role != ROLE_LAUNCHER:
+            return
+        self.layout_mode.compact = enabled
+        self.layout_mode.apply_window_geometry()
+        self._rebuild_launcher_screen()
+        self.settings_screen.apply_compact(enabled)
+
+    def _rebuild_launcher_screen(self) -> None:
+        """Replace the launcher screen (and the YAML creator hanging off
+        it) with a fresh build; the current screen stays where it is."""
+        manager = self.screen_manager
+        for name in ("yaml", "launcher"):
+            if name in manager.screen_names:
+                manager.remove_widget(manager.get_screen(name))
+        self.yaml_screen = None
+        self.launcher_screen = LauncherScreen()
+        manager.add_widget(self.launcher_screen)
 
     def _on_screen_changed(self, manager, name: str) -> None:
         if name != "settings":
@@ -998,6 +1036,10 @@ class MultiMDApp(MDApp):
                     "on_release": on_release}
 
         items = [item("Reconnect", "lan-connect", self.open_connect_dialog)]
+        if self.layout_mode.compact:
+            # The console side pane that carries these toggles is not built.
+            items.append(item("Toggle BK Mode", "food", self.set_bk))
+            items.append(item("Toggle Deafen", "headphones", self.set_deafen))
         if self.screen_manager.current == "settings":
             items.insert(0, item("Back", "arrow-left", self.leave_settings))
         else:

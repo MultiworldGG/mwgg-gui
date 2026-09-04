@@ -15,7 +15,7 @@ import logging
 from kivy.lang import Builder
 from kivy.metrics import dp
 from kivy.properties import ObjectProperty, StringProperty
-from kivymd.uix.navigationdrawer import MDNavigationDrawerMenu
+from kivymd.uix.navigationdrawer import MDNavigationDrawer, MDNavigationDrawerMenu
 from kivymd.uix.navigationdrawer.navigationdrawer import (
     MDNavigationDrawerItem,
     MDNavigationDrawerLabel,
@@ -91,3 +91,9 @@ class NavDrawerItem(MDNavigationDrawerItem):
             logger.debug("Navigation complete")
         except Exception as e:
             logger.error(f"Error during navigation: {e}", exc_info=True)
+        # A modal drawer (Compact Mode) covers the screen it just switched to.
+        drawer = self.parent
+        while drawer is not None and not isinstance(drawer, MDNavigationDrawer):
+            drawer = drawer.parent
+        if drawer is not None and drawer.drawer_type == "modal":
+            drawer.set_state("close")
