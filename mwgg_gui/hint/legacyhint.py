@@ -36,7 +36,6 @@ from kivy.core.text.markup import MarkupLabel
 from kivy.metrics import dp
 from kivy.core.clipboard import Clipboard
 
-import asynckivy
 
 from mwgg_gui.overrides import HoverLabel
 # Import side effect: registers the SelectableRecycleBoxLayout the kv rule names.
@@ -46,7 +45,7 @@ from mwgg_gui.components.columns import (
     ColumnFilterItemClassification, ColumnFilterMulti, ExtraColumn,
     get_extra_columns, register_extra_column as _register_extra_column,
 )
-from mwgg_gui.hint.hint_visibility import resolve_ui_hint_bucket, row_is_visible
+from mwgg_gui.hint.hint_visibility import hidden_payload, is_hidden, with_hidden
 
 import re
 import os
@@ -292,18 +291,11 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
 
     def set_flag(self, flag: MWGGUIHintStatus, active: bool):
         self.flag_status = self.flag_status | flag if active else self.flag_status & ~flag
+        self._send_status(self.flag_status)
+
+    def _send_status(self, status: MWGGUIHintStatus) -> None:
         ctx = App.get_running_app().ctx
-        # CommonContext.update_mwgg_hint replaces the whole key; "update" merges this hint in.
-        asynckivy.start(ctx.send_msgs([{
-            "cmd": "Set",
-            "key": f"hints_{ctx.team}_{ctx.slot}_mwgg",
-            "want_reply": False,
-            "default": {},
-            "operations": [{
-                "operation": "update",
-                "value": {f"{self.hint['finding_player']}_{self.hint['location']}": self.flag_status.value},
-            }],
-        }]))
+        ctx.update_mwgg_hints({f"{self.hint['finding_player']}_{self.hint['location']}": int(status)})
 
     def open_flags_dropdown(self):
         open_toggle_dropdown(self.ids["flags"], [{
@@ -312,15 +304,17 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
             "on_toggle": lambda active, flag=flag: self.set_flag(flag, active),
         } for flag in mwggstatus_names])
 
-    def toggle_visible(self):
-        """Flip this hint's hide state, shared with the new hint screen via UIHint.hide."""
-        app = App.get_running_app()
-        bucket_key = resolve_ui_hint_bucket(self.hint, app.ctx.slot_concerns_self)
-        bucket = app.ui_hint_data.get(bucket_key) if bucket_key is not None else None
-        ui_hint = bucket.get(self.hint["location"]) if bucket is not None else None
-        if ui_hint is not None:
-            ui_hint.hide = not ui_hint.hide
-        app.hint_screen.update_hints_list()
+    def hide_row(self):
+        """Set this hint's client-owned hidden flag; the SetReply re-renders the table without it."""
+        self._send_status(MWGGUIHintStatus(with_hidden(self.flag_status, True)))
+
+    def fit_height(self, *_args) -> None:
+        """Size the sticky header to its cells' rendered text. The header is built
+        before the table has its width, so texts wrap and the grow-only
+        set_height pins a tall row; this shrinks it back once textures settle."""
+        cells = [child for child in self.children if hasattr(child, "texture_size")]
+        text_height = max((child.texture_size[1] for child in cells), default=0) + dp(8)
+        self.height = max(self.minimum_height, text_height)
 
     def refresh_view_attrs(self, rv, index, data):
         self.index = index
@@ -379,7 +373,7 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
         if self.ids["visible"].collide_point(*touch.pos):
             if found:
                 return True
-            self.toggle_visible()
+            self.hide_row()
             return True
         if self.selected:
             self.parent.clear_selection()
@@ -438,7 +432,7 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         "status": {"text": "[u]Status[/u]",
                    "hint": {"receiving_player": -1, "location": -1, "finding_player": -1, "status": ""}},
         "flags": {"text": "[u]Flags[/u]", "names": [], "status": MWGGUIHintStatus.HINT_UNSPECIFIED},
-        "visible": {"text": "[u]Visible[/u]", "hidden": False},
+        "visible": {"text": "[u]Visible[/u]"},
         "striped": True,
     }
     data: list[typing.Any]
@@ -450,6 +444,7 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         self.data = []
         self.parser = parser
         self.rows = []
+        self.hints = []
         self.extra_columns = get_extra_columns()
         if self.extra_columns:
             self.header = {**self.header, **{
@@ -501,6 +496,16 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         """
         _register_extra_column(column)
 
+    def set_all_hidden(self, hidden: bool) -> None:
+        """Flip the client-owned hidden flag on every hint at once (the toolbar switch)."""
+        app = App.get_running_app()
+        if app is None or not self.hints:
+            return
+        ctx = app.ctx
+        mwgg_hints = ctx.stored_data.get(f"hints_{ctx.team}_{ctx.slot}_mwgg", {}) or {}
+        keys = [f"{hint['finding_player']}_{hint['location']}" for hint in self.hints]
+        ctx.update_mwgg_hints(hidden_payload(keys, mwgg_hints, hidden))
+
     def _build_header(self) -> HintLabel:
         cls = self.viewclass
         if isinstance(cls, str):
@@ -508,6 +513,9 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         header = cls()
         header.log = self
         header.refresh_view_attrs(self, None, self.header)
+        for cell in header.children:
+            cell.bind(texture_size=header.fit_height)
+        header.fit_height()
         return header
 
     def pop_filter_dropdown_for(self, key: str, data: list[typing.Any], caller,
@@ -528,17 +536,15 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         ctx = app.ctx
         if mwgg_hints is None:
             mwgg_hints = ctx.stored_data.get(f"hints_{ctx.team}_{ctx.slot}_mwgg", {}) or {}
-        show_all = bool(getattr(app, "show_all_hints", False))
+        self.hints = hints
         rows = []
         for hint in hints:
             if not hint.get("status"): # Allows connecting to old servers
                 hint["status"] = HintStatus.HINT_FOUND if hint["found"] else HintStatus.HINT_UNSPECIFIED
             editable = hint["status"] != HintStatus.HINT_FOUND and ctx.slot_concerns_self(hint["receiving_player"])
-            bucket_key = resolve_ui_hint_bucket(hint, ctx.slot_concerns_self)
-            bucket = app.ui_hint_data.get(bucket_key) if bucket_key is not None else None
-            ui_hint = bucket.get(hint["location"]) if bucket is not None else None
-            # "row_hidden" (the user's hide toggle) vs hint["hidden"] (spoiler-hidden location/entrance text).
-            row_hidden = bool(ui_hint.hide) if ui_hint is not None else False
+            mwgg_status = MWGGUIHintStatus(mwgg_hints.get(f"{hint['finding_player']}_{hint['location']}") or 0)
+            if is_hidden(mwgg_status):
+                continue
             item_flags = hint["item_flags"]
             if hint.get("item_hidden"):
                 item_text = f"Hidden ({get_item_classification_label(item_flags)})"
@@ -552,7 +558,6 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
             status_text = self.parser.handle_node({"type": "color",
                                                    "color": status_colors.get(hint["status"], "red"),
                                                    "text": status_names.get(hint["status"], "Unknown")})
-            mwgg_status = MWGGUIHintStatus(mwgg_hints.get(f"{hint['finding_player']}_{hint['location']}") or 0)
             flags = mwgg_flags(mwgg_status)
             flags_text = ", ".join(self.parser.handle_node({"type": "color",
                                                             "color": mwggstatus_colors[flag],
@@ -576,28 +581,14 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
                              if not hint.get("hidden") else "Hidden"},
                 "status": {"text": status_text, "hint": hint},
                 "flags": {"text": flags_text, "names": [mwggstatus_names[flag] for flag in flags], "status": mwgg_status},
-                "visible": {"text": self.parser.handle_node({"type": "color",
-                                                             "color": "trap_item_color" if row_hidden else "default_color",
-                                                             "text": "Hidden" if row_hidden else "Visible"}),
-                            "hidden": row_hidden},
+                "visible": {"text": "Hide" if hint["status"] == HintStatus.HINT_FOUND else "[u]Hide[/u]"},
             }
             for column in self.extra_columns:
                 column.build_value(hint, row)
             rows.append(row)
 
         self.rows = rows
-        visible_rows = [row for row in rows if row_is_visible(row["visible"]["hidden"], show_all)]
-        # "show everything" also overrides the Status filter's default Found denylist.
-        status_filter = self.get_filter("status")
-        found_label = status_names[HintStatus.HINT_FOUND]
-        reveal_found = show_all and status_filter is not None and found_label in status_filter.filter_denylist
-        if reveal_found:
-            status_filter.filter_denylist.discard(found_label)
-        try:
-            data = self.filter_columns(visible_rows)
-        finally:
-            if reveal_found:
-                status_filter.filter_denylist.add(found_label)
+        data = self.filter_columns(rows)
         self.sort_columns(data)
 
         for i in range(0, len(data), 2):
@@ -609,23 +600,21 @@ class HintLayout(MDBoxLayout):
     orientation = "vertical"
 
     def add_widget(self, widget, *args, **kwargs):
-        # The show-all toolbar and header sit above the recycle view so they never scroll away.
+        # The visibility toolbar and header sit above the recycle view so they never scroll away.
         if isinstance(widget, HintLog):
-            super().add_widget(self._build_toolbar())
+            super().add_widget(self._build_toolbar(widget))
             super().add_widget(widget.header_widget)
         return super().add_widget(widget, *args, **kwargs)
 
     @staticmethod
-    def _build_toolbar() -> MDBoxLayout:
-        """Eye/eye-off switch, same semantics as the new hint screen's: on reveals
-        hidden rows and found hints, off restores the per-row/Status filtering."""
-        app = App.get_running_app()
-        switch = MDSwitch(
-            icon_inactive="eye-off",
-            icon_active="eye",
-            active=bool(getattr(app, "show_all_hints", False)),
-            on_active=lambda _inst, active: setattr(app, "show_all_hints", active),
-        )
+    def _build_toolbar(log: HintLog) -> MDBoxLayout:
+        """Eye switch: on marks every hint visible, off marks every hint hidden;
+        rows then hide one at a time through their Hide cell."""
+        # active is set after construction: passing it as a kwarg fires on_active
+        # before the switch has built its ids.
+        switch = MDSwitch(icon_inactive="eye-off", icon_active="eye")
+        switch.active = True
+        switch.bind(active=lambda _inst, active: log.set_all_hidden(not active))
         return MDBoxLayout(switch, size_hint_y=None, height=dp(40), padding=[dp(8), dp(4)])
 
 

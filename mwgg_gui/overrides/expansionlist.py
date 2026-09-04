@@ -441,7 +441,7 @@ class HintListItem(RecycleDataViewBehavior, BoxLayout, BackgroundColorBehavior, 
     def on_hide(hint_instance, value):
         """Handle hide checkbox change"""
         if hint_instance.hint_data:
-            hint_instance.hint_data.hide = value
+            HintListItem._toggle_mwgg_flag_and_update(hint_instance, 0b1000, value)
             # return if it's already hidden (no removal animation needed)
             try:
                 weak_class_name = hint_instance.__class__.__name__

@@ -1,28 +1,23 @@
-"""Pure hint-visibility logic shared by the classic and new hint screens.
+"""Kivy-free helpers for the classic hint table's client-owned hidden flag.
 
-Deliberately import-light (no kivy) so tests load it by file path, same as
-columns.py.
+Hidden lives in this client's ``hints_{team}_{slot}_mwgg`` datastore entry as
+``MWGGUIHintStatus.HINT_HIDDEN`` next to the shop/goal/BK flags, so the console
+sidebar and both hint screens read one state. Loaded by file path in tests.
 """
 from __future__ import annotations
 
-import typing
+HINT_HIDDEN = 0b1000  # NetUtils.MWGGUIHintStatus.HINT_HIDDEN
 
 
-def resolve_ui_hint_bucket(hint: dict, slot_concerns_self: typing.Callable[[int], bool]) -> typing.Optional[int]:
-    """The app.ui_hint_data bucket key ("other player") for a raw server hint dict.
-
-    Mirrors MultiMDApp.refresh_hints's own bucketing so a hint row resolves to
-    the same UIHint the new hint screen's hide checkbox edits. Returns None if
-    neither side of the hint concerns this slot (should not happen for rows
-    coming from ``_read_hints_{team}_{slot}``).
-    """
-    if slot_concerns_self(hint["receiving_player"]):
-        return hint["finding_player"]
-    if slot_concerns_self(hint["finding_player"]):
-        return hint["receiving_player"]
-    return None
+def is_hidden(status: int) -> bool:
+    return bool(int(status) & HINT_HIDDEN)
 
 
-def row_is_visible(hidden: bool, show_all: bool) -> bool:
-    """Whether a hint row should render, matching the new screen's ``not hint.hide or show_all``."""
-    return show_all or not hidden
+def with_hidden(status: int, hidden: bool) -> int:
+    status = int(status)
+    return status | HINT_HIDDEN if hidden else status & ~HINT_HIDDEN
+
+
+def hidden_payload(keys, mwgg_hints: dict, hidden: bool) -> dict[str, int]:
+    """One Set/update value flipping every key's hidden bit and keeping its other flags."""
+    return {key: with_hidden(mwgg_hints.get(key) or 0, hidden) for key in keys}
