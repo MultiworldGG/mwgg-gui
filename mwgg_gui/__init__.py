@@ -66,6 +66,5 @@ from .overrides.imageloader import ApAsyncImage, register_url_scheme  # noqa: F4
 from .constants import (
     ROLE_LAUNCHER,
     ROLE_CLIENT,
-    CONSOLE_ACTIONS,
-    LAUNCHER_ACTIONS,
+    TEXT_INPUT_ACTIONS,
 )

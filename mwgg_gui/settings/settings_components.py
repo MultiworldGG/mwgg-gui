@@ -998,12 +998,29 @@ class InterfaceSettings(SettingsScrollBox):
             on_select=self.on_hint_screen_select
         ))
 
+        nav_section = SettingsSection(name="navigation_settings", title="Navigation")
+        nav_section.add_widget(LabeledSwitch(
+            text="Text Nav Buttons",
+            theme_text_color="Secondary",
+            active=self.app.app_config.get(
+                'client', 'bottom_nav_style', fallback='icons'
+            ).strip().lower() == "text",
+            on_switch=self.toggle_bottom_nav_text
+        ))
+        nav_section.add_widget(LabeledSwitch(
+            text="Admin Console",
+            theme_text_color="Secondary",
+            active=self.app.app_config.getboolean('client', 'admin_console', fallback=False),
+            on_switch=self.toggle_admin_console
+        ))
+
         # Add all sections to the layout
         self.layout.add_widget(display_section)
         self.layout.add_widget(layout_section)
         self.layout.add_widget(scroll_section)
         self.layout.add_widget(age_filter_section)
         self.layout.add_widget(hint_section)
+        self.layout.add_widget(nav_section)
     
     def toggle_fullscreen(self, instance, value):
         def fullscreen_to_string(value: bool) -> str:
@@ -1049,6 +1066,22 @@ class InterfaceSettings(SettingsScrollBox):
             self.app.set_hint_screen_style(style)
         except Exception as e:
             logger.error(f"Error in on_hint_screen_select: {e}", exc_info=True)
+
+    def toggle_bottom_nav_text(self, instance, value):
+        try:
+            self.app.app_config.set('client', 'bottom_nav_style', "text" if value else "icons")
+            self.app.app_config.write()
+            self.app.refresh_bottom_nav()
+        except Exception as e:
+            logger.error(f"Error in toggle_bottom_nav_text: {e}", exc_info=True)
+
+    def toggle_admin_console(self, instance, value):
+        try:
+            self.app.app_config.set('client', 'admin_console', str(value))
+            self.app.app_config.write()
+            self.app.set_admin_console_enabled(value)
+        except Exception as e:
+            logger.error(f"Error in toggle_admin_console: {e}", exc_info=True)
 
     def scroll_lines_change(self, instance, value):
         """Handle scroll lines slider change"""

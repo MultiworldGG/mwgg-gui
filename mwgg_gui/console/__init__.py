@@ -9,3 +9,6 @@ from .textconsole import (
     TextConsole,
     ConsoleView,
 )
+from .adminscreen import (
+    AdminScreen,
+)

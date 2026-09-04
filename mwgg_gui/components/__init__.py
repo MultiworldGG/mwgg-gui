@@ -13,6 +13,9 @@ from .dialog import (
 from .connect_dialog import (
     ConnectDialog,
 )
+from .admin_login_dialog import (
+    AdminLoginDialog,
+)
 from .guidataclasses import (
     UIHint,
     UIPlayerData,
