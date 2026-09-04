@@ -11,6 +11,7 @@ from __future__ import annotations
 __all__ = (
     "Titlebar",
     "TitleBarButton",
+    "LiveTitleMeta",
 )
 from kivy.core.window import Window
 
@@ -103,6 +104,23 @@ class TitleBlur(SafeEffectWidget):
 
 class TitleBarButton(MDIconButton):
     pass
+
+class LiveTitleMeta(type):
+    """Route class-level ``base_title`` writes onto the live app instance.
+
+    ``ctx.make_gui()`` hands worlds the live app's own class, and the
+    upstream idiom ``ui.base_title = "..."`` then assigns on it; a plain
+    assignment would replace the StringProperty with a str and silence
+    its bindings. Without a live instance the write falls through.
+    """
+
+    def __setattr__(cls, name, value):
+        if name == "base_title" and isinstance(value, str):
+            live = cls._active_instance
+            if live is not None:
+                live.base_title = value
+                return
+        super().__setattr__(name, value)
 
 class Titlebar(MDBoxLayout):
     ''' 
