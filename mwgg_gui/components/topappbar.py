@@ -53,6 +53,8 @@ Builder.load_string('''
 <Timer>:
 
 <ServerLabel>:
+    text_size: self.width, None
+    adaptive_height: True
 
 <EnergyLinkLabel>:
 
@@ -61,6 +63,9 @@ Builder.load_string('''
 <TopAppBarLayout>:
 
 <TopAppBar>:
+    # Base "small" height (see kivymd's <MDTopAppBar> rule) plus room for the
+    # server title wrapping onto more than one line.
+    height: max(dp(64), server_info_label.height + dp(16))
     MDTopAppBarLeadingButtonContainer:
         MDActionTopAppBarButton:
             icon: "menu"
@@ -245,7 +250,6 @@ class ServerLabel(MDTooltip, MDTopAppBarTitle):
     _game_info: StringProperty
     game_pages: ListProperty
     current_page: NumericProperty
-    initial_height: NumericProperty
     _connected: BooleanProperty(False)
 
     def __init__(self, **kwargs):
@@ -264,21 +268,6 @@ class ServerLabel(MDTooltip, MDTopAppBarTitle):
         self.tooltip = None  # Single tooltip instance
         self.tooltip_display_delay = 0  # This is a delay, it does not verify hovering
         self._update_tooltip_content()
-
-    def on_texture_size(self, instance, size):
-        """Step the title role down when the text renders taller than the
-        first text this label held. Runs on texture_size, not text: on_text
-        fires before the texture re-renders, and the construction-time
-        texture is 0x0."""
-        if size[1] <= 0:
-            return
-        if not hasattr(self, 'initial_height'):
-            self.initial_height = size[1]
-            return
-        if size[1] > self.initial_height and self.role == "large":
-            self.role = "medium"
-        elif size[1] > self.initial_height and self.role == "medium":
-            self.role = "small"
 
     def _update_tooltip_content(self):
         """Update the tooltip widgets based on current state"""

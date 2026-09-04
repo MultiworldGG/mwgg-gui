@@ -7,8 +7,8 @@ from __future__ import annotations
 
 __all__ = ("ADMIN_COMMANDS", "available_admin_commands", "admin_say_line",
            "complete_admin_command", "OPTION_SPECS", "STATUS_TAGS", "option_entries",
-           "parse_status_reply", "tagged_players", "status_name", "player_display_name",
-           "format_last_activity", "format_session_time")
+           "parse_status_reply", "tagged_players", "player_display_name", "player_state",
+           "state_icon", "enrich_player_rows", "format_session_time")
 
 import re
 from datetime import datetime
@@ -129,7 +129,11 @@ _STATUS_LINE = re.compile(
     r"(?: and (?P<state>has finished|is ready))?\. \((?P<checks>\d+)/(?P<total>\d+)\)$")
 _STATUS_STATES = {"has finished": "goal", "is ready": "ready"}
 
-_STATUS_NAMES = {0: "Unknown", 5: "Connected", 10: "Ready", 20: "Playing", 30: "Goal"}
+# NetUtils.ClientStatus values that map to a distinct player state.
+_GOAL_STATUS = 30
+_READY_STATUS = 10
+_STATE_ICONS = {"goal": "flag-checkered", "ready": "account-check",
+                "connected": "check-circle", "disconnected": "lan-disconnect"}
 
 
 def option_entries(payload=None, *, hint_cost=None, check_points=None,
@@ -183,27 +187,46 @@ def tagged_players(players) -> int:
     return sum(1 for player in players if player.get("tagged"))
 
 
-def status_name(value) -> str:
-    return _STATUS_NAMES.get(value, str(value))
-
-
 def player_display_name(row: dict) -> str:
     name = row.get("name", "")
     alias = row.get("alias") or name
     return name if alias == name else f"{alias} ({name})"
 
 
-def format_last_activity(timestamp, now: float) -> str:
-    if not timestamp:
-        return "never"
-    seconds = max(0, int(now - timestamp))
-    if seconds < 60:
-        return "just now"
-    if seconds < 3600:
-        return f"{seconds // 60}m ago"
-    if seconds < 86400:
-        return f"{seconds // 3600}h {seconds % 3600 // 60}m ago"
-    return f"{seconds // 86400}d ago"
+def player_state(row: dict) -> str:
+    """One of "goal", "ready", "connected", "disconnected": goal beats
+    ready beats the connection flag, matching both /players status ints
+    (NetUtils.ClientStatus) and the /status fallback's mapped status."""
+    status = row.get("status")
+    if status == _GOAL_STATUS:
+        return "goal"
+    if status == _READY_STATUS:
+        return "ready"
+    return "connected" if row.get("connected") else "disconnected"
+
+
+def state_icon(state: str) -> str:
+    return _STATE_ICONS.get(state, "help-circle-outline")
+
+
+def enrich_player_rows(rows, slot_info, player_names) -> list[dict]:
+    """Fill in "game" for rows the server didn't send it for, from the
+    client's own connection state: by "slot" when the row carries one (the
+    /players payload), else by matching the row's name against
+    player_names, whose values are formatted the same way as the /status
+    fallback's names (both come from MultiServer.get_aliased_name)."""
+    name_to_slot = {name: slot for slot, name in player_names.items()}
+    enriched = []
+    for row in rows:
+        if row.get("game"):
+            enriched.append(row)
+            continue
+        slot = row.get("slot")
+        if slot is None:
+            slot = name_to_slot.get(row.get("name"))
+        game = slot_info[slot].game if slot in slot_info else ""
+        enriched.append({**row, "game": game})
+    return enriched
 
 
 def format_session_time(start: float, now: float) -> tuple[str, str]:
