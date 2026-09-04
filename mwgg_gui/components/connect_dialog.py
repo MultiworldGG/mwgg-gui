@@ -92,11 +92,11 @@ class ConnectDialog(MDDialog):
             MDDialogContentContainer(fields),
             MDDialogButtonContainer(
                 MDButton(
-                    MDButtonText(text="CANCEL"),
+                    MDButtonText(text="Cancel"),
                     on_release=lambda *_: self.dismiss(),
                 ),
                 MDButton(
-                    MDButtonText(text="RECONNECT"),
+                    MDButtonText(text="Reconnect"),
                     on_release=lambda *_: self._confirm(),
                 ),
                 spacing=dp(8),
@@ -123,8 +123,8 @@ class ConnectDialog(MDDialog):
         ctx.password = password
 
         if username:
-            colon = ":" if password else ""
-            address = f"{username}{colon}{password}@{host}:{port}"
+            # the colon is necessary regardless of whether there's a password or not
+            address = f"{username}:{password}@{host}:{port}"
         else:
             address = f"{host}:{port}"
 
