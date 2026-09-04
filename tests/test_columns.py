@@ -123,3 +123,68 @@ def test_mixins_cooperate_with_kwargs_chain():
     assert host.base_saw == 1
     assert host.column_sorters == []
     assert host.column_filters == []
+
+
+def test_build_menu_items_toggles_denylist():
+    filt = columns.ColumnFilter("status", lambda row: row["status"])
+    filt.filter_denylist.add("Found")
+    items = filt.build_menu_items([{"status": "Priority"}])
+    assert [(i["text"], i["active"]) for i in items] == [("Found", False), ("Priority", True)]
+
+    items[0]["on_toggle"](True)
+    assert "Found" not in filt.filter_denylist
+    items[1]["on_toggle"](False)
+    assert filt.filter_denylist == {"Priority"}
+
+
+def test_multi_filter_matches_any_value():
+    filt = columns.ColumnFilterMulti("flags", lambda row: row.get("flags"))
+    rows = [{"flags": ["Goal", "Shop"]}, {"flags": ["BK Mode"]}, {"flags": []}]
+    assert all(filt.filter_data(row) for row in rows)
+    assert filt.filter_data({}) is True
+
+    filt.filter_denylist.add("Shop")
+    assert [filt.filter_data(row) for row in rows] == [False, True, True]
+
+    filt.filter_denylist.clear()
+    filt.filter_allowlist.add("Goal")
+    assert [filt.filter_data(row) for row in rows] == [True, False, False]
+    # No value at all only passes while nothing is allowlisted.
+    assert filt.filter_data({}) is False
+
+
+def test_multi_filter_menu_names_merge_options_and_row_values():
+    filt = columns.ColumnFilterMulti("flags", lambda row: row["flags"])
+    filt.option_list = {"None"}
+    filt.filter_denylist.add("Shop")
+    names = filt.get_basic_menu_names([{"flags": ["Goal", "BK Mode"]}, {"flags": []}])
+    assert names == ["BK Mode", "Goal", "None", "Shop"]
+
+
+def test_item_classification_filter_flags_and_names():
+    filt = columns.ColumnFilterItemClassification(
+        "item", lambda row: row["name"], lambda row: row["flags"])
+    rows = [{"name": "Sword", "flags": 0b001}, {"name": "Bomb", "flags": 0b100},
+            {"name": "Rupee", "flags": 0}]
+    assert all(filt.filter_data(row) for row in rows)
+
+    items = filt.build_menu_items(rows)
+    assert [i["text"] for i in items] == [
+        "Req. Progression", "Req. Useful", "Req. Trap",
+        "Hide Progression", "Hide Useful", "Hide Trap", "Hide Filler",
+        "Bomb", "Rupee", "Sword"]
+
+    items[0]["on_toggle"](True)  # Req. Progression
+    assert filt.req_flags == 0b001
+    assert [filt.filter_data(row) for row in rows] == [True, False, False]
+    items[0]["on_toggle"](False)
+
+    items[5]["on_toggle"](True)  # Hide Trap
+    assert [filt.filter_data(row) for row in rows] == [True, False, True]
+    items[6]["on_toggle"](True)  # Hide Filler
+    assert [filt.filter_data(row) for row in rows] == [True, False, False]
+    items[6]["on_toggle"](False)
+    items[5]["on_toggle"](False)
+
+    items[9]["on_toggle"](False)  # deny the name "Sword"
+    assert [filt.filter_data(row) for row in rows] == [False, True, True]

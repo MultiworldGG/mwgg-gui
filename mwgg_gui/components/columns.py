@@ -98,6 +98,115 @@ class ColumnFilter:
                 shown_values.add(value)
         return sorted(shown_values)
 
+    def build_menu_items(self, data: list[typing.Any]) -> list[dict]:
+        """Toggle entries for a filter menu: ``{"text", "active", "on_toggle"}``,
+        where on_toggle(active) moves the name out of / into the denylist."""
+        menu_items = []
+        for name in self.get_basic_menu_names(data):
+            def toggle(active: bool, name=name) -> None:
+                if active:
+                    self.filter_denylist.discard(name)
+                else:
+                    self.filter_denylist.add(name)
+            menu_items.append({
+                "text": name,
+                "active": name not in self.filter_denylist,
+                "on_toggle": toggle,
+            })
+        return menu_items
+
+
+class ColumnFilterMulti(ColumnFilter):
+    """Filter for a column whose rows carry several values at once (the hint
+    flags column); str_conv_func returns an iterable of names."""
+
+    def _values(self, value: typing.Any) -> set[str] | None:
+        if self.str_conv_func:
+            value = self.str_conv_func(value)
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return {value}
+        return set(value)
+
+    def filter_data(self, value: typing.Any) -> bool:
+        values = self._values(value)
+        if values is None:
+            return not self.filter_allowlist
+        if self.filter_allowlist and not values & self.filter_allowlist:
+            return False
+        return not values & self.filter_denylist
+
+    def get_basic_menu_names(self, data: list[typing.Any]) -> list[str]:
+        shown_values = self.option_list | self.filter_denylist
+        for value in data:
+            values = self._values(value)
+            if values:
+                shown_values.update(values)
+        return sorted(shown_values)
+
+
+class ColumnFilterItemClassification(ColumnFilter):
+    """Item-column filter with required / hidden classification bits on top of
+    the plain name filter (upstream kvui)."""
+    req_flags: int = 0
+    hide_flags: int = 0
+    hide_filler: bool = False
+    iclass_conv_func: typing.Callable[[typing.Any], int | None] | None
+
+    _flags = (
+        ("Progression", 0b001),
+        ("Useful", 0b010),
+        ("Trap", 0b100),
+    )
+
+    def __init__(self, key: str, str_conv_func: typing.Callable[[typing.Any], str | None] | None = None,
+                 iclass_conv_func: typing.Callable[[typing.Any], int | None] | None = None):
+        super().__init__(key, str_conv_func)
+        self.iclass_conv_func = iclass_conv_func
+
+    def build_menu_items(self, data: list[typing.Any]) -> list[dict]:
+        menu_items = []
+        for name, bit in self._flags:
+            def toggle_req(active: bool, bit=bit) -> None:
+                self.req_flags = self.req_flags | bit if active else self.req_flags & ~bit
+            menu_items.append({
+                "text": f"Req. {name}",
+                "active": bool(self.req_flags & bit),
+                "on_toggle": toggle_req,
+            })
+        for name, bit in self._flags:
+            def toggle_hide(active: bool, bit=bit) -> None:
+                self.hide_flags = self.hide_flags | bit if active else self.hide_flags & ~bit
+            menu_items.append({
+                "text": f"Hide {name}",
+                "active": bool(self.hide_flags & bit),
+                "on_toggle": toggle_hide,
+            })
+        menu_items.append({
+            "text": "Hide Filler",
+            "active": self.hide_filler,
+            "on_toggle": lambda active: setattr(self, "hide_filler", active),
+        })
+        menu_items.extend(super().build_menu_items(data))
+        return menu_items
+
+    def filter_classification(self, value: int) -> bool:
+        if self.hide_filler and not value:
+            return False
+        if value & self.req_flags != self.req_flags:
+            return False
+        if value & self.hide_flags:
+            return False
+        return True
+
+    def filter_data(self, value: typing.Any) -> bool:
+        if self.iclass_conv_func:
+            classification = self.iclass_conv_func(value)
+            if not self.filter_classification(classification or 0):
+                return False
+        return super().filter_data(value)
+
 
 class ColumnFilterMixin:
     column_filters: list[ColumnFilter]

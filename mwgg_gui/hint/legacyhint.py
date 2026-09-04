@@ -1,37 +1,49 @@
 from __future__ import annotations
 __all__ = ("HintTooltipLabel",
+           "FixedMDDropdownMenu",
            "MarkupDropdown",
            "HintLog",
            "HintLabel",
            "HintLayout",
            "RefToolTip",
-           "status_names", 
-           "status_colors", 
+           "status_names",
+           "status_colors",
            "status_sort_weights",
-           "status_icons", 
+           "status_icons",
+           "mwggstatus_names",
+           "mwggstatus_colors",
+           "mwggstatus_icons",
+           "mwggstatus_sort_weights",
+           "mwgg_flags",
+           "open_toggle_dropdown",
            "remove_between_brackets",
            )
 
-from NetUtils import HintStatus, MWGGUIHintStatus, TEXT_COLORS
+from NetUtils import HintStatus, MWGGUIHintStatus, get_item_classification_label
 
-from kivy.properties import StringProperty, BooleanProperty
+from kivy.properties import BooleanProperty
 from kivy.app import App
+from kivy.core.window import Window
+from kivy.factory import Factory
 from kivy.lang import Builder
-from kivy.clock import Clock
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
 from kivymd.uix.recycleview import MDRecycleView
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.menu.menu import MDDropdownMenu
 from kivymd.uix.tooltip import MDTooltip, MDTooltipPlain
-from kivymd.uix.label import MDLabel
-from kivymd.uix.behaviors import HoverBehavior
 from kivy.core.text.markup import MarkupLabel
 from kivy.metrics import dp
-from kivy.utils import escape_markup
 from kivy.core.clipboard import Clipboard
 
+import asynckivy
+
 from mwgg_gui.overrides import HoverLabel
-from mwgg_gui.components.columns import *
+# Import side effect: registers the SelectableRecycleBoxLayout the kv rule names.
+from mwgg_gui.legacy import SelectableRecycleBoxLayout
+from mwgg_gui.components.columns import (
+    ColumnSorter, ColumnSortMixin, ColumnFilter, ColumnFilterMixin,
+    ColumnFilterItemClassification, ColumnFilterMulti,
+)
 
 import re
 import os
@@ -62,6 +74,41 @@ status_sort_weights: dict[HintStatus, int] = {
     HintStatus.HINT_AVOID: 3,
     HintStatus.HINT_PRIORITY: 4,
 }
+status_icons: typing.Dict[HintStatus, str] = {
+    HintStatus.HINT_NO_PRIORITY: "information",
+    HintStatus.HINT_PRIORITY: "exclamation-thick",
+    HintStatus.HINT_AVOID: "alert",
+}
+
+# Dict order is the display order: BK Mode outranks Goal outranks Shop.
+mwggstatus_names: typing.Dict[MWGGUIHintStatus, str] = {
+    MWGGUIHintStatus.HINT_BK_MODE: "BK Mode",
+    MWGGUIHintStatus.HINT_GOAL: "Goal",
+    MWGGUIHintStatus.HINT_SHOP: "Shop",
+}
+mwggstatus_colors: typing.Dict[MWGGUIHintStatus, str] = {
+    MWGGUIHintStatus.HINT_BK_MODE: "trap_item_color",
+    MWGGUIHintStatus.HINT_GOAL: "progression_item_color",
+    MWGGUIHintStatus.HINT_SHOP: "regular_item_color",
+}
+mwggstatus_icons: typing.Dict[MWGGUIHintStatus, str] = {
+    MWGGUIHintStatus.HINT_BK_MODE: "food",
+    MWGGUIHintStatus.HINT_GOAL: "flag-checkered",
+    MWGGUIHintStatus.HINT_SHOP: "shopping",
+}
+mwggstatus_sort_weights: dict[MWGGUIHintStatus, int] = {
+    MWGGUIHintStatus.HINT_BK_MODE: 0,
+    MWGGUIHintStatus.HINT_GOAL: 1,
+    MWGGUIHintStatus.HINT_SHOP: 2,
+    MWGGUIHintStatus.HINT_UNSPECIFIED: 3,
+}
+NO_FLAGS = "None"
+
+
+def mwgg_flags(status: MWGGUIHintStatus) -> list[MWGGUIHintStatus]:
+    """Flags set in ``status``, in display order."""
+    return [flag for flag in mwggstatus_names if status & flag]
+
 
 class RefToolTip(MDTooltipPlain):
     pass
@@ -102,119 +149,156 @@ class HintTooltipLabel(HoverLabel, MDTooltip):
         self.remove_tooltip()
         self._tooltip = None
 
-class MarkupDropdown(MDDropdownMenu):
-    def on_items(self, instance, value: list) -> None:
-        """
-        The method sets the class that will be used to create the menu item.
-        """
 
-        items = []
-        viewclass = "MDDropdownTextItem"
+class FixedMDDropdownMenu(MDDropdownMenu):
+    """MDDropdownMenu that stays inside the window.
 
-        for data in value:
-            if "viewclass" not in data:
-                if (
-                    "leading_icon" not in data
-                    and "trailing_icon" not in data
-                    and "trailing_text" not in data
-                ):
-                    viewclass = "MDDropdownTextItem"
-                elif (
-                    "leading_icon" in data
-                    and "trailing_icon" not in data
-                    and "trailing_text" not in data
-                ):
-                    viewclass = "MDDropdownLeadingIconItem"
-                elif (
-                    "leading_icon" not in data
-                    and "trailing_icon" in data
-                    and "trailing_text" not in data
-                ):
-                    viewclass = "MDDropdownTrailingIconItem"
-                elif (
-                    "leading_icon" not in data
-                    and "trailing_icon" in data
-                    and "trailing_text" in data
-                ):
-                    viewclass = "MDDropdownTrailingIconTextItem"
-                elif (
-                    "leading_icon" in data
-                    and "trailing_icon" in data
-                    and "trailing_text" in data
-                ):
-                    viewclass = "MDDropdownLeadingTrailingIconTextItem"
-                elif (
-                    "leading_icon" in data
-                    and "trailing_icon" in data
-                    and "trailing_text" not in data
-                ):
-                    viewclass = "MDDropdownLeadingTrailingIconItem"
-                elif (
-                    "leading_icon" not in data
-                    and "trailing_icon" not in data
-                    and "trailing_text" in data
-                ):
-                    viewclass = "MDDropdownTrailingTextItem"
-                elif (
-                    "leading_icon" in data
-                    and "trailing_icon" not in data
-                    and "trailing_text" in data
-                ):
-                    viewclass = "MDDropdownLeadingIconTrailingTextItem"
+    KivyMD 2.0.0 picks the growth direction while the menu still has its
+    100px placeholder width and only then widens it to 240dp, so a caller
+    near the right edge overflows; it also treats "no room either way" as
+    one side. Growth is chosen per axis from the real size, centering on
+    the caller when neither side fits.
+    """
 
-                data["viewclass"] = viewclass
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.width <= 100:
+            self.width = dp(240)
+        self._initial_width = self.width
 
-            items.append(data)
+    def check_ver_growth(self) -> None:
+        margin = self.border_margin
+        bad_down = self.target_height > self._start_coords[1] - margin
+        bad_up = self.target_height > Window.height - self._start_coords[1] - margin
+        if bad_down and bad_up:
+            self.ver_growth = None
+        elif bad_down:
+            self.ver_growth = "up"
+        else:
+            self.ver_growth = "down"
 
-        self._items = items
-        # Update items in view
-        if hasattr(self, "menu"):
-            self.menu.data = self._items
+    def check_hor_growth(self) -> None:
+        margin = self.border_margin
+        bad_right = self.width > Window.width - self._start_coords[0] - margin
+        bad_left = self.width > self._start_coords[0] - margin
+        if bad_right and bad_left:
+            self.hor_growth = None
+        elif bad_right:
+            self.hor_growth = "left"
+        else:
+            self.hor_growth = "right"
 
-status_icons = {
-    HintStatus.HINT_NO_PRIORITY: "information",
-    HintStatus.HINT_PRIORITY: "exclamation-thick",
-    HintStatus.HINT_AVOID: "alert"
-}
+    def get_target_pos(self) -> tuple[float, float]:
+        x, y = self._start_coords
+        if self.ver_growth == "up":
+            y += self.height
+        elif self.ver_growth is None:
+            y += self.height / 2
+        if self.hor_growth == "left":
+            x -= self.width
+        elif self.hor_growth is None:
+            x -= self.width / 2
+        self._tar_x, self._tar_y = x, y
+        return x, y
+
+
+class MarkupDropdown(FixedMDDropdownMenu):
+    """Upstream kvui name kept for world clients; text items render markup
+    through the theme's MDDropdownTextItem override."""
+
+
+CHECKED_ICON = "checkbox-marked-outline"
+UNCHECKED_ICON = "checkbox-blank-outline"
+
+
+def open_toggle_dropdown(caller, items: list[dict],
+                         after_toggle: typing.Callable[[bool], None] | None = None,
+                         after_dropdown_closed: typing.Callable[[], None] | None = None
+                         ) -> FixedMDDropdownMenu | None:
+    """Open a menu of check-style toggles built from ColumnFilter.build_menu_items
+    entries. The menu stays open across toggles so several can be flipped."""
+    if not items:
+        if after_dropdown_closed:
+            after_dropdown_closed()
+        return None
+    menu = FixedMDDropdownMenu(caller=caller)
+
+    def entry(item: dict) -> dict:
+        return {
+            "text": item["text"],
+            "leading_icon": CHECKED_ICON if item["active"] else UNCHECKED_ICON,
+            "on_release": lambda *_, item=item: toggle(item),
+        }
+
+    def toggle(item: dict) -> None:
+        item["active"] = not item["active"]
+        item["on_toggle"](item["active"])
+        menu.items = [entry(i) for i in items]
+        if after_toggle:
+            after_toggle(item["active"])
+
+    menu.items = [entry(item) for item in items]
+    if after_dropdown_closed:
+        menu.bind(on_dismiss=lambda *_: after_dropdown_closed())
+    menu.open()
+    return menu
+
 
 class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
+    """One hint row. The same class renders the sticky column header
+    (``index`` None, ``log`` set) so a tracker viewclass with extra columns
+    lines up with its rows."""
     selected = BooleanProperty(False)
     striped = BooleanProperty(False)
-    theme_bg_color = "Custom"
-    index = None
-    dropdown: MDDropdownMenu
     row_disabled = BooleanProperty(False)
+    theme_bg_color = "Custom"
+    index: int | None = None
+    log: HintLog | None = None
+    dropdown: FixedMDDropdownMenu
 
     def __init__(self):
-        super(HintLabel, self).__init__()
+        super().__init__()
         self.receiving_text = ""
         self.item_text = ""
         self.finding_text = ""
         self.location_text = ""
         self.entrance_text = ""
         self.status_text = ""
+        self.flags_text = ""
         self.hint = {}
-        self.row_disabled = False
+        self.flag_status = MWGGUIHintStatus.HINT_UNSPECIFIED
+        self.dropdown = FixedMDDropdownMenu(caller=self.ids["status"], items=[{
+            "text": status_names[status],
+            "leading_icon": status_icons[status],
+            "on_release": lambda *_, status=status: self.select_status(status),
+        } for status in (HintStatus.HINT_NO_PRIORITY, HintStatus.HINT_PRIORITY, HintStatus.HINT_AVOID)])
 
+    def select_status(self, status: HintStatus):
         ctx = App.get_running_app().ctx
-        menu_items = []
+        ctx.update_hint(self.hint["location"], self.hint["finding_player"], status)
+        self.dropdown.dismiss()
 
-        for status in (HintStatus.HINT_NO_PRIORITY, HintStatus.HINT_PRIORITY, HintStatus.HINT_AVOID):
-            name = status_names[status]
-            menu_items.append({
-                "text": name,
-                "leading_icon": status_icons[status],
-                "on_release": lambda x=status: select(self, x)
-            })
+    def set_flag(self, flag: MWGGUIHintStatus, active: bool):
+        self.flag_status = self.flag_status | flag if active else self.flag_status & ~flag
+        ctx = App.get_running_app().ctx
+        # CommonContext.update_mwgg_hint replaces the whole key; "update" merges this hint in.
+        asynckivy.start(ctx.send_msgs([{
+            "cmd": "Set",
+            "key": f"hints_{ctx.team}_{ctx.slot}_mwgg",
+            "want_reply": False,
+            "default": {},
+            "operations": [{
+                "operation": "update",
+                "value": {f"{self.hint['finding_player']}_{self.hint['location']}": self.flag_status.value},
+            }],
+        }]))
 
-        self.dropdown = MDDropdownMenu(caller=self.ids["status"], items=menu_items)
-
-        def select(instance, data):
-            ctx.update_hint(self.hint["location"],
-                            self.hint["finding_player"],
-                            data)
-
-        self.dropdown.bind(on_touch_up=self.dropdown.dismiss)
+    def open_flags_dropdown(self):
+        open_toggle_dropdown(self.ids["flags"], [{
+            "text": mwggstatus_names[flag],
+            "active": bool(self.flag_status & flag),
+            "on_toggle": lambda active, flag=flag: self.set_flag(flag, active),
+        } for flag in mwggstatus_names])
 
     def refresh_view_attrs(self, rv, index, data):
         self.index = index
@@ -225,116 +309,202 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
         self.location_text = data["location"]["text"]
         self.entrance_text = data["entrance"]["text"]
         self.status_text = data["status"]["text"]
+        flags = data.get("flags") or {}
+        self.flags_text = flags.get("text", "")
+        self.flag_status = flags.get("status", MWGGUIHintStatus.HINT_UNSPECIFIED)
         self.hint = data["status"]["hint"]
-        if self.status_text == "Found":
-            self.row_disabled = True
-        return super(HintLabel, self).refresh_view_attrs(rv, index, data)
+        self.row_disabled = index is not None and self.hint["status"] == HintStatus.HINT_FOUND
+        return super().refresh_view_attrs(rv, index, data)
+
+    def _owns_hint(self) -> bool:
+        return App.get_running_app().ctx.slot_concerns_self(self.hint["receiving_player"])
+
+    def plain_text(self) -> str:
+        tags = [self.status_text.lower()] + [mwggstatus_names[flag].lower() for flag in mwgg_flags(self.flag_status)]
+        text = "".join((self.receiving_text, "'s ", self.item_text, " is at ", self.location_text, " in ",
+                        self.finding_text, "'s World",
+                        (" at " + self.entrance_text) if self.entrance_text != "Vanilla" else "",
+                        ". (", ", ".join(tags), ")"))
+        text = "".join(part for part in MarkupLabel(text).markup if not part.startswith("["))
+        return text.replace("&bl;", "[").replace("&br;", "]").replace("&amp;", "&")
 
     def on_touch_down(self, touch):
-        """ Add selection on touch down """
-        if super(HintLabel, self).on_touch_down(touch):
+        if super().on_touch_down(touch):
             return True
-        if self.index:  # skip header
-            if self.collide_point(*touch.pos):
-                status_label = self.ids["status"]
-                if status_label.collide_point(*touch.pos):
-                    if self.hint["status"] == HintStatus.HINT_FOUND:
-                        return True
-                    ctx = App.get_running_app().ctx
-                    if ctx.slot_concerns_self(self.hint["receiving_player"]):  # If this player owns this hint
-                        # open a dropdown
-                        self.dropdown.open()
-                        return True
-                elif self.selected:
-                    self.parent.clear_selection()
-                    return True
-                else:
-                    text = "".join((self.receiving_text, "\'s ", self.item_text, " is at ", self.location_text, " in ",
-                                    self.finding_text, "\'s World", (" at " + self.entrance_text)
-                                    if self.entrance_text != "Vanilla"
-                                    else "", ". (", self.status_text.lower(), ")"))
-                    temp = MarkupLabel(text).markup
-                    text = "".join(part for part in temp if not part.startswith("["))
-                    Clipboard.copy(escape_markup(text).replace("&amp;", "&").replace("&bl;", "[").replace("&br;", "]"))
-                    return self.parent.select_with_touch(self.index, touch)
-        else:
-            parent = self.parent
-            parent.clear_selection()
-            parent: HintLog = parent.parent
-            # find correct column
-            for child in self.children:
-                if child.collide_point(*touch.pos):
-                    if parent.sort_by_key(child.sort_key):
-                        App.get_running_app().update_hints()
-                        return True
-                    return False
+        if not self.collide_point(*touch.pos):
+            return False
+        if self.index is None:
+            return self._on_header_touch(touch)
+        found = self.hint["status"] == HintStatus.HINT_FOUND
+        if self.ids["status"].collide_point(*touch.pos):
+            if found:
+                return True
+            if self._owns_hint():
+                self.dropdown.open()
+                return True
+            return False
+        if self.ids["flags"].collide_point(*touch.pos):
+            if found:
+                return True
+            if self._owns_hint():
+                self.open_flags_dropdown()
+                return True
+            return False
+        if self.selected:
+            self.parent.clear_selection()
+            return True
+        Clipboard.copy(self.plain_text())
+        return self.parent.select_with_touch(self.index, touch)
+
+    def _on_header_touch(self, touch) -> bool:
+        """Left-click sorts by the column, right-click opens its filter."""
+        if self.log is None:
+            return False
+        self.log.layout_manager.clear_selection()
+        for child in self.children:
+            if not child.collide_point(*touch.pos):
+                continue
+            key = getattr(child, "sort_key", None)
+            if key is None:
+                return False
+            app = App.get_running_app()
+            if getattr(touch, "button", None) == "right":
+                return self.log.pop_filter_dropdown_for(key, self.log.rows, child,
+                                                        after_toggle=lambda _: app.update_hints())
+            if self.log.sort_by_key(key):
+                app.update_hints()
+                return True
+            return False
         return False
 
     def apply_selection(self, rv, index, is_selected):
-        """ Respond to the selection of items in the view. """
-        if self.index:
+        if self.index is not None:
             self.selected = is_selected
 
-class HintLayout(MDBoxLayout):
-    orientation = "vertical"
 
 remove_between_brackets = re.compile(r"\[.*?]")
 
-class HintLog(MDRecycleView, ColumnSortMixin):
+
+def _flags_weight(row: dict) -> int:
+    flags = mwgg_flags(row["flags"]["status"])
+    return mwggstatus_sort_weights[flags[0] if flags else MWGGUIHintStatus.HINT_UNSPECIFIED]
+
+
+class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
+    """Classic hint table.
+
+    The column header is built from the row viewclass and handed to
+    HintLayout to sit above the recycle view, so sorting and filtering stay
+    reachable however far the log is scrolled. Found hints are filtered out
+    until the Status filter re-enables them.
+    """
     header = {
         "receiving": {"text": "[u]Receiving Player[/u]"},
-        "item": {"text": "[u]Item[/u]"},
+        "item": {"text": "[u]Item[/u]", "flags": 0},
         "finding": {"text": "[u]Finding Player[/u]"},
         "location": {"text": "[u]Location[/u]"},
         "entrance": {"text": "[u]Entrance[/u]"},
         "status": {"text": "[u]Status[/u]",
-                    "hint": {"receiving_player": -1, "location": -1, "finding_player": -1, "status": ""}},
+                   "hint": {"receiving_player": -1, "location": -1, "finding_player": -1, "status": ""}},
+        "flags": {"text": "[u]Flags[/u]", "names": [], "status": MWGGUIHintStatus.HINT_UNSPECIFIED},
         "striped": True,
     }
     data: list[typing.Any]
+    rows: list[dict]
+    header_widget: HintLabel
 
     def __init__(self, parser):
-        super(HintLog, self).__init__()
-        self.data = [self.header]
+        super().__init__()
+        self.data = []
         self.parser = parser
-        # Setup default sorters for each key in a sensible default order
-        # The last in the list will end up being the 'primary' sort, as each sorter is applied in-order.
-        # Custom clients should be able to modify these and add additional sorters
+        self.rows = []
+        self.header_widget = self._build_header()
+        # Sorters apply in order, so the last one is the primary sort.
         for key in ["entrance", "receiving", "finding", "item", "location"]:
             self.column_sorters.append(ColumnSorter(
                 key,
-                lambda element, k=key: remove_between_brackets.sub("", element[k]["text"]).lower(),
+                lambda row, k=key: remove_between_brackets.sub("", row[k]["text"]).lower(),
             ))
+        self.column_sorters.append(ColumnSorter("flags", _flags_weight))
         self.column_sorters.append(ColumnSorter(
             "status",
-            lambda element: status_sort_weights[element["status"]["hint"]["status"]],
+            lambda row: status_sort_weights[row["status"]["hint"]["status"]],
             True
         ))
 
-    def refresh_hints(self, hints):
+        for key in ["entrance", "receiving", "finding", "item", "location", "status"]:
+            def conv(row, k=key):
+                return remove_between_brackets.sub("", row[k]["text"])
+            if key == "item":
+                filt = ColumnFilterItemClassification(key, conv, lambda row: row["item"]["flags"])
+            else:
+                filt = ColumnFilter(key, conv)
+            if key == "status":
+                filt.filter_denylist.add(status_names[HintStatus.HINT_FOUND])
+                filt.option_list.update(status_names.values())
+            self.column_filters.append(filt)
+        flags_filter = ColumnFilterMulti("flags", lambda row: row["flags"]["names"] or [NO_FLAGS])
+        flags_filter.option_list.update(mwggstatus_names.values())
+        flags_filter.option_list.add(NO_FLAGS)
+        self.column_filters.append(flags_filter)
+
+    def _build_header(self) -> HintLabel:
+        cls = self.viewclass
+        if isinstance(cls, str):
+            cls = Factory.get(cls)
+        header = cls()
+        header.log = self
+        header.refresh_view_attrs(self, None, self.header)
+        return header
+
+    def pop_filter_dropdown_for(self, key: str, data: list[typing.Any], caller,
+                                after_dropdown_closed: typing.Callable[[], None] | None = None,
+                                after_toggle: typing.Callable[[bool], None] | None = None) -> bool:
+        filt = self.get_filter(key)
+        if filt is None:
+            return False
+        open_toggle_dropdown(caller, filt.build_menu_items(data), after_toggle, after_dropdown_closed)
+        return True
+
+    def refresh_hints(self, hints, mwgg_hints: dict | None = None):
         if not hints:  # Fix the scrolling looking visually wrong in some edge cases
             self.scroll_y = 1.0
-        data = []
         app = App.get_running_app()
         if app is None:
             return  # App is shutting down, skip hint refresh
         ctx = app.ctx
+        if mwgg_hints is None:
+            mwgg_hints = ctx.stored_data.get(f"hints_{ctx.team}_{ctx.slot}_mwgg", {}) or {}
+        rows = []
         for hint in hints:
             if not hint.get("status"): # Allows connecting to old servers
                 hint["status"] = HintStatus.HINT_FOUND if hint["found"] else HintStatus.HINT_UNSPECIFIED
-            hint_status_node = self.parser.handle_node({"type": "color",
-                                                        "color": status_colors.get(hint["status"], "red"),
-                                                        "text": status_names.get(hint["status"], "Unknown")})
-            if hint["status"] != HintStatus.HINT_FOUND and ctx.slot_concerns_self(hint["receiving_player"]):
-                hint_status_node = f"[u]{hint_status_node}[/u]"
-            data.append({
-                "receiving": {"text": self.parser.handle_node({"type": "player_id", "text": hint["receiving_player"]})},
-                "item": {"text": self.parser.handle_node({
+            editable = hint["status"] != HintStatus.HINT_FOUND and ctx.slot_concerns_self(hint["receiving_player"])
+            item_flags = hint["item_flags"]
+            if hint.get("item_hidden"):
+                item_text = f"Hidden ({get_item_classification_label(item_flags)})"
+            else:
+                item_text = self.parser.handle_node({
                     "type": "item_id",
                     "text": hint["item"],
-                    "flags": hint["item_flags"],
+                    "flags": item_flags,
                     "player": hint["receiving_player"],
-                })},
+                })
+            status_text = self.parser.handle_node({"type": "color",
+                                                   "color": status_colors.get(hint["status"], "red"),
+                                                   "text": status_names.get(hint["status"], "Unknown")})
+            mwgg_status = MWGGUIHintStatus(mwgg_hints.get(f"{hint['finding_player']}_{hint['location']}") or 0)
+            flags = mwgg_flags(mwgg_status)
+            flags_text = ", ".join(self.parser.handle_node({"type": "color",
+                                                            "color": mwggstatus_colors[flag],
+                                                            "text": mwggstatus_names[flag]})
+                                   for flag in flags) or NO_FLAGS
+            if editable:
+                status_text = f"[u]{status_text}[/u]"
+                flags_text = f"[u]{flags_text}[/u]"
+            rows.append({
+                "receiving": {"text": self.parser.handle_node({"type": "player_id", "text": hint["receiving_player"]})},
+                "item": {"text": item_text, "flags": item_flags},
                 "finding": {"text": self.parser.handle_node({"type": "player_id", "text": hint["finding_player"]})},
                 "location": {"text": self.parser.handle_node({
                     "type": "location_id",
@@ -342,21 +512,30 @@ class HintLog(MDRecycleView, ColumnSortMixin):
                     "player": hint["finding_player"],
                 }) if not hint.get("hidden") else "Hidden"},
                 "entrance": {"text": self.parser.handle_node({"type": "color" if hint["entrance"] else "text",
-                                                                "color": 'entrance_color', "text": hint["entrance"]
-                                                                if hint["entrance"] else "Vanilla"})
-                                if not hint.get("hidden") else "Hidden"},
-                "status": {
-                    "text": hint_status_node,
-                    "hint": hint,
-                },
+                                                              "color": 'entrance_color', "text": hint["entrance"]
+                                                              if hint["entrance"] else "Vanilla"})
+                             if not hint.get("hidden") else "Hidden"},
+                "status": {"text": status_text, "hint": hint},
+                "flags": {"text": flags_text, "names": [mwggstatus_names[flag] for flag in flags], "status": mwgg_status},
             })
 
+        self.rows = rows
+        data = self.filter_columns(rows)
         self.sort_columns(data)
 
         for i in range(0, len(data), 2):
             data[i]["striped"] = True
-        data.insert(0, self.header)
         self.data = data
+
+
+class HintLayout(MDBoxLayout):
+    orientation = "vertical"
+
+    def add_widget(self, widget, *args, **kwargs):
+        # The header sits above the recycle view so it never scrolls away.
+        if isinstance(widget, HintLog):
+            super().add_widget(widget.header_widget)
+        return super().add_widget(widget, *args, **kwargs)
 
 
 with open(

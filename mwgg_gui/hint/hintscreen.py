@@ -691,30 +691,6 @@ hint_icons: typing.Dict[str, str] = {
     "Hidden": ["Hidden Items", "eye-off"],
 }
 
-mwggstatus_icons: typing.Dict[MWGGUIHintStatus, str] = {
-    MWGGUIHintStatus.HINT_UNSPECIFIED: "",
-    MWGGUIHintStatus.HINT_SHOP: "shop",
-    MWGGUIHintStatus.HINT_GOAL: "flag_checkered",
-    MWGGUIHintStatus.HINT_BK_MODE: "food"
-}
-"""Mapping of MWGG hint status values to their corresponding icon names."""
-
-mwggstatus_names: typing.Dict[MWGGUIHintStatus, str] = {
-    MWGGUIHintStatus.HINT_UNSPECIFIED: "",
-    MWGGUIHintStatus.HINT_SHOP: "Shop",
-    MWGGUIHintStatus.HINT_GOAL: "Goal",
-    MWGGUIHintStatus.HINT_BK_MODE: "BK Mode",
-}
-"""Mapping of MWGG hint status values to their corresponding display names."""
-
-mwggstatus_colors: typing.Dict[MWGGUIHintStatus, str] = {
-    MWGGUIHintStatus.HINT_UNSPECIFIED: "",
-    MWGGUIHintStatus.HINT_SHOP: TEXT_COLORS["regular_item_color"],
-    MWGGUIHintStatus.HINT_GOAL: TEXT_COLORS["progression_item_color"],
-    MWGGUIHintStatus.HINT_BK_MODE: TEXT_COLORS["trap_item_color"],
-}
-"""Mapping of MWGG hint status values to their corresponding color names for display."""
-
 status_icons = {
     HintStatus.HINT_NO_PRIORITY: "peace", #bottle-tonic altimeter
     HintStatus.HINT_PRIORITY: "key-variant", #bottle-tonic-plus heart
