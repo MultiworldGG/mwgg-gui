@@ -21,20 +21,13 @@ from kivy.core.clipboard import Clipboard
 from kivy.app import App
 from kivy.lang import Builder
 
-# TooltipLabel in the new gui surfaces as HintListItemLabel.
-from mwgg_gui.overrides.expansionlist import HintListItemLabel as TooltipLabel
-
-
-# SelectableLabel rows need markup=True before data assigns text, or the
-# initial paint renders [color=...] tags literally.
-Builder.load_string('''
-<SelectableLabel>:
-    markup: True
-''')
-
-
 class SelectableRecycleBoxLayout(FocusBehavior, LayoutSelectionBehavior, RecycleBoxLayout):
     """Selectable + focusable box layout backing legacy world recycle views."""
+
+
+# Imported after SelectableRecycleBoxLayout is defined: legacyhint imports it
+# back from this module, so it must already exist when legacyhint runs.
+from mwgg_gui.hint.legacyhint import HintTooltipLabel as TooltipLabel
 
 
 class SelectableLabel(RecycleDataViewBehavior, TooltipLabel):

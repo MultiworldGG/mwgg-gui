@@ -21,11 +21,12 @@ __all__ = ("HintTooltipLabel",
 
 from NetUtils import HintStatus, MWGGUIHintStatus, get_item_classification_label
 
-from kivy.properties import BooleanProperty
+from kivy.properties import BooleanProperty, ColorProperty
 from kivy.app import App
 from kivy.core.window import Window
 from kivy.factory import Factory
 from kivy.lang import Builder
+from kivy.utils import get_color_from_hex
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
 from kivymd.uix.recycleview import MDRecycleView
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -38,8 +39,6 @@ from kivy.core.clipboard import Clipboard
 
 
 from mwgg_gui.overrides import HoverLabel
-# Import side effect: registers the SelectableRecycleBoxLayout the kv rule names.
-from mwgg_gui.legacy import SelectableRecycleBoxLayout
 from mwgg_gui.components.columns import (
     ColumnSorter, ColumnSortMixin, ColumnFilter, ColumnFilterMixin,
     ColumnFilterItemClassification, ColumnFilterMulti, ExtraColumn,
@@ -113,13 +112,18 @@ def mwgg_flags(status: MWGGUIHintStatus) -> list[MWGGUIHintStatus]:
 
 
 class RefToolTip(MDTooltipPlain):
-    pass
+    ref_color: ColorProperty
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.ref_color = self.theme_cls.surfaceContainerLowestColor
 
 class HintTooltipLabel(HoverLabel, MDTooltip):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.bind(height=self.set_height)
+        self.app = App.get_running_app()
 
     def set_height(self, inst, val):
         w, h = self.texture_size
@@ -615,6 +619,11 @@ class HintLayout(MDBoxLayout):
         switch.active = bool(getattr(app, "show_all_hints", False))
         switch.bind(active=lambda _inst, active: setattr(app, "show_all_hints", active))
         return MDBoxLayout(switch, size_hint_y=None, height=dp(40), padding=[dp(8), dp(4)])
+
+# Deferred: legacyhint.kv references SelectableRecycleBoxLayout by name, and
+# recycleview imports HintTooltipLabel from this module at module scope, so
+# this import must happen after HintTooltipLabel is defined above.
+from mwgg_gui.legacy.recycleview import SelectableRecycleBoxLayout
 
 with open(
     os.path.join(os.path.dirname(__file__), "legacyhint.kv"), encoding="utf-8"
