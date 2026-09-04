@@ -22,6 +22,7 @@ from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.metrics import dp
 from kivy.properties import StringProperty
+from kivy.uix.anchorlayout import AnchorLayout
 from kivymd.app import MDApp
 from kivymd.theming import ThemableBehavior
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -33,8 +34,8 @@ from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
 from mwgg_gui.components.admin_commands import (
-    STATUS_TAGS, admin_say_line, format_last_activity, format_session_time, option_entries,
-    parse_status_reply, player_display_name, status_name, tagged_players)
+    STATUS_TAGS, admin_say_line, enrich_player_rows, format_session_time, option_entries,
+    parse_status_reply, player_display_name, player_state, state_icon, tagged_players)
 from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.console.console import ConsoleLayout
 from mwgg_gui.console.textconsole import ConsoleView
@@ -106,8 +107,6 @@ Builder.load_string('''
     height: dp(24)
     font_style: "Body"
     role: "small"
-    shorten: True
-    shorten_from: "right"
 
 <OptionFieldRow>:
     orientation: "horizontal"
@@ -116,15 +115,27 @@ Builder.load_string('''
     spacing: dp(8)
     MDLabel:
         text: root.text
-        size_hint_x: 0.5
         theme_text_color: "Secondary"
         pos_hint: {"center_y": 0.5}
 ''')
 
-_PLAYER_COLUMNS = (("Name", 0.28), ("Game", 0.26), ("Status", 0.13), ("Checks", 0.12),
-                   ("Last active", 0.15), ("", 0.06))
+# (title, dp width); fixed rather than proportional so the grid's
+# minimum_width is real and the info pane can scroll to it.
+_PLAYER_COLUMNS = (("Name", 170), ("Game", 150), ("Status", 130), ("Checks", 90))
+_STATUS_ICON_WIDTH = 36
 _NO_PLAYERS_HINT = "No player data yet. Refresh to fetch /players."
 _STATE_TO_STATUS = {"goal": 30, "ready": 10}
+_OPTION_FIELD_WIDTH = 96
+
+
+def _status_icon_cell(icon: str) -> AnchorLayout:
+    """Fixed-width cell holding a status MDIcon: MDIcon's own adaptive_size
+    kv rule ignores any width passed to its constructor, so the icon needs
+    a sized wrapper to line up with the header's icon column."""
+    cell = AnchorLayout(size_hint_x=None, width=dp(_STATUS_ICON_WIDTH),
+                        size_hint_y=None, height=dp(24))
+    cell.add_widget(MDIcon(icon=icon))
+    return cell
 
 
 def _admin_line_filter(item) -> bool:
@@ -189,7 +200,8 @@ class OptionFieldRow(MDBoxLayout):
             text="" if value is None else str(value))
         if entry.get("type") == "int":
             self.field.input_filter = "int"
-        self.field.size_hint_x = 0.5
+        self.field.size_hint_x = None
+        self.field.width = dp(_OPTION_FIELD_WIDTH)
         self.field.pos_hint = {"center_y": 0.5}
         self.field.write_tab = False
 
@@ -206,11 +218,11 @@ class AdminInfoPane(MDScrollView):
     /players rows, or from /status lines on servers without them)."""
 
     def __init__(self, on_refresh_players, on_refresh_tags, **kwargs):
+        kwargs.setdefault("do_scroll_x", True)
         super().__init__(**kwargs)
         self.app = MDApp.get_running_app()
         self.rows: list[dict] = []
         self._rows_from_players = False
-        self._activity_cells: list[PlayerCell] = []
         self._tag_counts: dict[str, int | None] = {tag: None for tag in STATUS_TAGS}
 
         self.session = AdminSection(title="Session")
@@ -227,19 +239,31 @@ class AdminInfoPane(MDScrollView):
             self.tags.add_widget(row)
 
         self.players = AdminSection(title="Players", on_refresh=on_refresh_players)
-        self.players_grid = MDGridLayout(cols=len(_PLAYER_COLUMNS), adaptive_height=True,
-                                         spacing=(dp(4), 0))
+        self.players.size_hint_x = None
+        self.players_grid = MDGridLayout(cols=len(_PLAYER_COLUMNS) + 1, adaptive_height=True,
+                                         adaptive_width=True, spacing=(dp(4), 0))
+        self.players_grid.bind(width=lambda *_a: setattr(self.players, "width",
+                                                          self.players_grid.width))
         self.players.add_widget(self.players_grid)
         self.players_hint = MDLabel(text=_NO_PLAYERS_HINT, font_style="Body", role="small",
                                     adaptive_height=True, theme_text_color="Secondary")
         self.players.add_widget(self.players_hint)
 
-        column = MDBoxLayout(orientation="vertical", adaptive_height=True,
-                             padding=[dp(12), dp(4)], spacing=dp(4))
-        column.add_widget(self.session)
-        column.add_widget(self.tags)
-        column.add_widget(self.players)
-        self.add_widget(column)
+        # size_hint_x=None + width bound to the widest section (almost
+        # always the players grid) lets the pane scroll horizontally to it
+        # instead of truncating cells.
+        self._column = MDBoxLayout(orientation="vertical", adaptive_height=True,
+                                   size_hint_x=None, padding=[dp(12), dp(4)], spacing=dp(4))
+        self._column.add_widget(self.session)
+        self._column.add_widget(self.tags)
+        self._column.add_widget(self.players)
+        self._column.bind(minimum_width=self._sync_content_width)
+        self.bind(width=self._sync_content_width)
+        self.add_widget(self._column)
+        self._sync_content_width()
+
+    def _sync_content_width(self, *_args) -> None:
+        self._column.width = max(self.width, self._column.minimum_width)
 
     def refresh_session(self, ctx) -> None:
         now = time()
@@ -250,9 +274,6 @@ class AdminInfoPane(MDScrollView):
                                   or getattr(ctx, "server_seed_name", None) or "")
         self.server_row.value = str(getattr(ctx, "server_address", None) or "")
         self._render_tag_rows(getattr(ctx, "current_energy_link_value", None))
-        for row, cell in zip(self.rows, self._activity_cells):
-            if "last_activity" in row:
-                cell.text = format_last_activity(row.get("last_activity"), now)
 
     def _render_tag_rows(self, energy) -> None:
         for tag, row in self.tag_rows.items():
@@ -286,30 +307,24 @@ class AdminInfoPane(MDScrollView):
         } for player in players])
 
     def _render_players(self, rows: list[dict]) -> None:
-        self.rows = list(rows)
+        ctx = self.app.ctx
+        self.rows = enrich_player_rows(list(rows), getattr(ctx, "slot_info", None) or {},
+                                       getattr(ctx, "player_names", None) or {})
         self.players_grid.clear_widgets()
-        self._activity_cells = []
         self.players_hint.text = "" if self.rows else _NO_PLAYERS_HINT
         for title, width in _PLAYER_COLUMNS:
-            self.players_grid.add_widget(PlayerCell(text=title, bold=True, size_hint_x=width))
-        now = time()
+            self.players_grid.add_widget(PlayerCell(text=title, bold=True,
+                                                     size_hint_x=None, width=dp(width)))
+        self.players_grid.add_widget(PlayerCell(text="", bold=True,
+                                                 size_hint_x=None, width=dp(_STATUS_ICON_WIDTH)))
         for row in self.rows:
-            status = row.get("status")
-            cells = (
-                player_display_name(row),
-                row.get("game", ""),
-                status_name(status) if status is not None else "",
-                f"{row.get('checks', 0)}/{row.get('total', 0)}",
-                format_last_activity(row["last_activity"], now) if "last_activity" in row else "",
-            )
+            state = player_state(row)
+            cells = (player_display_name(row), row.get("game", ""), state.capitalize(),
+                    f"{row.get('checks', 0)}/{row.get('total', 0)}")
             for (_, width), text in zip(_PLAYER_COLUMNS, cells):
-                cell = PlayerCell(text=text, size_hint_x=width)
-                self.players_grid.add_widget(cell)
-            self._activity_cells.append(cell)
-            self.players_grid.add_widget(MDIcon(
-                icon="check-circle" if row.get("connected") else "circle-outline",
-                size_hint_x=_PLAYER_COLUMNS[-1][1], pos_hint={"center_y": 0.5}))
-        self.refresh_session(self.app.ctx)
+                self.players_grid.add_widget(PlayerCell(text=text, size_hint_x=None, width=dp(width)))
+            self.players_grid.add_widget(_status_icon_cell(state_icon(state)))
+        self.refresh_session(ctx)
 
 
 class AdminOptionsPane(MDScrollView):
@@ -370,7 +385,7 @@ class AdminScreen(MDScreen, ThemableBehavior):
         self.bottom_appbar = BottomAppBar(screen_name="admin")
         self.header = AdminHeader()
         self.info_pane = AdminInfoPane(on_refresh_players=self.refresh_players,
-                                       on_refresh_tags=self.refresh_tags, size_hint_x=0.38)
+                                       on_refresh_tags=self.refresh_tags, size_hint_x=0.5)
         self.options_pane = AdminOptionsPane(on_apply=self.apply_option,
                                              on_refresh=self.refresh_options, size_hint_y=0.45)
 
@@ -382,7 +397,7 @@ class AdminScreen(MDScreen, ThemableBehavior):
             line_filter=_admin_line_filter, size_hint=(1, 0.55))
         self.console_view.text_console.size_hint = (1, 1)
 
-        right = MDBoxLayout(orientation="vertical", size_hint_x=0.62, spacing=dp(4))
+        right = MDBoxLayout(orientation="vertical", size_hint_x=0.5, spacing=dp(4))
         right.add_widget(self.options_pane)
         right.add_widget(self.console_view)
         body = MDBoxLayout(orientation="horizontal", spacing=dp(8))

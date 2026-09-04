@@ -124,18 +124,49 @@ def test_parse_status_reply_without_tagged_clause_or_header(admin_commands):
     assert admin_commands.parse_status_reply("") is None
 
 
-def test_player_row_formatting(admin_commands):
-    assert admin_commands.status_name(20) == "Playing"
-    assert admin_commands.status_name(99) == "99"
+def test_player_display_name(admin_commands):
     assert admin_commands.player_display_name({"name": "Alice", "alias": "Alice"}) == "Alice"
     assert admin_commands.player_display_name({"name": "Alice", "alias": "Al"}) == "Al (Alice)"
     assert admin_commands.player_display_name({"name": "Alice"}) == "Alice"
-    now = 1_000_000.0
-    assert admin_commands.format_last_activity(None, now) == "never"
-    assert admin_commands.format_last_activity(now - 5, now) == "just now"
-    assert admin_commands.format_last_activity(now - 150, now) == "2m ago"
-    assert admin_commands.format_last_activity(now - 3700, now) == "1h 1m ago"
-    assert admin_commands.format_last_activity(now - 2 * 86400, now) == "2d ago"
+
+
+@pytest.mark.parametrize("row, expected", [
+    ({"status": 30, "connected": False}, "goal"),
+    ({"status": 30, "connected": True}, "goal"),
+    ({"status": 10, "connected": False}, "ready"),
+    ({"status": 20, "connected": True}, "connected"),
+    ({"status": 5, "connected": True}, "connected"),
+    ({"status": 0, "connected": False}, "disconnected"),
+    ({"connected": True}, "connected"),
+    ({}, "disconnected"),
+])
+def test_player_state_priority(admin_commands, row, expected):
+    assert admin_commands.player_state(row) == expected
+
+
+def test_state_icon_covers_every_state(admin_commands):
+    icons = {admin_commands.state_icon(state)
+             for state in ("goal", "ready", "connected", "disconnected")}
+    assert len(icons) == 4
+    assert admin_commands.state_icon("bogus") == "help-circle-outline"
+
+
+class _Slot:
+    def __init__(self, game):
+        self.game = game
+
+
+def test_enrich_player_rows_prefers_the_row_then_slot_then_name_match(admin_commands):
+    slot_info = {1: _Slot("Game A"), 2: _Slot("Game B")}
+    player_names = {1: "Alice", 2: "Bob (bob)"}
+    rows = [
+        {"name": "Alice", "slot": 1},
+        {"name": "Bob (bob)"},
+        {"name": "Already Known", "game": "Game C"},
+        {"name": "Nobody"},
+    ]
+    enriched = admin_commands.enrich_player_rows(rows, slot_info, player_names)
+    assert [row["game"] for row in enriched] == ["Game A", "Game B", "Game C", ""]
 
 
 def test_session_time(admin_commands):

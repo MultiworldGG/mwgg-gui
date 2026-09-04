@@ -9,6 +9,7 @@ duck-typed because registrants hand over kvui's instances, not ours.
 """
 from __future__ import annotations
 
+import dataclasses
 import typing
 
 
@@ -223,3 +224,34 @@ class ColumnFilterMixin:
 
     def filter_columns(self, data: list[typing.Any]) -> list[typing.Any]:
         return [datum for datum in data if all(filt.filter_data(datum) for filt in self.column_filters)]
+
+
+@dataclasses.dataclass
+class ExtraColumn:
+    """A hint-table column contributed by world code (e.g. the tracker's
+    in-logic status), registered against ``kvui.HintLog`` rather than baked
+    into the base table."""
+    key: str
+    header_text: str
+    # (raw hint dict, row dict being built) -> None; sets row[key].
+    build_value: typing.Callable[[dict, dict], None]
+    sorter: ColumnSorter
+    filter: ColumnFilter | None = None
+
+
+_extra_columns: dict[str, ExtraColumn] = {}
+
+
+def register_extra_column(column: ExtraColumn) -> None:
+    """Register (or replace) an extra hint-table column, keyed by ``column.key``
+    so relaunching a client doesn't accumulate duplicates."""
+    _extra_columns[column.key] = column
+
+
+def get_extra_columns() -> list[ExtraColumn]:
+    return list(_extra_columns.values())
+
+
+def clear_extra_columns() -> None:
+    """Test-only reset of the registry."""
+    _extra_columns.clear()

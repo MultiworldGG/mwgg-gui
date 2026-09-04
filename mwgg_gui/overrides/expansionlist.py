@@ -441,7 +441,7 @@ class HintListItem(RecycleDataViewBehavior, BoxLayout, BackgroundColorBehavior, 
     def on_hide(hint_instance, value):
         """Handle hide checkbox change"""
         if hint_instance.hint_data:
-            hint_instance.hint_data.hide = value
+            HintListItem._toggle_mwgg_flag_and_update(hint_instance, 0b1000, value)
             # return if it's already hidden (no removal animation needed)
             try:
                 weak_class_name = hint_instance.__class__.__name__
@@ -645,7 +645,7 @@ class GameListPanel(MDExpansionPanel):
             "progression_goal": self.app.theme_mw.markup_tags_theme.progression_goal_item_color[i],
             }
         for hint in self.item_data.hints.values():
-            if not hint.hide or self.app.show_all_hints:
+            if self.app.show_all_hints or not (hint.hide or hint.found):
                 item_widget = SlotListItem(hint_data=hint, game_status=self.item_data.game_status, shadow_colors=item_colors)
                 self.panel_content.add_widget(item_widget)
 

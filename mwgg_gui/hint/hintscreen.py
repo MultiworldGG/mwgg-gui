@@ -604,6 +604,8 @@ class HintLayout(AutoAdjustHeightBehavior, MDBoxLayout):
         if mwgg_status:
             # These are different sizes, but it will leave off HINT_FOUND which we've already checked
             for mwgg_hint, hint in zip(MWGGUIHintStatus, HintStatus):
+                if mwgg_hint not in status_sort_weights:
+                    continue  # HINT_HIDDEN carries no sort weight
                 mw = mwgg_status & mwgg_hint
                 hw = hint_status & hint
                 if mw or hw:

@@ -301,7 +301,7 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         """
         visible_hints = [
             hint for hint in slot_data.hints.values()
-            if not hint.hide or self.app.show_all_hints
+            if self.app.show_all_hints or not (hint.hide or hint.found)
         ]
         
         if not visible_hints:

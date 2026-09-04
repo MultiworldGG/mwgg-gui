@@ -33,13 +33,12 @@ class CustomLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
     adjust_title_bar = True
     adjust_app_bar = True
     adjust_bottom_appbar = True
-    adjust_custom = 0
+    adjust_custom = 20
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.size_hint_x = 1
-        self.padding = [dp(20), dp(4)]
-
+        self.size_hint_x = .9
+        self.pos_hint = {"center_x": 0.5}
 
 class CustomScreen(MDScreen, ThemableBehavior):
     '''
