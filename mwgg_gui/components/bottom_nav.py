@@ -5,10 +5,11 @@ Kivy-free on purpose: the GUI-side unit tests load it by file path.
 """
 from __future__ import annotations
 
-__all__ = ("NavEntry", "ClientTab", "BUILTIN_NAV", "nav_entries")
+__all__ = ("NavEntry", "ClientTab", "BUILTIN_NAV", "nav_entries",
+           "icon_is_image", "world_component_icon")
 
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Iterable, Mapping, Optional
 
 
 @dataclass(frozen=True)
@@ -29,6 +30,35 @@ class ClientTab:
     @property
     def text(self) -> str:
         return self.name
+
+
+def icon_is_image(icon: str) -> bool:
+    """Image path or ap:/ap:zip: URL rather than a Material icon name."""
+    return any(sep in icon for sep in ("/", "\\", ":"))
+
+
+def world_component_icon(ctx_module: str, components: Iterable,
+                         icon_paths: Mapping[str, str]) -> Optional[str]:
+    """Icon of the launcher component the world package owning `ctx_module`
+    registered ("worlds.sms.SMSClient" -> "worlds.sms"). Client components
+    win over other kinds; the shared default key "icon" counts as none."""
+    parts = ctx_module.split(".")
+    if len(parts) < 2 or parts[0] != "worlds":
+        return None
+    package = ".".join(parts[:2])
+    found = None
+    for component in components:
+        module = getattr(getattr(component, "func", None), "__module__", None) or ""
+        if module != package and not module.startswith(package + "."):
+            continue
+        key = getattr(component, "icon", None)
+        icon = icon_paths.get(key) if key and key != "icon" else None
+        if not icon:
+            continue
+        if getattr(getattr(component, "type", None), "name", "") == "CLIENT":
+            return icon
+        found = found or icon
+    return found
 
 
 # Fixed slots, in display order. Console/Hint always show; Tracker/Map show

@@ -13,7 +13,7 @@ __all__ = (
     "BottomBarTextInput"
 )
 from kivymd.uix.appbar import MDBottomAppBar
-from kivy.properties import StringProperty, NumericProperty, ObjectProperty, BooleanProperty
+from kivy.properties import StringProperty, NumericProperty, ObjectProperty, BooleanProperty, ListProperty
 from kivy.lang import Builder
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -21,12 +21,13 @@ from kivymd.uix.button import MDButton, MDIconButton
 from kivymd.uix.floatlayout import MDFloatLayout
 from kivy.animation import Animation
 from kivy.clock import Clock
+from kivy.core.image import Image as CoreImage
 from kivy.metrics import dp
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.menu import MDDropdownMenu
 from mwgg_gui.components.admin_commands import (
     admin_say_line, available_admin_commands, complete_admin_command)
-from mwgg_gui.components.bottom_nav import NavEntry
+from mwgg_gui.components.bottom_nav import NavEntry, icon_is_image
 from mwgg_gui.constants import TEXT_INPUT_ACTIONS
 
 Builder.load_string('''
@@ -68,6 +69,16 @@ Builder.load_string('''
     md_bg_color: app.theme_cls.secondaryContainerColor if root.selected else \
                  app.theme_cls.primaryContainerColor if app.theme_cls.theme_style == "Dark" else app.theme_cls.onPrimaryColor
     pos_hint: {"center_y": 0.5}
+
+<BottomNavImageButton>:
+    canvas.after:
+        Color:
+            rgba: 1, 1, 1, 1
+        Rectangle:
+            group: "nav-image"
+            source: root.image_source
+            size: root.image_size
+            pos: self.center_x - root.image_size[0] / 2, self.center_y - root.image_size[1] / 2
 
 <BottomNavTextButton>:
     style: "text"
@@ -267,6 +278,21 @@ class BottomNavIconButton(BottomNavButtonBehavior, MDIconButton):
     pass
 
 
+class BottomNavImageButton(BottomNavIconButton):
+    """Nav button drawing a world image (path or ap: URL) instead of a glyph.
+    Drawn on the canvas: MDIcon accepts no child widgets besides a badge."""
+    image_source = StringProperty("")
+    image_size = ListProperty([dp(24), dp(24)])
+
+    def on_image_source(self, _instance, source):
+        try:
+            width, height = CoreImage(source).texture.size
+        except Exception:
+            return
+        scale = dp(24) / max(width, height, 1)
+        self.image_size = [width * scale, height * scale]
+
+
 class BottomNavTextButton(BottomNavButtonBehavior, MDButton):
     pass
 
@@ -325,11 +351,15 @@ class BottomAppBar(MDBottomAppBar):
     def rebuild_nav(self, entries: list[NavEntry], style: str, current: str) -> None:
         """Repaint the nav buttons; `style` is "icons" or "text"."""
         self.nav_box.clear_widgets()
-        button_cls = BottomNavTextButton if style == "text" else BottomNavIconButton
         for entry in entries:
-            button = button_cls(screen=entry.name, nav_label=entry.label)
-            if button_cls is BottomNavIconButton:
-                button.icon = entry.icon
+            if style == "text":
+                button = BottomNavTextButton(screen=entry.name, nav_label=entry.label)
+            elif icon_is_image(entry.icon):
+                button = BottomNavImageButton(screen=entry.name, nav_label=entry.label,
+                                              image_source=entry.icon)
+            else:
+                button = BottomNavIconButton(screen=entry.name, nav_label=entry.label,
+                                             icon=entry.icon)
             button.bind(on_release=lambda _button, name=entry.name: self.app.change_screen(name))
             self.nav_box.add_widget(button)
         self.set_current(current)
