@@ -97,6 +97,7 @@ else:
 
 from kivy.clock import Clock
 from kivy.properties import ObjectProperty, BooleanProperty, NumericProperty, StringProperty
+from kivy.app import App
 from kivymd.app import MDApp
 from kivy.uix.screenmanager import SwapTransition
 from kivymd.uix.screenmanager import MDScreenManager
@@ -126,7 +127,7 @@ from mwgg_gui.components.topappbar import TopAppBarLayout
 from mwgg_gui.launcher.launcher import LauncherScreen
 from mwgg_gui.loadanimlayout import MWGGLoadingLayout
 from mwgg_gui.components.bottomappbar import BottomAppBar, BottomBarTextInput
-from mwgg_gui.components.bottom_nav import ClientTab, nav_entries
+from mwgg_gui.components.bottom_nav import ClientTab, nav_entries, world_component_icon
 from mwgg_gui.components.guidataclasses import UIPlayerData, UIHint, MarkupPair
 from mwgg_gui.console.adminscreen import AdminScreen
 from mwgg_gui.console.textconsole import ConsolePair
@@ -748,9 +749,23 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         if build_for_live_app is not None:
             return build_for_live_app(ctx, live)
 
-        manager = manager_cls(ctx)
+        # A world's make_gui() subclass of this app builds as a phantom
+        # instance; App.__init__ repoints get_running_app (and every kv
+        # ``app``) at it, so the live app has to be put back.
+        running = App.get_running_app()
+        try:
+            manager = manager_cls(ctx)
+        finally:
+            App._running_app = running
         manager.build()
         live._legacy_kvui_manager = manager
+        # The subclass declares the window title (class attr or a build()
+        # write); the live app owns the property.
+        default = (manager.property("base_title").defaultvalue
+                   if isinstance(manager, MultiMDApp) else "")
+        title = getattr(manager, "base_title", default)
+        if isinstance(title, str) and title and title != default:
+            live.base_title = title
         return manager
 
     def add_client_tab(self, title: str, content=None, index: int = -1):
@@ -773,7 +788,8 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
           it to the screen manager and puts a nav button for it on every
           bottom bar. ``index`` orders the screen, not the button: builtin
           slots come first, then tabs in registration order. A
-          ``content.nav_icon`` attribute picks the button's icon.
+          ``content.nav_icon`` attribute picks the button's icon; without
+          one, the owning world's launcher-component icon is used.
 
         Either way, the screen lands on the *live* launcher app's
         screen_manager, so a phantom subclass instance constructed after
@@ -795,10 +811,20 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         screen = CustomScreen(name=title)
         screen.custom_layout.add_widget(content)
         live.screen_manager.add_widget(screen, index=index)
-        tab = ClientTab(title, content, getattr(content, "nav_icon", None) or ClientTab.icon)
+        icon = (getattr(content, "nav_icon", None) or live._world_tab_icon()
+                or ClientTab.icon)
+        tab = ClientTab(title, content, icon)
         live._client_tabs.append(tab)
         live.refresh_bottom_nav()
         return tab
+
+    def _world_tab_icon(self) -> typing.Optional[str]:
+        """Launcher-component icon of the world owning the live ctx."""
+        try:
+            from worlds.LauncherComponents import components, icon_paths
+        except ImportError:
+            return None
+        return world_component_icon(type(self.ctx).__module__, components, icon_paths)
 
     def remove_custom_screen(self, handle) -> None:
         live = self._resolve_live_app()
