@@ -60,7 +60,7 @@ Builder.load_string('''
 <TopAppBarLayout>:
 
 <Timer>:
-    size_hint_x: .15
+    size_hint_x: .2
     text: "00:00:00"
 
 <TopAppBar>:
@@ -75,7 +75,7 @@ Builder.load_string('''
         text: "Not Connected"
     ClockLabel:
         id: clock_label
-        size_hint_x: .15
+        size_hint_x: .10
     Timer:
         id: timer
 
@@ -197,12 +197,12 @@ class Timer(MDTopAppBarTitle):
             abs_value = abs(value)
             self.text = "-" + strftime("%H:%M:%S", gmtime(abs_value))
         else:
-            # Positive time - normal display
-            if value > 86400:
-                plural = "s" if value > 172800 else ""
-                self.text = strftime(f"%d day{plural}, %H:%M:%S", gmtime(int(value)))
-            else:
-                self.text = strftime("%H:%M:%S", gmtime(int(value)))
+            # gmtime's %d is day-of-month and starts at 1, so count days by hand.
+            days, remainder = divmod(int(value), 86400)
+            clock = strftime("%H:%M:%S", gmtime(remainder))
+            if days:
+                clock = f"{days} day{'s' if days != 1 else ''}, {clock}"
+            self.text = clock
     
     def on_parent(self, instance, parent):
         """Clean up scheduled events when widget is removed"""
@@ -526,6 +526,9 @@ class TopAppBar(MDTopAppBar):
             self.timer_button.bind(on_release=lambda *_a: self.toggle_timer(),
                                    on_long_press=self.reset)
             self.trailing_container.add_widget(self.timer_button)
+        profile_button = MDActionTopAppBarButton(icon="account-circle-outline")
+        profile_button.bind(on_release=lambda *_a: self.open_profile())
+        self.trailing_container.add_widget(profile_button)
         if drop_titles:
             Clock.schedule_once(lambda dt: self._drop_titles(drop_titles))
         asyncio.create_task(self.update_progress_info(), name="ProgressBar")

@@ -21,8 +21,11 @@ from kivymd.uix.screenmanager import MDScreenManager
 from kivymd.uix.sliverappbar import MDSliverAppbar, MDSliverAppbarContent
 from kivymd.uix.list import MDList
 from kivymd.theming import ThemableBehavior
+from kivymd.uix.behaviors.elevation import CommonElevationBehavior
+from kivymd.uix.appbar import MDTopAppBarTitle
 
 from mwgg_gui.overrides.expansionlist import *
+from mwgg_gui.overrides.titlebutton import ButtonMDTopAppBarTitle
 from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.components.columns import ColumnSortMixin, ColumnFilterMixin
 from mwgg_gui.components.mw_theme import AutoAdjustHeightBehavior
@@ -30,6 +33,7 @@ from mwgg_gui.components.mw_theme import AutoAdjustHeightBehavior
 import asynckivy
 
 Builder.load_string('''
+
 <ConsoleLayout>:
     id: console_layout
     pos: 0, 82 + app.layout_mode.docked_input
@@ -57,12 +61,12 @@ Builder.load_string('''
             MDActionTopAppBarButton:
                 icon: "refresh"
                 on_release: root.refresh_current_view()
-        MDTopAppBarTitle:
+        ButtonMDTopAppBarTitle:
             id: app_bar_title
             text: ("Logic" if root.current_view == "players" else "Players") if root.tracker_mode else "Flags"
             halign: "center"
-            font_style: "Body"
-            role: "medium"
+            font_style: "Label"
+            role: "large"
             on_touch_down: root.handle_title_touch(self, args[1])
         MDTopAppBarTrailingButtonContainer:
             MDActionTopAppBarButton:

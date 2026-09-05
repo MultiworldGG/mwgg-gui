@@ -19,6 +19,7 @@ from kivy.clock import Clock
 from kivy.core.window import Window
 from kivy.lang import Builder
 from kivy.metrics import dp
+from kivy.utils import get_color_from_hex
 from kivy.properties import BooleanProperty, NumericProperty, StringProperty
 from kivy.uix.recycleboxlayout import RecycleBoxLayout  # noqa: F401 -- registered for kv
 from kivy.uix.recycleview import RecycleView  # noqa: F401 -- registered for kv
@@ -155,23 +156,6 @@ def _make_category_color_lookup(app):
     return lookup
 
 
-def _hex_to_rgba(hex_str: str, fallback) -> list[float]:
-    """Convert a 6-digit hex (e.g. 'DD00FF') to an RGBA list. Falls back
-    to ``fallback`` when the input is empty, malformed, or None."""
-    if not hex_str:
-        return fallback
-    s = hex_str.lstrip("#")
-    if len(s) != 6:
-        return fallback
-    try:
-        r = int(s[0:2], 16) / 255.0
-        g = int(s[2:4], 16) / 255.0
-        b = int(s[4:6], 16) / 255.0
-    except ValueError:
-        return fallback
-    return [r, g, b, 1.0]
-
-
 class TrackerLocationItem(RecycleDataViewBehavior, MDLabel):
     """One location row inside an expanded TrackerRegionPanel."""
 
@@ -179,7 +163,7 @@ class TrackerLocationItem(RecycleDataViewBehavior, MDLabel):
         self.text = data.get("name", "")
         app = MDApp.get_running_app()
         fallback = app.theme_cls.onSurfaceColor
-        self.text_color = _hex_to_rgba(data.get("color_hex", ""), fallback)
+        self.text_color = get_color_from_hex(data.get("color_hex", "")) if data.get("color_hex", "") else fallback
         return super().refresh_view_attrs(rv, index, data)
 
 

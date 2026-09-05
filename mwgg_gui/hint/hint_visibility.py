@@ -33,3 +33,12 @@ def resolve_ui_hint_bucket(hint: dict, slot_concerns_self: typing.Callable[[int]
     if slot_concerns_self(hint["finding_player"]):
         return hint["receiving_player"]
     return None
+
+
+def find_ui_hint(ui_hint_data: dict, hint: dict,
+                 slot_concerns_self: typing.Callable[[int], bool]) -> typing.Optional[typing.Any]:
+    """This hint's UIHint from app.ui_hint_data, or None before the data package built it."""
+    bucket = resolve_ui_hint_bucket(hint, slot_concerns_self)
+    if bucket is None:
+        return None
+    return (ui_hint_data.get(bucket) or {}).get(hint["location"])

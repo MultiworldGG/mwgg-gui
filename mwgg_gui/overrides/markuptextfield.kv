@@ -220,7 +220,10 @@
     height: dp(56) if not self.multiline else 550
 
 <MarkupTextFieldTooltip>:
+    markup: True
     theme_text_color: "Custom"
     theme_bg_color: "Custom"
-    md_bg_color: self.theme_cls.secondaryContainerColor
-    text_color: self.theme_cls.onSecondaryContainerColor
+    theme_font_style: "Custom"
+    md_bg_color: self.theme_cls.surfaceContainerLowestColor
+    text_color: self.ref_color or self.theme_cls.onSurfaceColor
+    font_style: "Body"

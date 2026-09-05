@@ -4,7 +4,7 @@
     md_bg_color: self.theme_cls.surfaceContainerLowestColor
     theme_text_color: "Custom"
     theme_font_style: "Custom"
-    text_color: self.ref_color
+    text_color: self.ref_color or self.theme_cls.onSurfaceColor
     font_style: "Body"
 
 <HintTooltipLabel>:
@@ -78,14 +78,23 @@
         valign: 'center'
         pos_hint: {"center_y": 0.5}
         disabled: root.row_disabled
-    HintTooltipLabel:
+    AnchorLayout:
         id: visible
-        text: root.visible_text
         size_hint_x: 0.6
-        halign: 'center'
-        valign: 'center'
-        pos_hint: {"center_y": 0.5}
-        disabled: root.row_disabled
+        anchor_x: 'center'
+        anchor_y: 'center'
+        HintTooltipLabel:
+            id: visible_label
+            text: root.visible_text
+            halign: 'center'
+            valign: 'center'
+        MDCheckbox:
+            id: visible_box
+            # Recycled rows re-sync active on every render; no pop animation.
+            disable_animation: True
+            opacity: 0 if root.is_header else 1
+            disabled: root.is_header or root.row_disabled
+            on_active: root.on_visible_active(self.active)
 <HintLog>:
     cols: 1
     viewclass: 'HintLabel'

@@ -34,6 +34,7 @@ from kivymd.uix.textfield import (MDTextFieldHelperText,
                                   MDTextFieldLeadingIcon,
                                   )
 from kivymd.uix.button import MDFabButton
+from .hoverlabel import ref_span_color
 import re
 from re import Pattern, compile
 import os
@@ -71,7 +72,12 @@ if Config:
     _scroll_distance = '{}sp'.format(Config.getint('widgets', 'scroll_distance'))
 
 class MarkupTextFieldTooltip(MDTooltipPlain):
-    """Tooltip for showing the ref text when hovering over a [ref=] tag in the console"""
+    """Tooltip for showing the ref text when hovering over a [ref=] tag in the console.
+
+    ``ref_color`` is the color of the span the ref wraps; None lets the kv
+    rule fall back to the theme's on-surface color.
+    """
+    ref_color = ColorProperty(None, allownone=True)
 
 
 class MarkupTextFieldHoverBehavior(HoverBehavior):
@@ -84,6 +90,7 @@ class MarkupTextFieldHoverBehavior(HoverBehavior):
     _tooltip = None
     _hover_pos = None
     _ref_span = None
+    _ref_color = None
 
     def __init__(self, *args, **kwargs):
         self._hover_trigger = Clock.create_trigger(self._hover_hittest, self.HOVER_HITTEST_DELAY)
@@ -115,7 +122,8 @@ class MarkupTextFieldHoverBehavior(HoverBehavior):
         self.remove_tooltip()
 
     def on_ref_hover(self, ref):
-        self._show_tooltip(ref.split("|", maxsplit=1)[-1].replace("<br>", "\n"), self._hover_pos)
+        self._show_tooltip(ref.split("|", maxsplit=1)[-1].replace("<br>", "\n"), self._hover_pos,
+                           self._ref_color)
 
     def remove_tooltip(self, *args):
         self._hover_trigger.cancel()
@@ -138,6 +146,9 @@ class MarkupTextFieldHoverBehavior(HoverBehavior):
             self.remove_tooltip()
             return
         start, end, key = span
+        # Keys repeat across messages (ref_count restarts per line), so read the
+        # color from this span rather than the first [ref=key] in the console.
+        self._ref_color = ref_span_color(self.text[start:end], key)
         self.dispatch("on_ref_hover", key)
         self._ref_span = (start, end)
 
@@ -182,17 +193,18 @@ class MarkupTextFieldHoverBehavior(HoverBehavior):
         index = self._markup_index_at(pos)
         return index is not None and self._ref_span[0] <= index < self._ref_span[1]
 
-    def _show_tooltip(self, text, pos):
+    def _show_tooltip(self, text, pos, color=None):
         tip = self._tooltip
         if tip is None:
             tip = self._tooltip = MarkupTextFieldTooltip()
             # Back-ref the tracker's clear_stray_tooltips uses to spare a live tooltip.
             tip._tooltip = self
         if tip.parent is not None:
-            if tip.text == text:
+            if tip.text == text and tip.ref_color == color:
                 return
             self.remove_tooltip()
         tip.text = text
+        tip.ref_color = color
         # Force the texture now so adaptive sizing yields the final size before clamping.
         tip.texture_update()
         x = pos[0] + dp(12)

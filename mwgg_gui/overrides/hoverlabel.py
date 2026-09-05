@@ -3,12 +3,29 @@ from __future__ import annotations
 from kivymd.uix.label import MDLabel
 from kivymd.uix.behaviors import HoverBehavior
 from kivy.core.text.markup import MarkupLabel
-from kivy.properties import StringProperty, NumericProperty
+from kivy.properties import StringProperty, NumericProperty, ColorProperty
+from kivy.utils import get_color_from_hex
+
+import re
+
+# TEXT_COLORS values are bare 6-digit hex; kivy's hex_colormap carries "#".
+_color_tag = re.compile(r"\[color=#?([0-9a-fA-F]{6}(?:[0-9a-fA-F]{2})?)]")
+
+
+def ref_span_color(text: str, key: str) -> list[float] | None:
+    """RGBA of the color tag opening the span ``key``'s ref wraps, or None when uncolored."""
+    open_tag = f"[ref={key}]"
+    start = text.find(open_tag)
+    if start < 0:
+        return None
+    match = _color_tag.match(text, start + len(open_tag))
+    return get_color_from_hex(match.group(1)) if match else None
 
 class HoverLabel(MDLabel):
 
     mw_id: NumericProperty = 0
     mw_ref: StringProperty = ""
+    mw_color = ColorProperty(None, allownone=True)
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -22,6 +39,7 @@ class HoverLabel(MDLabel):
                 if len(self.refs) == 1:
                     ref_name = key
                     self.mw_id, self.mw_ref = ref_name.split("|", maxsplit=1)
+                    self.mw_color = ref_span_color(self.text, ref_name)
                     if "<br>" in self.mw_ref:
                         self.mw_ref = self.mw_ref.split("<br>", maxsplit=1)[0]
             return True

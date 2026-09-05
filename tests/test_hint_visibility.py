@@ -44,3 +44,13 @@ def test_resolve_ui_hint_bucket_is_the_other_player():
     assert hv.resolve_ui_hint_bucket(hint, lambda slot: slot == 1) == 2
     assert hv.resolve_ui_hint_bucket(hint, lambda slot: slot == 2) == 1
     assert hv.resolve_ui_hint_bucket(hint, lambda slot: False) is None
+
+
+def test_find_ui_hint_reads_the_other_players_bucket():
+    hint = {"receiving_player": 1, "finding_player": 2, "location": 7}
+    marker = object()
+    data = {2: {7: marker}}
+    assert hv.find_ui_hint(data, hint, lambda slot: slot == 1) is marker
+    assert hv.find_ui_hint(data, hint, lambda slot: slot == 2) is None
+    assert hv.find_ui_hint({2: None}, hint, lambda slot: slot == 1) is None
+    assert hv.find_ui_hint(data, hint, lambda slot: False) is None
