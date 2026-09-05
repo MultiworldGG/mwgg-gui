@@ -24,6 +24,7 @@ from kivy.properties import BooleanProperty, NumericProperty, StringProperty
 from kivy.uix.recycleboxlayout import RecycleBoxLayout  # noqa: F401 -- registered for kv
 from kivy.uix.recycleview import RecycleView  # noqa: F401 -- registered for kv
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
+from kivy.uix.scrollview import ScrollView
 from kivymd.app import MDApp
 from kivymd.uix.label import MDLabel
 from kivymd.uix.list import MDList
@@ -91,9 +92,10 @@ Builder.load_string('''
             id: rv
             viewclass: "TrackerLocationItem"
             bar_width: dp(10)
-            # When the location list fits inside the panel viewport there's
-            # nothing to scroll; disable scrolling and overscroll bounce
-            # so a drag falls through to the outer MDList instead.
+            # Both axes must be off when the list fits: a ScrollView with any
+            # axis enabled grabs drags and swallows wheel events it cannot
+            # apply, so the outer MDList never receives them.
+            do_scroll_x: False
             do_scroll_y: rl.minimum_height > self.height
             always_overscroll: False
             RecycleBoxLayout:
@@ -210,6 +212,20 @@ class TrackerRegionPanel(GameListPanel):
         rv.refresh_from_data()
         self._sync_content_height()
 
+    def update_locations(self, locations: list[dict]) -> None:
+        """Swap in a new location list without rebuilding the panel."""
+        self._tracker_locations = locations
+        self.count_label_text = str(len(locations))
+        if self._populated:
+            self.ids.rv.data = list(locations)
+        self._sync_content_height()
+
+    def _scroll_viewport_height(self) -> float:
+        widget = self.parent
+        while widget is not None and not isinstance(widget, ScrollView):
+            widget = widget.parent
+        return widget.height if widget is not None else Window.height
+
     def _calculate_content_height(self) -> float:
         count = len(self._tracker_locations)
         if count == 0:
@@ -218,8 +234,7 @@ class TrackerRegionPanel(GameListPanel):
             count * (self.item_height + _CONTENT_SPACING)
             + (_CONTENT_PADDING_V * 2)
         )
-        host = self.parent
-        viewport = host.height if host else Window.height
+        viewport = self._scroll_viewport_height()
         max_height = max(viewport - self.panel_header_height, dp(96))
         return min(item_block, max_height)
 
@@ -289,12 +304,16 @@ class TrackerRegionList(MDList):
             self.clear_widgets()
             return
 
+        existing: dict[str, TrackerRegionPanel] = {}
         for child in list(self.children):
             if isinstance(child, TrackerRegionPanel):
                 self._expansion_state[child.region_name] = bool(child.is_open)
+                existing[child.region_name] = child
 
         color_for = _make_category_color_lookup(self.app)
 
+        # Reuse panels so an open one keeps its scroll offset and height
+        # instead of collapsing and re-animating on every refresh tick.
         self.clear_widgets()
         for branch_name, locations in branches:
             location_dicts = [
@@ -302,6 +321,11 @@ class TrackerRegionList(MDList):
                  "color_hex": color_for(category)}
                 for name, category in locations
             ]
+            panel = existing.get(branch_name)
+            if panel is not None:
+                panel.update_locations(location_dicts)
+                self.add_widget(panel)
+                continue
             panel = TrackerRegionPanel(
                 region_name=branch_name, locations=location_dicts
             )
