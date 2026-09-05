@@ -116,6 +116,7 @@ from Utils import persistent_load
 from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
 from mwgg_gui.components.layout_mode import get_layout_mode, read_compact_mode
+from mwgg_gui.components.live_forwarding import LiveForwarding
 
 from mwgg_gui.components.titlebar import LiveTitleMeta, Titlebar
 from mwgg_gui.console.console import ConsoleScreen
@@ -150,7 +151,7 @@ class MainScreenMgr(MDScreenManager):
         super().__init__(*args, **kwargs)
         # self.transition = MDFadeSlideTransition()
 
-class MultiMDApp(MDApp, metaclass=LiveTitleMeta):
+class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
 
     # Without `title` Kivy derives it from the class name minus "App" ("MultiMD").
     title = "MultiworldGG"
@@ -281,23 +282,6 @@ class MultiMDApp(MDApp, metaclass=LiveTitleMeta):
         # Where the client-role menu's Back item returns from Settings, the
         # one screen without a bottom bar.
         self._screen_before_settings = "console"
-
-    def __getattr__(self, name: str):
-        # Phantom post-takeover instances forward attribute lookups to the live
-        # launcher instance so live-app attributes (screen_manager, ...) resolve.
-        live = type(self)._active_instance
-        if live is not None and live is not self:
-            try:
-                return getattr(live, name)
-            except AttributeError:
-                pass
-        legacy_manager = self.__dict__.get("_legacy_kvui_manager")
-        if legacy_manager is not None and legacy_manager is not self:
-            try:
-                return getattr(legacy_manager, name)
-            except AttributeError:
-                pass
-        raise AttributeError(name)
 
     def get_application_config(self):
         """Get the path to the configuration file"""
