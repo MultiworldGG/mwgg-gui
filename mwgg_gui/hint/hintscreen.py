@@ -858,13 +858,13 @@ class HintListPanel(GameListPanel):
             if classification == "Useful":
                 behavior["elevation_level"] = 3
                 behavior["shadow_color"] = item_colors["useful"]
-            if classification == "Progression - Logically Relevant":
+            if classification == "Not Priority":
                 behavior["elevation_level"] = 4
                 behavior["shadow_color"] = item_colors["progression_deprioritized"]
             if classification == "Progression":
                 behavior["elevation_level"] = 5
                 behavior["shadow_color"] = item_colors["progression"]
-            if classification == "Progression - Required for Goal":
+            if classification == "Required for Goal":
                 behavior["elevation_level"] = 6
                 behavior["shadow_color"] = item_colors["progression_goal"]
             if classification == "Found":

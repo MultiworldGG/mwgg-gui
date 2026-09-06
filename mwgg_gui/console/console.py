@@ -330,11 +330,11 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
             
             if hint.found == "Found":
                 elevation = 0
-            elif classification == "Progression - Required for Goal":
+            elif classification == "Required for Goal":
                 elevation = 6
             elif classification == "Progression":
                 elevation = 5
-            elif classification == "Progression - Logically Relevant":
+            elif classification == "Not Priority":
                 elevation = 4
             elif classification == "Useful":
                 elevation = 3
