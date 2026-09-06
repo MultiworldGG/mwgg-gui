@@ -1331,6 +1331,11 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
 
         for slot, local_data in player_data.items():
             remote_data = current_player_data.get(slot, {})
+            # A web-set slot avatar exists only in the server copy; an empty
+            # local one must not replace it.
+            if local_data["slot_id"] == self.ctx.slot and not local_data["avatar"] and remote_data.get("avatar"):
+                local_data["avatar"] = remote_data["avatar"]
+                self.ui_player_data[slot].avatar = local_data["avatar"]
             # Skip if data is unchanged
             if local_data == remote_data:
                 continue

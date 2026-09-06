@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from CommonClient import CommonContext
 
 from mwgg_gui.components.guidataclasses import UIPlayerData, UIHint, HintStatus
+from mwgg_gui.components.avatar_image import AvatarFitImage, AvatarLeadingAvatar  # kv Factory names
 
 with open(os.path.join(os.path.dirname(__file__), "expansionlist.kv"), encoding="utf-8") as kv_file:
     Builder.load_string(kv_file.read())
@@ -634,7 +635,7 @@ class GameListPanel(MDExpansionPanel):
         self.panel_header_layout = SlotListItemHeader(item_data=self.item_data, panel=self)
         self.leading_avatar = self.panel_header_layout.ids.leading_avatar
         self.panel_header.add_widget(self.panel_header_layout)
-        self.leading_avatar.source = "" if not self.item_data['avatar'] else self.item_data['avatar']
+        self.leading_avatar.avatar_url = self.item_data['avatar'] or ""
         i = 1 if self.app.theme_cls.theme_style == "Dark" else 0
         item_colors = {
             "trap": self.app.theme_mw.markup_tags_theme.trap_item_color[i],

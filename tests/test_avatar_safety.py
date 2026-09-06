@@ -8,6 +8,7 @@ deterministic and make no network calls.
 from __future__ import annotations
 
 import importlib.util
+import os
 import sys
 import types
 import urllib.error
@@ -104,3 +105,24 @@ def test_successful_probe_keeps_url_and_stops_reprobing(monkeypatch):
     assert module._probe_results[TRUSTED_URL] is True
     assert module.safe_avatar_source(TRUSTED_URL) == TRUSTED_URL
     assert threads.started == []
+
+
+def test_avatar_source_substitutes_default_icon(monkeypatch):
+    module = _load_avatar_safety(monkeypatch)
+    _with_recorded_threads(module)
+    assert os.path.isfile(module.DEFAULT_AVATAR_SOURCE)
+    assert module.avatar_source("") == module.DEFAULT_AVATAR_SOURCE
+    assert module.avatar_source("https://evil.example/a.png") == module.DEFAULT_AVATAR_SOURCE
+    assert module.avatar_source(TRUSTED_URL) == TRUSTED_URL
+
+
+def test_mark_avatar_unavailable_collapses_later_calls(monkeypatch):
+    module = _load_avatar_safety(monkeypatch)
+    threads = _with_recorded_threads(module)
+    module.mark_avatar_unavailable(TRUSTED_URL)
+    assert module.safe_avatar_source(TRUSTED_URL) == ""
+    assert module.avatar_source(TRUSTED_URL) == module.DEFAULT_AVATAR_SOURCE
+    assert threads.started == []  # never re-probed
+
+    module.mark_avatar_unavailable(module.DEFAULT_AVATAR_SOURCE)
+    assert module.DEFAULT_AVATAR_SOURCE not in module._probe_results

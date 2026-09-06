@@ -14,7 +14,7 @@ dependencies = [ "kivy>=2.3.1", "kivymd>=2.0.0", "pillow>=11.3.0", "asynckivy>=0
 name = "DelilahIsDidi"
 
 [tool.setuptools.package-data]
-mwgg_gui = [ "**/*.kv",]
+mwgg_gui = [ "**/*.kv", "assets/*.png",]
 
 [tool.setuptools.packages.find]
 where = [ ".",]
