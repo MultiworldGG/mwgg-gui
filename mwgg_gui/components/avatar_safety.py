@@ -2,7 +2,8 @@
 
 `safe_avatar_source` is the boundary check applied wherever a remote avatar
 URL is about to feed a Kivy widget's `source`. Legacy / hostile URLs collapse
-to '' and the widget falls back to its default.
+to ''; `avatar_source` substitutes the packaged controller icon so a widget
+never renders blank (see components/avatar_image.py for the widgets).
 
 `upload_avatar` and `mint_token` talk to the MWGG webhost's
 `/api/avatar/...` endpoints using stdlib only (no `requests` dependency).
@@ -29,6 +30,11 @@ from mwgg_gui.constants import (
 )
 
 logger = logging.getLogger("MultiWorld")
+
+#: Controller icon rendered whenever a slot has no usable avatar.
+DEFAULT_AVATAR_SOURCE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "controller-icon.png"
+)
 
 
 # Negative cache for missing avatars: Kivy's Loader re-fetches a 404ing URL
@@ -79,6 +85,20 @@ def safe_avatar_source(url: str) -> str:
                 target=_probe_avatar, args=(url,), name="mwgg-avatar-probe", daemon=True,
             ).start()
     return url
+
+
+def avatar_source(url: str) -> str:
+    """`safe_avatar_source`, with the default avatar in place of ''."""
+    return safe_avatar_source(url) or DEFAULT_AVATAR_SOURCE
+
+
+def mark_avatar_unavailable(url: str) -> None:
+    """Record a URL the image loader failed on so later renders skip it."""
+    if not url or url == DEFAULT_AVATAR_SOURCE:
+        return
+    with _probe_lock:
+        _probe_results[url] = False
+        _probes_in_flight.discard(url)
 
 
 class AvatarUploadError(Exception):

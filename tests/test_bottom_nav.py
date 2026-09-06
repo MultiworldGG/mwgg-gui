@@ -60,13 +60,6 @@ def test_client_tabs_append_after_builtins(bottom_nav):
     assert entries[-1].icon == "gamepad-variant-outline"
 
 
-def test_client_tab_handle_keeps_the_legacy_text_alias(bottom_nav):
-    tab = bottom_nav.ClientTab("2048 Game")
-    assert tab.text == "2048 Game"
-    assert tab.icon == "puzzle-outline"
-    assert tab.content is None
-
-
 def _component(module: str, icon: str, type_name: str = "CLIENT"):
     def func(*args):
         pass

@@ -50,10 +50,10 @@ from kivymd.uix.widget import Widget
 
 from kivy.lang import Builder
 
+from mwgg_gui.components.avatar_image import AvatarFallbackBehavior
 from mwgg_gui.components.avatar_safety import (
     AvatarUploadError,
     mint_token,
-    safe_avatar_source,
     upload_avatar,
 )
 from mwgg_gui.constants import AVATAR_FILE_EXTENSIONS
@@ -171,7 +171,7 @@ class ProfileSwitch(MDBoxLayout):
         persistent_store('client', self.settings_name, value)
         setattr(self.local_player_data, self.settings_name, value)
 
-class AvatarImage(CircularRippleBehavior, ButtonBehavior, FitImage):
+class AvatarImage(AvatarFallbackBehavior, CircularRippleBehavior, ButtonBehavior, FitImage):
     """Mixin for the avatar image"""
     def __init__(self, **kwargs):
         self.ripple_scale = 0.85
@@ -185,7 +185,7 @@ class ProfileAvatar(MDBoxLayout):
 
     The user picks a local image file; the client uploads it to the MWGG
     webhost and stores the server-issued trusted URL in _persistent_storage.yaml.
-    Legacy or hostile URLs are silently dropped on render via safe_avatar_source.
+    Legacy, hostile or missing URLs render the controller icon instead.
     """
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -203,7 +203,7 @@ class ProfileAvatar(MDBoxLayout):
             size_hint=(None, None),
             size=(dp(100), dp(100)),
             radius=[dp(50), dp(50), dp(50), dp(50)],  # Circular
-            source=safe_avatar_source(stored_url),
+            avatar_url=stored_url,
             pos_hint={"center_x": 0.5}
         )
         self.choose_button = MDButton(
@@ -274,7 +274,7 @@ class ProfileAvatar(MDBoxLayout):
         self.choose_button.disabled = False
         self.status_label.theme_text_color = "Secondary"
         self.status_label.text = "Avatar updated."
-        self.avatar_display.source = url
+        self.avatar_display.avatar_url = url
         self.save_avatar(url)
         Clock.schedule_once(lambda *_: setattr(self.status_label, "text", ""), 4)
 

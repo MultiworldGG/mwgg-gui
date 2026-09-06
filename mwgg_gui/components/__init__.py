@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+from .avatar_image import (
+    AvatarFallbackBehavior,
+    AvatarFitImage,
+    AvatarLeadingAvatar,
+)
 from .bottomappbar import (
     BottomAppBar,
     BottomBarTextInput,
