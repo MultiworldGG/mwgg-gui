@@ -76,8 +76,8 @@ Builder.load_string('''
             rgba: 1, 1, 1, 1
         Rectangle:
             group: "nav-image"
-            source: root.image_source
-            size: root.image_size
+            texture: root.image_texture
+            size: root.image_size if root.image_texture else (0, 0)
             pos: self.center_x - root.image_size[0] / 2, self.center_y - root.image_size[1] / 2
 
 <BottomNavTextButton>:
@@ -280,17 +280,23 @@ class BottomNavIconButton(BottomNavButtonBehavior, MDIconButton):
 
 class BottomNavImageButton(BottomNavIconButton):
     """Nav button drawing a world image (path or ap: URL) instead of a glyph.
-    Drawn on the canvas: MDIcon accepts no child widgets besides a badge."""
+    Drawn on the canvas: MDIcon accepts no child widgets besides a badge.
+    Bound by texture, not source: Rectangle.source goes through resource_find,
+    which knows no ap: URLs; CoreImage uses the scheme-aware ImageLoader."""
     image_source = StringProperty("")
+    image_texture = ObjectProperty(None, allownone=True)
     image_size = ListProperty([dp(24), dp(24)])
 
     def on_image_source(self, _instance, source):
         try:
-            width, height = CoreImage(source).texture.size
+            texture = CoreImage(source).texture
         except Exception:
+            self.image_texture = None
             return
+        width, height = texture.size
         scale = dp(24) / max(width, height, 1)
         self.image_size = [width * scale, height * scale]
+        self.image_texture = texture
 
 
 class BottomNavTextButton(BottomNavButtonBehavior, MDButton):
