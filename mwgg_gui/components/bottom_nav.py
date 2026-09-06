@@ -25,7 +25,7 @@ class ClientTab:
     back to remove_client_tab(). `text` mirrors the button handle it replaced."""
     name: str
     content: object = None
-    icon: str = "puzzle-outline"
+    icon: str = "puzzle"
 
     @property
     def text(self) -> str:
