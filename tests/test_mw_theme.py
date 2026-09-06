@@ -13,6 +13,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 _MW_THEME_PATH = (
     Path(__file__).resolve().parent.parent / "mwgg_gui" / "components" / "mw_theme.py"
 )
@@ -112,3 +114,90 @@ def test_load_markup_color_forwards_theme_style_index():
     default = mw_theme.DEFAULT_TEXT_COLORS["trap_item_color"]
     assert theme.load_markup_color("trap_item_color", 1) == default
     assert mw_theme.TEXT_COLORS["trap_item_color"] == default[1]
+
+
+class _MemoryConfig(configparser.ConfigParser):
+    """ConfigParser stand-in for kivy's, whose write() takes no file."""
+    def __init__(self):
+        super().__init__()
+        self.writes = 0
+
+    def write(self):
+        self.writes += 1
+
+
+def _theme(config, game_module="", style="Dark"):
+    theme = object.__new__(mw_theme.DefaultTheme)
+    theme.app_config = config
+    theme.game_module = game_module
+    theme._theme_style = style
+    return theme
+
+
+@pytest.fixture
+def palettes(monkeypatch):
+    monkeypatch.setattr(mw_theme, "hex_colormap", {"purple": "", "green": "", "blue": ""})
+
+
+def test_load_primary_palette_prefers_game_override(palettes):
+    config = _MemoryConfig()
+    config.add_section("client")
+    config.set("client", "primary_palette", "Blue")
+    config.add_section("game_settings")
+    config.set("game_settings", "albw_primary_palette", "green")
+
+    assert _theme(config).load_primary_palette() == "Blue"
+    assert _theme(config, "albw").load_primary_palette() == "Green"
+    assert _theme(config, "kh2").load_primary_palette() == "Blue"
+
+
+def test_load_primary_palette_rejects_unknown_names(palettes):
+    config = _MemoryConfig()
+    config.add_section("client")
+    config.set("client", "primary_palette", "Blue")
+    config.add_section("game_settings")
+    config.set("game_settings", "albw_primary_palette", "Mauve")
+    default = mw_theme.THEME_OPTIONS["Dark"][0][0]
+
+    assert _theme(config, "albw").load_primary_palette() == default
+    assert _theme(_MemoryConfig(), "albw").load_primary_palette() == default
+
+
+def test_save_primary_palette_routes_by_scope():
+    config = _MemoryConfig()
+    config.add_section("client")
+    theme = _theme(config, "albw")
+
+    theme.save_primary_palette("Green", for_game=True)
+    assert config.get("game_settings", "albw_primary_palette") == "Green"
+    assert not config.has_option("client", "primary_palette")
+    assert theme.primary_palette == "Green"
+
+    theme.save_primary_palette("Blue")
+    assert config.get("client", "primary_palette") == "Blue"
+    assert config.get("game_settings", "albw_primary_palette") == "Green"
+
+    # Launcher (no game) ignores for_game and writes the root setting.
+    launcher = _theme(config)
+    launcher.save_primary_palette("Purple", for_game=True)
+    assert config.get("client", "primary_palette") == "Purple"
+    assert config.writes == 3
+
+
+def test_set_game_palette_enabled_pins_and_drops_override():
+    config = _MemoryConfig()
+    config.add_section("client")
+    theme = _theme(config, "albw")
+    theme._primary_palette = "Green"
+
+    theme.set_game_palette_enabled(True)
+    assert config.get("game_settings", "albw_primary_palette") == "Green"
+
+    theme.set_game_palette_enabled(False)
+    assert not config.has_option("game_settings", "albw_primary_palette")
+    assert config.writes == 2
+
+    # No section yet and no game: both are no-ops.
+    _theme(_MemoryConfig(), "albw").set_game_palette_enabled(False)
+    _theme(config).set_game_palette_enabled(True)
+    assert config.writes == 2

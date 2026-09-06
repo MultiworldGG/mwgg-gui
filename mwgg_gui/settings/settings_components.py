@@ -27,7 +27,8 @@ from kivymd.uix.label import MDLabel
 from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField, MDTextFieldHelperText
 from kivymd.uix.dialog import MDDialog, MDDialogHeadlineText, MDDialogSupportingText, MDDialogContentContainer
-from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText 
+from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
+from kivymd.uix.selectioncontrol import MDCheckbox
 
 from mwgg_gui.components.mw_theme import THEME_OPTIONS, DEFAULT_TEXT_COLORS, RegisterFonts
 from mwgg_gui.components.layout_mode import read_compact_mode
@@ -97,6 +98,22 @@ KV = '''
         pos_hint: {"right": 1, "center_y": 0.5}
         width: dp(395)
         spacing: dp(4)
+
+<GameThemeCheckbox>:
+    orientation: "horizontal"
+    size_hint_y: None
+    height: dp(40)
+    padding: dp(4)
+    spacing: dp(4)
+    MDLabel:
+        text: root.text
+        theme_text_color: "Secondary"
+        size_hint_x: 1
+    MDCheckbox:
+        id: checkbox
+        active: root.active
+        pos_hint: {"center_y": 0.5}
+        on_active: root.on_toggle(self.active)
 
 <PaletteButton>:
     style: "filled"
@@ -284,6 +301,21 @@ class LabeledSlider(MDBoxLayout):
 class PaletteSection(MDBoxLayout):
     """Section containing palette color buttons with a label"""
     text = StringProperty("")
+
+class GameThemeCheckbox(MDBoxLayout):
+    """Client-only row under the palette buttons: when checked, palette
+    picks are stored for the current game instead of the root setting."""
+    text = StringProperty("Game Theme")
+    active = BooleanProperty(True)
+    on_change = ObjectProperty(None)
+
+    def on_toggle(self, value):
+        # kv sets the box active at build; only user flips reach on_change.
+        if value == self.active:
+            return
+        self.active = value
+        if self.on_change:
+            self.on_change(value)
 
 class PaletteButton(MDButton):
     """Individual palette color button"""
@@ -758,7 +790,15 @@ class ThemingSettings(SettingsScrollBox):
                         set_palette=self.update_colors
                     )
             palette_section.add_widget(palette_layout)
-                        
+            # The launcher always edits the root palette; only a routed
+            # client can pin one to its game.
+            self.game_theme_checkbox = None
+            if self.app.role != ROLE_LAUNCHER and self.theme_mw.game_module:
+                self.game_theme_checkbox = GameThemeCheckbox(
+                    on_change=self.theme_mw.set_game_palette_enabled
+                )
+                palette_section.add_widget(self.game_theme_checkbox)
+
             # Custom colors section
             self.custom_colors_section = SettingsSection(name="custom_colors_settings", title="Custom Color Settings")
             color_boxes = self.make_color_boxes()
@@ -878,9 +918,8 @@ class ThemingSettings(SettingsScrollBox):
         Clock.schedule_once(lambda dt: self._do_color_update(value), 0.5)
 
     def _do_color_update(self, value):
-        self.app.theme_mw.primary_palette = value
-        self.app.app_config.set('client', 'primary_palette', value)
-        self.app.app_config.write()
+        for_game = self.game_theme_checkbox is not None and self.game_theme_checkbox.active
+        self.app.theme_mw.save_primary_palette(value, for_game=for_game)
         self.app.update_colors()
         self.app.loading_layout.hide_loading()
 

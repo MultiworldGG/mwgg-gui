@@ -231,15 +231,15 @@ class MWBaseListItem(MDBoxLayout, CommonElevationBehavior):
         if self.classification == "Useful":
             self.elevation_level = 3
             self.shadow_color = item_colors["useful"]
-        if self.classification == "Progression - Logically Relevant":
+        if self.classification == "Not Priority":
             self.elevation_level = 4
-            self.shadow_color = item_colors["logically_required"]
+            self.shadow_color = item_colors["progression_deprioritized"]
         if self.classification == "Progression":
             self.elevation_level = 5
             self.shadow_color = item_colors["progression"]
-        if self.classification == "Progression - Required for Goal":
+        if self.classification == "Required for Goal":
             self.elevation_level = 6
-            self.shadow_color = item_colors["goal"]
+            self.shadow_color = item_colors["progression_goal"]
         if self.found == "Found":
             self.elevation_level = 0
 

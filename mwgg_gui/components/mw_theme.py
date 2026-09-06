@@ -173,10 +173,14 @@ class DefaultTheme(ThemableBehavior):
     dynamic_scheme_name: StringProperty
     _font_scale: BoundedNumericProperty
     app_config: None
-    def __init__(self, app_config):
+    # World module (MWGG_GAME) of a client-role process; empty for the
+    # launcher. Non-empty enables the game_settings palette override.
+    game_module: str
+    def __init__(self, app_config, game_module: str = ""):
         super().__init__()
         self._font_scale = BoundedNumericProperty(1.0, min=0.8, max=1.2)
         self.app_config = app_config
+        self.game_module = game_module
         self.init_global_theme()
         self.markup_tags_theme = MarkupTagsTheme()
         self.markup_tags_theme.load_all_colors(app_config, self._theme_style_index)
@@ -206,6 +210,46 @@ class DefaultTheme(ThemableBehavior):
         self._font_scale = value
         Metrics.fontscale = value
         RegisterFonts(MDApp.get_running_app())
+
+    @property
+    def game_palette_key(self):
+        return f"{self.game_module}_primary_palette"
+
+    def load_primary_palette(self):
+        """Resolve the startup palette: the game_settings override for this
+        process's world when one exists, else client.primary_palette.
+        Unknown names fall back to the theme style's first palette."""
+        default = THEME_OPTIONS[self.theme_style][0][0]
+        palette = self.app_config.get('client', 'primary_palette', fallback=default)
+        if self.game_module:
+            palette = self.app_config.get('game_settings', self.game_palette_key, fallback=palette)
+        palette = palette.capitalize()
+        valid_palettes = [name.capitalize() for name in hex_colormap.keys()]
+        return palette if palette in valid_palettes else default
+
+    def save_primary_palette(self, value, for_game: bool = False):
+        """Apply a palette and persist it, to the per-game override when
+        for_game is set in a client process, else to the root setting."""
+        self.primary_palette = value
+        if for_game and self.game_module:
+            if not self.app_config.has_section('game_settings'):
+                self.app_config.add_section('game_settings')
+            self.app_config.set('game_settings', self.game_palette_key, value)
+        else:
+            self.app_config.set('client', 'primary_palette', value)
+        self.app_config.write()
+
+    def set_game_palette_enabled(self, enabled: bool):
+        """Pin the current palette to this game, or drop the override so
+        the root palette applies on the next launch."""
+        if not self.game_module:
+            return
+        if enabled:
+            self.save_primary_palette(self.primary_palette, for_game=True)
+            return
+        if self.app_config.has_section('game_settings'):
+            self.app_config.remove_option('game_settings', self.game_palette_key)
+            self.app_config.write()
 
     def save_markup_color(self, color_name, color_value):
         """Save a single markup color to the config"""
@@ -272,15 +316,8 @@ class DefaultTheme(ThemableBehavior):
         if theme_style.lower() not in ["light","dark"]:
             theme_style = 'Dark'
         self.theme_style = theme_style
-        
-        primary_palette = self.app_config.get('client', 'primary_palette', fallback=THEME_OPTIONS[theme_style][0][0]).capitalize()
-        valid_palettes = [
-            name_color.capitalize() for name_color in hex_colormap.keys()
-        ]
-        if primary_palette not in valid_palettes:
-            primary_palette = THEME_OPTIONS[theme_style][0][0]
-        self.primary_palette = primary_palette
-        
+        self.primary_palette = self.load_primary_palette()
+
         font_scale = self.app_config.get('client', 'font_scale', fallback='1.0')
         self.font_scale = float(font_scale)
 
