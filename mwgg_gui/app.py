@@ -215,16 +215,18 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         # MultiWorld.py assign (never setdefault) before spawning this process.
         self.role = role or os.environ.get("MWGG_ROLE", ROLE_LAUNCHER)
         self.client_type_hint = os.environ.get("MWGG_CLIENT_TYPE", "")
+        # Routed world module (MWGG_GAME, exported by MultiWorld.py); empty
+        # for the launcher and for unrouted clients.
+        self.game_module = ""
         if self.role == ROLE_LAUNCHER:
             self.base_title = "MultiworldGG Launcher"
         else:
             # Client-direct processes have no launcher screen to set the game
-            # cover; resolve it from the module MultiWorld.py exported when
-            # routing the launch.
-            game_module = os.environ.get("MWGG_GAME", "")
-            if game_module:
+            # cover; resolve it from the routed module.
+            self.game_module = os.environ.get("MWGG_GAME", "")
+            if self.game_module:
                 from mwgg_igdb import GameIndex
-                cover_url = GameIndex.get_game(game_module).get("cover_url")
+                cover_url = GameIndex.get_game(self.game_module).get("cover_url")
                 if cover_url:
                     self.logo_png = cover_url
         # Phantom subclass instances built post-takeover must not clobber the
@@ -252,7 +254,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         self.ctx = ctx
         self.commandprocessor = self.ctx.command_processor(self.ctx)
 
-        self.theme_mw = DefaultTheme(self.app_config)
+        self.theme_mw = DefaultTheme(self.app_config, self.game_module)
 
         self.text_buffer = Queue(maxsize=1000)
         self.ui_hint_data = {}
@@ -295,6 +297,8 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             'admin_password': '',
             'scroll_lines': '3',
             'theme_style': 'Dark',
+            # Client processes may override this per world under
+            # game_settings as <module>_primary_palette (no defaults).
             'primary_palette': 'Purple',
             'font_scale': '1.0',
             'monospace_font': 'Argon',
