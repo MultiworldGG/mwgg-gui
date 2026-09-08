@@ -75,11 +75,13 @@ from mwgg_gui.launcher.setup_guide import (extract_bundled_setup_doc,
                                            setup_guide_url)
 import Utils
 from Utils import (get_available_worlds,
+                   get_installed_worlds,
                    user_path,
                    local_path,
                    is_frozen,
                    is_windows,
                    persistent_store)
+from ModuleUpdate import INSTALLER_WORLDS_ENV
 from frontend_protocol import verify_slot, SlotVerifyResult
 
 from FileUtils import FileUtils
@@ -100,6 +102,16 @@ _NO_GAME_STATUS = ("Game not set, connecting using Text Client. "
 _MANUAL_STATUS = "Manual games are chosen inside the Manual Client after launch."
 
 _TRACKER_STATUS = "Game not set, connecting using the Universal Tracker."
+
+# A larger installer selection would overflow the favorites bar, so it is not seeded.
+_INSTALLER_FAVORITES_MAX = 10
+
+
+def _installer_selected_worlds() -> list[str]:
+    """World modules the Windows installer staged on this first launch; popped
+    so clients spawned from here do not see it."""
+    raw = os.environ.pop(INSTALLER_WORLDS_ENV, "")
+    return [m for m in raw.split(",") if m]
 
 
 def _needs_game_validation(game_module: str, game_label: str) -> bool:
@@ -299,7 +311,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         super().__init__(**kwargs)
         self.game_filter = []
         self.games_mdlist = MDList(width=260)
-        self.game_tag_filter = "popular"
+        # Empty = every installed game (see set_game_list).
+        self.game_tag_filter = ""
         self.selected_game = ""
         self.highlighted_favorite = None
         self.app = MDApp.get_running_app()
@@ -425,13 +438,22 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         else:
             self.launcher_view.padding = wide
 
+    def _installed_game_list(self) -> dict[str, dict]:
+        """Every installed world the index knows, by display name; the
+        empty-search default. available_games is the whole index and would
+        flood the list."""
+        games = {module: GameIndex.get_game(module) for module in get_installed_worlds()}
+        return dict(sorted(((m, d) for m, d in games.items() if d),
+                           key=lambda item: item[1].get('game_name', item[0]).lower()))
+
     async def set_game_list(self):
-        """Set the game list based on the game tag filter"""
-        matching_games = GameIndex.search(self.game_tag_filter)
-        not_in_available_games = [game_module for game_module in matching_games.keys() \
-                                  if game_module not in self.available_games]
-        for game_module in not_in_available_games:
-            matching_games.pop(game_module)
+        """Set the game list: installed games matching the search, or all of
+        them when the search is empty."""
+        if self.game_tag_filter:
+            matching_games = {module: data for module, data in GameIndex.search(self.game_tag_filter).items()
+                              if module in self.available_games}
+        else:
+            matching_games = self._installed_game_list()
         self.games_mdlist.clear_widgets()
         for module_name, game_data in matching_games.items():
             await asynckivy.sleep(0)
@@ -490,10 +512,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.set_favorite_highlight(None)
 
     def apply_game_search(self, query: str, show_list: bool = True):
-        """Repopulate the game list for `query`; an empty query falls back to
-        the "popular" set (the same default the launcher starts with).
+        """Repopulate the game list for `query`; an empty query lists every
+        installed game (the same default the launcher starts with).
         `show_list` picks the compact side to show afterwards."""
-        self.game_tag_filter = (query or "").strip() or "popular"
+        self.game_tag_filter = (query or "").strip()
         asynckivy.start(self.set_game_list())
         self._show_compact_side("games" if show_list else "play")
 
@@ -626,6 +648,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     def load_favorite_games(self):
         """Load favorite games from app config"""
         try:
+            selected = _installer_selected_worlds()
+            if 0 < len(selected) < _INSTALLER_FAVORITES_MAX:
+                self.app.theme_mw.add_favorite_games(selected)
             favorites_str = self.app.app_config.get('game_settings', 'favorite_games', fallback='')
             if favorites_str:
                 self.saved_games = favorites_str.split(',')

@@ -201,3 +201,19 @@ def test_set_game_palette_enabled_pins_and_drops_override():
     _theme(_MemoryConfig(), "albw").set_game_palette_enabled(False)
     _theme(config).set_game_palette_enabled(True)
     assert config.writes == 2
+
+
+def test_add_favorite_games_merges_and_dedupes():
+    config = _MemoryConfig()
+    config.add_section("client")
+    theme = _theme(config)
+
+    theme.add_favorite_games(["sms", "oot"])
+    assert config.get("game_settings", "favorite_games") == "sms,oot"
+
+    theme.add_favorite_games(["oot", "alttpr"])
+    assert config.get("game_settings", "favorite_games") == "sms,oot,alttpr"
+
+    # Nothing new: no rewrite.
+    theme.add_favorite_games(["sms"])
+    assert config.writes == 2
