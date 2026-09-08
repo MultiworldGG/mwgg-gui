@@ -83,7 +83,7 @@ class SearchBar(MDTopAppBar):
         super().__init__(**kwargs)
         self.search_box = LauncherTextField(
             id="game_tag_filter",
-            hint_text = "Game Search",
+            hint_text = "Search All Games",
             pos_hint = {"center_y": 0.5}
         )
         self.add_widget(self.search_box)
