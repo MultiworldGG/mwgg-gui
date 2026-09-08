@@ -310,7 +310,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         super().__init__(**kwargs)
         self.game_filter = []
         self.games_mdlist = MDList(width=260)
-        self.game_tag_filter = "popular"
+        # Empty = every installed game (see set_game_list).
+        self.game_tag_filter = ""
         self.selected_game = ""
         self.highlighted_favorite = None
         self.app = MDApp.get_running_app()
@@ -436,13 +437,21 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         else:
             self.launcher_view.padding = wide
 
+    def _installed_game_list(self) -> dict[str, dict]:
+        """Every installed world the index knows, by display name; the
+        empty-search default."""
+        games = {module: GameIndex.get_game(module) for module in self.available_games}
+        return dict(sorted(((m, d) for m, d in games.items() if d),
+                           key=lambda item: item[1].get('game_name', item[0]).lower()))
+
     async def set_game_list(self):
-        """Set the game list based on the game tag filter"""
-        matching_games = GameIndex.search(self.game_tag_filter)
-        not_in_available_games = [game_module for game_module in matching_games.keys() \
-                                  if game_module not in self.available_games]
-        for game_module in not_in_available_games:
-            matching_games.pop(game_module)
+        """Set the game list: installed games matching the search, or all of
+        them when the search is empty."""
+        if self.game_tag_filter:
+            matching_games = {module: data for module, data in GameIndex.search(self.game_tag_filter).items()
+                              if module in self.available_games}
+        else:
+            matching_games = self._installed_game_list()
         self.games_mdlist.clear_widgets()
         for module_name, game_data in matching_games.items():
             await asynckivy.sleep(0)
@@ -501,10 +510,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.set_favorite_highlight(None)
 
     def apply_game_search(self, query: str, show_list: bool = True):
-        """Repopulate the game list for `query`; an empty query falls back to
-        the "popular" set (the same default the launcher starts with).
+        """Repopulate the game list for `query`; an empty query lists every
+        installed game (the same default the launcher starts with).
         `show_list` picks the compact side to show afterwards."""
-        self.game_tag_filter = (query or "").strip() or "popular"
+        self.game_tag_filter = (query or "").strip()
         asynckivy.start(self.set_game_list())
         self._show_compact_side("games" if show_list else "play")
 
