@@ -38,6 +38,8 @@ class MessageBox(MDDialog):
         title (str): The dialog title
         message (str): The dialog message content
         is_error (bool): If True, shows error styling
+        cancel_text (str | None): With a callback, None leaves only the OK
+            button (still routed through the callback)
     """
 
     cancel_button: ObjectProperty
@@ -53,7 +55,7 @@ class MessageBox(MDDialog):
         self.app = MDApp.get_running_app()
         self.dialog = None
         self.cancel_button = Widget()
-        if self.callback:
+        if self.callback and cancel_text:
             self.cancel_button = MDButton(
                 MDButtonText(
                     text=cancel_text,

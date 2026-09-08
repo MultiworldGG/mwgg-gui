@@ -1,3 +1,4 @@
+import asyncio
 import os
 import logging
 import sys
@@ -128,6 +129,7 @@ from mwgg_gui.launcher.launcher import LauncherScreen
 from mwgg_gui.loadanimlayout import MWGGLoadingLayout
 from mwgg_gui.components.bottomappbar import BottomAppBar, BottomBarTextInput
 from mwgg_gui.components.bottom_nav import ClientTab, nav_entries, world_component_icon
+from mwgg_gui.components.module_launch import launch_status_lines, launch_failure_dialog, spawn_launcher
 from mwgg_gui.components.guidataclasses import UIPlayerData, UIHint, MarkupPair
 from mwgg_gui.console.adminscreen import AdminScreen
 from mwgg_gui.console.textconsole import ConsolePair
@@ -215,6 +217,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         # MultiWorld.py assign (never setdefault) before spawning this process.
         self.role = role or os.environ.get("MWGG_ROLE", ROLE_LAUNCHER)
         self.client_type_hint = os.environ.get("MWGG_CLIENT_TYPE", "")
+        self._launch_failure_shown = False
         # Routed world module (MWGG_GAME, exported by MultiWorld.py); empty
         # for the launcher and for unrouted clients.
         self.game_module = ""
@@ -848,6 +851,69 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         """FrontendProtocol: dismiss the loading overlay if shown."""
         if hasattr(self, 'loading_layout') and self.loading_layout:
             self.loading_layout.hide_loading()
+
+    async def before_module_launch(self, module_name: str, **launch_kwargs) -> None:
+        """Core hook, awaited by MultiWorld._route_module_when_ui_ready right
+        before the routed client launches: put the launch status on the loading
+        overlay and return once a frame has drawn it. The launch that follows
+        (patching, the ROM picker) blocks the loop, so nothing posted later
+        would show until it finishes."""
+        lines = launch_status_lines(module_name, **launch_kwargs)
+        if not lines:
+            return
+        if not hasattr(self, "loading_layout"):
+            # on_start shows the overlay one frame after the root exists.
+            await self._drawn_frame()
+        client_logger = logging.getLogger("Client")
+        for line in lines:
+            self.loading_layout.post_status(line)
+            client_logger.info(line)
+        await self._drawn_frame()
+
+    @staticmethod
+    def _drawn_frame() -> "asyncio.Future":
+        """Resolved from the second Clock tick from now. A tick runs inside a
+        Kivy frame that finishes drawing before the loop resumes the awaiting
+        task; the second covers TextInput laying out new text a tick late."""
+        future = asyncio.get_running_loop().create_future()
+
+        def resolve(dt):
+            if not future.done():
+                future.set_result(None)
+
+        Clock.schedule_once(lambda dt: Clock.schedule_once(resolve, 0), 0)
+        return future
+
+    def on_module_launch_failed(self, module_name: str) -> None:
+        """Core hook: the routed client could not be launched. Drop the overlay
+        (nothing will ever call hide_loading) and offer a way out. One-shot:
+        the install and launch error paths can both fire it."""
+        if self._launch_failure_shown:
+            return
+        self._launch_failure_shown = True
+        self.hide_loading()
+        self.client_console_init()
+        self.console_init()
+        try:
+            from mwgg_igdb import GameIndex
+            game_name = GameIndex.get_game_name_for_module(module_name) or module_name
+        except Exception:
+            game_name = module_name
+        dialog = launch_failure_dialog(game_name, spawned_by_launcher=bool(self.client_type_hint))
+        logging.getLogger("Client").error(dialog.message)
+        from mwgg_gui.components.dialog import MessageBox
+        MessageBox(title=dialog.title, message=dialog.message, is_error=True,
+                   callback=lambda ok: self._leave_failed_launch(ok and dialog.opens_launcher),
+                   ok_text=dialog.ok_text, cancel_text=dialog.cancel_text).open()
+
+    def _leave_failed_launch(self, open_launcher: bool) -> None:
+        if open_launcher:
+            try:
+                spawn_launcher()
+            except Exception:
+                logging.getLogger("Client").exception("Could not start the launcher")
+                return
+        self.stop()
 
     def open_connect_dialog(self) -> None:
         """Open the reconnect dialog (client mode only). No-op in launcher
