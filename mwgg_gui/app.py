@@ -1,3 +1,4 @@
+import asyncio
 import os
 import logging
 import sys
@@ -118,6 +119,7 @@ from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
 from mwgg_gui.components.layout_mode import get_layout_mode, read_compact_mode
 from mwgg_gui.components.live_forwarding import LiveForwarding
+from mwgg_gui.components.client_status import client_status_keys, apply_client_status
 
 from mwgg_gui.components.titlebar import LiveTitleMeta, Titlebar
 from mwgg_gui.console.console import ConsoleScreen
@@ -128,7 +130,10 @@ from mwgg_gui.launcher.launcher import LauncherScreen
 from mwgg_gui.loadanimlayout import MWGGLoadingLayout
 from mwgg_gui.components.bottomappbar import BottomAppBar, BottomBarTextInput
 from mwgg_gui.components.bottom_nav import ClientTab, nav_entries, world_component_icon
+from mwgg_gui.components.module_launch import launch_status_lines, launch_failure_dialog, spawn_launcher
 from mwgg_gui.components.guidataclasses import UIPlayerData, UIHint, MarkupPair
+from mwgg_gui.components.columns import get_extra_columns
+from mwgg_gui.hint.hint_refresh import render_signature
 from mwgg_gui.console.adminscreen import AdminScreen
 from mwgg_gui.console.textconsole import ConsolePair
 
@@ -215,6 +220,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         # MultiWorld.py assign (never setdefault) before spawning this process.
         self.role = role or os.environ.get("MWGG_ROLE", ROLE_LAUNCHER)
         self.client_type_hint = os.environ.get("MWGG_CLIENT_TYPE", "")
+        self._launch_failure_shown = False
         # Routed world module (MWGG_GAME, exported by MultiWorld.py); empty
         # for the launcher and for unrouted clients.
         self.game_module = ""
@@ -259,6 +265,8 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         self.text_buffer = Queue(maxsize=1000)
         self.ui_hint_data = {}
         self.ui_player_data = {}
+        self._hint_render_signature = None
+        self._client_status_event = None
 
         self.local_player_data = UIPlayerData(
             slot_id=-1,  # Use -1 to indicate local/unconnected player
@@ -849,6 +857,69 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         if hasattr(self, 'loading_layout') and self.loading_layout:
             self.loading_layout.hide_loading()
 
+    async def before_module_launch(self, module_name: str, **launch_kwargs) -> None:
+        """Core hook, awaited by MultiWorld._route_module_when_ui_ready right
+        before the routed client launches: put the launch status on the loading
+        overlay and return once a frame has drawn it. The launch that follows
+        (patching, the ROM picker) blocks the loop, so nothing posted later
+        would show until it finishes."""
+        lines = launch_status_lines(module_name, **launch_kwargs)
+        if not lines:
+            return
+        if not hasattr(self, "loading_layout"):
+            # on_start shows the overlay one frame after the root exists.
+            await self._drawn_frame()
+        client_logger = logging.getLogger("Client")
+        for line in lines:
+            self.loading_layout.post_status(line)
+            client_logger.info(line)
+        await self._drawn_frame()
+
+    @staticmethod
+    def _drawn_frame() -> "asyncio.Future":
+        """Resolved from the second Clock tick from now. A tick runs inside a
+        Kivy frame that finishes drawing before the loop resumes the awaiting
+        task; the second covers TextInput laying out new text a tick late."""
+        future = asyncio.get_running_loop().create_future()
+
+        def resolve(dt):
+            if not future.done():
+                future.set_result(None)
+
+        Clock.schedule_once(lambda dt: Clock.schedule_once(resolve, 0), 0)
+        return future
+
+    def on_module_launch_failed(self, module_name: str) -> None:
+        """Core hook: the routed client could not be launched. Drop the overlay
+        (nothing will ever call hide_loading) and offer a way out. One-shot:
+        the install and launch error paths can both fire it."""
+        if self._launch_failure_shown:
+            return
+        self._launch_failure_shown = True
+        self.hide_loading()
+        self.client_console_init()
+        self.console_init()
+        try:
+            from mwgg_igdb import GameIndex
+            game_name = GameIndex.get_game_name_for_module(module_name) or module_name
+        except Exception:
+            game_name = module_name
+        dialog = launch_failure_dialog(game_name, spawned_by_launcher=bool(self.client_type_hint))
+        logging.getLogger("Client").error(dialog.message)
+        from mwgg_gui.components.dialog import MessageBox
+        MessageBox(title=dialog.title, message=dialog.message, is_error=True,
+                   callback=lambda ok: self._leave_failed_launch(ok and dialog.opens_launcher),
+                   ok_text=dialog.ok_text, cancel_text=dialog.cancel_text).open()
+
+    def _leave_failed_launch(self, open_launcher: bool) -> None:
+        if open_launcher:
+            try:
+                spawn_launcher()
+            except Exception:
+                logging.getLogger("Client").exception("Could not start the launcher")
+                return
+        self.stop()
+
     def open_connect_dialog(self) -> None:
         """Open the reconnect dialog (client mode only). No-op in launcher
         mode -- the launcher process never holds a live ctx.connect() for
@@ -1131,9 +1202,18 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
                     hints=self.ui_hint_data[slot],
                 )
 
+        self._hint_render_signature = None
         self.update_hints()
         self.set_pronouns()
         self.update_timer(self.ctx.timer)
+        # Sent here, not via stored_data_notification_keys: Connected already
+        # flushed those before calling on_connect.
+        status_keys = client_status_keys(self.ctx.team, self.ctx.player_names)
+        asynckivy.start(self.ctx.send_msgs([{"cmd": "Get", "keys": status_keys},
+                                            {"cmd": "SetNotify", "keys": status_keys}]))
+        # CommonClient stores the replies but has no ui dispatch for these keys.
+        if self._client_status_event is None:
+            self._client_status_event = Clock.schedule_interval(self._client_status_tick, 1)
         self.top_appbar_layout.top_appbar.ui_built()
         if not "hint" in self.screen_manager.screen_names:
             self._create_screen("hint")
@@ -1219,7 +1299,19 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         if not self.top_appbar_layout.top_appbar.timer.is_running:
             self.top_appbar_layout.top_appbar.timer.start_running_timer()
 
-    def update_hints(self):
+    def _client_status_tick(self, dt):
+        try:
+            self.update_client_status()
+        except Exception:
+            logging.getLogger("Client").exception("client status update failed")
+
+    def update_client_status(self):
+        """Mark goaled players from the stored `_read_client_status_` values and redraw the slots sidebar."""
+        changed = apply_client_status(self.ctx.stored_data, self.ctx.team, self.ui_player_data)
+        if changed and "console" in self.screen_manager.screen_names:
+            self.console_screen.update_slots_list()
+
+    def update_hints(self, force: bool = False):
         hints_key = f"_read_hints_{self.ctx.team}_{self.ctx.slot}"
         # Skip the early on_connect call: stored_data isn't populated until the
         # server's Retrieved response, which re-fires update_hints. That single
@@ -1229,10 +1321,10 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             return
         hints = self.ctx.stored_data.get(hints_key, []) or []
         mwgg_hints = self.ctx.stored_data.get(f"hints_{self.ctx.team}_{self.ctx.slot}_mwgg", {}) or {}
-        self.refresh_hints(hints, mwgg_hints)
+        self.refresh_hints(hints, mwgg_hints, force=force)
 
 
-    def refresh_hints(self, hints, mwgg_hints):
+    def refresh_hints(self, hints, mwgg_hints, force: bool = False):
         if mwgg_hints is None:
             mwgg_hints = {}
 
@@ -1274,6 +1366,14 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
 
         self.update_player_data()
 
+        # Both screens rebuild from scratch, and the tracker overlay re-fires
+        # update_hints on every scout reply: skip when nothing rendered changed.
+        signature = self._render_signature(hints, mwgg_hints)
+        screens_built = {"console", "hint"} <= set(self.screen_manager.screen_names)
+        if screens_built and not force and signature is not None and signature == self._hint_render_signature:
+            return
+        self._hint_render_signature = signature
+
         if "console" in self.screen_manager.screen_names:
             self.console_screen.update_slots_list()
         else:
@@ -1287,6 +1387,16 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         # if hasattr(self, 'custom_screens'):
         #     for screen in self.custom_screens:
         #         self.custom_screens[screen].update_hints_list()
+
+    def _render_signature(self, hints, mwgg_hints) -> typing.Optional[str]:
+        profiles = {slot: data.to_profile_dict() for slot, data in self.ui_player_data.items()}
+        names_loaded = bool(self.ctx.location_names and self.ctx.item_names)
+        try:
+            return render_signature(hints, mwgg_hints, profiles, names_loaded, get_extra_columns())
+        except Exception:
+            # A registered column could not build (tracker not ready yet): rebuild.
+            logging.getLogger("Client").debug("hint render signature unavailable", exc_info=True)
+            return None
 
     def update_mwgg_hints(self, mwgg_hints_stored: typing.Optional[dict] = None):
         mwgg_hints = {}

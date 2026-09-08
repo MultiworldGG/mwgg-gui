@@ -293,7 +293,7 @@ class SlotListItem(MWBaseListItem):
             self.add_widget(self.slot_item_middle_container, 1)
         self.slot_text_location.text = self.location_name
         self.slot_text_item.text = self.item_name
-        self.slot_icon_goal.icon = "flag_checkered" if self.game_status == "GOAL" else "blank"
+        self.slot_icon_goal.icon = "flag_checkered" if self.hint_data.for_goal else "blank"
 
     def estimate_height(self):
         """Compute item height from real texture sizes (no reactive bindings)."""

@@ -88,8 +88,7 @@ class LoadingLogBox(TextInput):
         self._handler.setLevel(logging.INFO)
 
     def attach(self):
-        self._tail.clear()
-        self.text = ""
+        self.clear()
         logging.getLogger(LOG_SOURCE).addHandler(self._handler)
 
     def detach(self):
@@ -101,6 +100,14 @@ class LoadingLogBox(TextInput):
             return
         # Records arrive on worker threads; the widget is only touched on the Kivy thread.
         Clock.schedule_once(lambda dt: self._append(text), 0)
+
+    def clear(self):
+        self._tail.clear()
+        self.text = ""
+
+    def post(self, message: str):
+        """Append a line directly, bypassing the child-output filter; main thread only."""
+        self._append(message)
 
     def _append(self, message):
         self._tail.append(message)
@@ -191,6 +198,15 @@ class MWGGLoadingLayout(MDRelativeLayout):
         
         self.current_frame = (self.current_frame + 1) % len(self.frames)
     
+    def post_status(self, message: str) -> None:
+        """Show a status line under the animation; a no-op while not loading."""
+        if not self.loading:
+            return
+        if not self.log_box.parent:
+            self.log_box.clear()
+            self.add_widget(self.log_box)
+        self.log_box.post(message)
+
     def hide_loading(self, *args):
         if self.loading:
             self.loading = False

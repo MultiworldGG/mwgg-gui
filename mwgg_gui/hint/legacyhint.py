@@ -424,9 +424,9 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
             app = App.get_running_app()
             if getattr(touch, "button", None) == "right":
                 return self.log.pop_filter_dropdown_for(key, self.log.rows, child,
-                                                        after_toggle=lambda _: app.update_hints())
+                                                        after_toggle=lambda _: app.update_hints(force=True))
             if self.log.sort_by_key(key):
-                app.update_hints()
+                app.update_hints(force=True)
                 return True
             return False
         return False

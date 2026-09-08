@@ -1,0 +1,65 @@
+name: unittests
+
+on:
+  push:
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!.gitignore'
+      - '!.github/workflows/**'
+      - '.github/workflows/unittests.yml'
+  pull_request:
+    paths:
+      - '**'
+      - '!docs/**'
+      - '!.gitignore'
+      - '!.github/workflows/**'
+      - '.github/workflows/unittests.yml'
+
+permissions: {}
+
+jobs:
+  unit:
+    runs-on: ${{ matrix.os }}
+    name: Test Python ${{ matrix.python.version }} ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python:
+          - {version: '3.13'}
+        include:
+          - python: {version: '3.13'}  # current
+            os: windows-2025-vs2026
+          - python: {version: '3.13'}  # current
+            os: macos-latest
+
+    defaults:
+      run:
+        working-directory: mwgg-gui
+
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        path: mwgg-gui
+    # tests/conftest.py puts the sibling MultiworldGG/src checkout on sys.path
+    # for the beta core modules the tests import (BaseClasses, BaseUtils, ...).
+    - name: Checkout MultiworldGG-Beta main
+      uses: actions/checkout@v6
+      with:
+        repository: MultiworldGG/MultiworldGG-Beta
+        ref: main
+        path: MultiworldGG/src
+    - name: Set up Python ${{ matrix.python.version }}
+      uses: actions/setup-python@v6.2.0
+      with:
+        python-version: ${{ matrix.python.version }}
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install --upgrade -r ../MultiworldGG/src/ci-requirements.txt
+        python -m pip install --upgrade -r ../MultiworldGG/src/requirements.txt
+        python -m pip install -e .
+    - name: Unittests
+      run: pytest tests

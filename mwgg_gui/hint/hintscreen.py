@@ -221,6 +221,7 @@ class HintScreen(MDScreen):
     hints_by_type: dict[str, list[(int, str, UIHint)]]
     app: MDApp
     _updating_hints: bool = False
+    _rerun_hints: bool = False
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -269,15 +270,19 @@ class HintScreen(MDScreen):
 
     def update_hints_list(self):
         """Update the hints list when hint data becomes available"""
-        if not self._updating_hints:
-            asynckivy.start(self.set_hints_list())
+        if self._updating_hints:
+            # A rebuild is in flight; run again when it finishes so this update is not lost.
+            self._rerun_hints = True
+            return
+        asynckivy.start(self.set_hints_list())
 
     async def set_hints_list(self):
         """Async method to populate the hints list"""
         if self._updating_hints:
             return  # Prevent concurrent updates
-            
+
         self._updating_hints = True
+        self._rerun_hints = False
         self.populate_hints_by_type()
         try:
             self.hint_layout.sync_column_chips()
@@ -302,6 +307,8 @@ class HintScreen(MDScreen):
                 self.hint_layout.apply_sort_to_all_panels(self.hint_layout.active_sort_key)
         finally:
             self._updating_hints = False
+        if self._rerun_hints:
+            self.update_hints_list()
 
 FILTER_CHIPS = [
             {"filter_text": "All", "sort_key": "", "active": True},
@@ -467,7 +474,7 @@ class HintLayout(AutoAdjustHeightBehavior, MDBoxLayout):
     def on_refresh_hints(self, instance):
         """Refresh the hints list when refresh button is clicked"""
         # Get the hint screen from the app
-        self.app.update_hints()
+        self.app.update_hints(force=True)
     
     def on_sort_reverse(self, instance, value):
         """Handle sort reverse toggle"""
