@@ -80,6 +80,7 @@ from Utils import (get_available_worlds,
                    is_frozen,
                    is_windows,
                    persistent_store)
+from ModuleUpdate import INSTALLER_WORLDS_ENV
 from frontend_protocol import verify_slot, SlotVerifyResult
 
 from FileUtils import FileUtils
@@ -100,6 +101,16 @@ _NO_GAME_STATUS = ("Game not set, connecting using Text Client. "
 _MANUAL_STATUS = "Manual games are chosen inside the Manual Client after launch."
 
 _TRACKER_STATUS = "Game not set, connecting using the Universal Tracker."
+
+# A larger installer selection would overflow the favorites bar, so it is not seeded.
+_INSTALLER_FAVORITES_MAX = 10
+
+
+def _installer_selected_worlds() -> list[str]:
+    """World modules the Windows installer staged on this first launch; popped
+    so clients spawned from here do not see it."""
+    raw = os.environ.pop(INSTALLER_WORLDS_ENV, "")
+    return [m for m in raw.split(",") if m]
 
 
 def _needs_game_validation(game_module: str, game_label: str) -> bool:
@@ -626,6 +637,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     def load_favorite_games(self):
         """Load favorite games from app config"""
         try:
+            selected = _installer_selected_worlds()
+            if 0 < len(selected) < _INSTALLER_FAVORITES_MAX:
+                self.app.theme_mw.add_favorite_games(selected)
             favorites_str = self.app.app_config.get('game_settings', 'favorite_games', fallback='')
             if favorites_str:
                 self.saved_games = favorites_str.split(',')

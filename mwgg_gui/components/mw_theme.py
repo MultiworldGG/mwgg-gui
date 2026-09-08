@@ -251,6 +251,18 @@ class DefaultTheme(ThemableBehavior):
             self.app_config.remove_option('game_settings', self.game_palette_key)
             self.app_config.write()
 
+    def add_favorite_games(self, modules):
+        """Append world modules to game_settings.favorite_games, keeping the
+        existing order and skipping ones already listed."""
+        if not self.app_config.has_section('game_settings'):
+            self.app_config.add_section('game_settings')
+        current = [m for m in self.app_config.get('game_settings', 'favorite_games', fallback='').split(',') if m]
+        merged = current + [m for m in modules if m not in current]
+        if merged == current:
+            return
+        self.app_config.set('game_settings', 'favorite_games', ','.join(merged))
+        self.app_config.write()
+
     def save_markup_color(self, color_name, color_value):
         """Save a single markup color to the config"""
         if not self.app_config.has_section('markup_tags'):
