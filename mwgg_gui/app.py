@@ -131,6 +131,8 @@ from mwgg_gui.components.bottomappbar import BottomAppBar, BottomBarTextInput
 from mwgg_gui.components.bottom_nav import ClientTab, nav_entries, world_component_icon
 from mwgg_gui.components.module_launch import launch_status_lines, launch_failure_dialog, spawn_launcher
 from mwgg_gui.components.guidataclasses import UIPlayerData, UIHint, MarkupPair
+from mwgg_gui.components.columns import get_extra_columns
+from mwgg_gui.hint.hint_refresh import render_signature
 from mwgg_gui.console.adminscreen import AdminScreen
 from mwgg_gui.console.textconsole import ConsolePair
 
@@ -262,6 +264,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         self.text_buffer = Queue(maxsize=1000)
         self.ui_hint_data = {}
         self.ui_player_data = {}
+        self._hint_render_signature = None
 
         self.local_player_data = UIPlayerData(
             slot_id=-1,  # Use -1 to indicate local/unconnected player
@@ -1197,6 +1200,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
                     hints=self.ui_hint_data[slot],
                 )
 
+        self._hint_render_signature = None
         self.update_hints()
         self.set_pronouns()
         self.update_timer(self.ctx.timer)
@@ -1285,7 +1289,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         if not self.top_appbar_layout.top_appbar.timer.is_running:
             self.top_appbar_layout.top_appbar.timer.start_running_timer()
 
-    def update_hints(self):
+    def update_hints(self, force: bool = False):
         hints_key = f"_read_hints_{self.ctx.team}_{self.ctx.slot}"
         # Skip the early on_connect call: stored_data isn't populated until the
         # server's Retrieved response, which re-fires update_hints. That single
@@ -1295,10 +1299,10 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             return
         hints = self.ctx.stored_data.get(hints_key, []) or []
         mwgg_hints = self.ctx.stored_data.get(f"hints_{self.ctx.team}_{self.ctx.slot}_mwgg", {}) or {}
-        self.refresh_hints(hints, mwgg_hints)
+        self.refresh_hints(hints, mwgg_hints, force=force)
 
 
-    def refresh_hints(self, hints, mwgg_hints):
+    def refresh_hints(self, hints, mwgg_hints, force: bool = False):
         if mwgg_hints is None:
             mwgg_hints = {}
 
@@ -1340,6 +1344,14 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
 
         self.update_player_data()
 
+        # Both screens rebuild from scratch, and the tracker overlay re-fires
+        # update_hints on every scout reply: skip when nothing rendered changed.
+        signature = self._render_signature(hints, mwgg_hints)
+        screens_built = {"console", "hint"} <= set(self.screen_manager.screen_names)
+        if screens_built and not force and signature is not None and signature == self._hint_render_signature:
+            return
+        self._hint_render_signature = signature
+
         if "console" in self.screen_manager.screen_names:
             self.console_screen.update_slots_list()
         else:
@@ -1353,6 +1365,16 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         # if hasattr(self, 'custom_screens'):
         #     for screen in self.custom_screens:
         #         self.custom_screens[screen].update_hints_list()
+
+    def _render_signature(self, hints, mwgg_hints) -> typing.Optional[str]:
+        profiles = {slot: data.to_profile_dict() for slot, data in self.ui_player_data.items()}
+        names_loaded = bool(self.ctx.location_names and self.ctx.item_names)
+        try:
+            return render_signature(hints, mwgg_hints, profiles, names_loaded, get_extra_columns())
+        except Exception:
+            # A registered column could not build (tracker not ready yet): rebuild.
+            logging.getLogger("Client").debug("hint render signature unavailable", exc_info=True)
+            return None
 
     def update_mwgg_hints(self, mwgg_hints_stored: typing.Optional[dict] = None):
         mwgg_hints = {}

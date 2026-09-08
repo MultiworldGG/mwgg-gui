@@ -203,7 +203,7 @@ class ConsoleSliverAppbar(MDSliverAppbar, ColumnSortMixin, ColumnFilterMixin):
             else:
                 self.app.console_screen.update_tracker_locations()
         else:
-            self.app.ctx.ui.update_hints()
+            self.app.ctx.ui.update_hints(force=True)
 
 
 
