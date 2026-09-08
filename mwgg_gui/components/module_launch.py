@@ -28,8 +28,7 @@ def launch_status_lines(module_name: str, patch_file: str | None = None,
     """Loading-overlay lines for a routed launch; empty when there is nothing to announce."""
     if not patch_file:
         return []
-    return [f"Patching {os.path.basename(patch_file)}...",
-            "A file picker may open for the base ROM or game files the patch needs."]
+    return [f"Patching {os.path.basename(patch_file)}..."]
 
 
 @dataclass(frozen=True)

@@ -29,12 +29,11 @@ def module_launch():
         sys.modules.pop(spec.name, None)
 
 
-def test_patch_launch_announces_the_patch_and_the_picker(module_launch):
+def test_patch_launch_announces_the_patch(module_launch):
     lines = module_launch.launch_status_lines(
         "papermario", patch_file="C:/Users/me/Downloads/MW_1_Player.appm64",
         server_address="host:38281")
-    assert lines[0] == "Patching MW_1_Player.appm64..."
-    assert "file picker" in lines[1]
+    assert lines == ["Patching MW_1_Player.appm64..."]
 
 
 def test_launch_without_a_patch_has_nothing_to_announce(module_launch):
