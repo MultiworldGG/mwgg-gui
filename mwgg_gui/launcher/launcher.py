@@ -75,6 +75,7 @@ from mwgg_gui.launcher.setup_guide import (extract_bundled_setup_doc,
                                            setup_guide_url)
 import Utils
 from Utils import (get_available_worlds,
+                   get_installed_worlds,
                    user_path,
                    local_path,
                    is_frozen,
@@ -439,8 +440,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
     def _installed_game_list(self) -> dict[str, dict]:
         """Every installed world the index knows, by display name; the
-        empty-search default."""
-        games = {module: GameIndex.get_game(module) for module in self.available_games}
+        empty-search default. available_games is the whole index and would
+        flood the list."""
+        games = {module: GameIndex.get_game(module) for module in get_installed_worlds()}
         return dict(sorted(((m, d) for m, d in games.items() if d),
                            key=lambda item: item[1].get('game_name', item[0]).lower()))
 
