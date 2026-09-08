@@ -119,6 +119,7 @@ from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
 from mwgg_gui.components.layout_mode import get_layout_mode, read_compact_mode
 from mwgg_gui.components.live_forwarding import LiveForwarding
+from mwgg_gui.components.client_status import client_status_keys
 
 from mwgg_gui.components.titlebar import LiveTitleMeta, Titlebar
 from mwgg_gui.console.console import ConsoleScreen
@@ -1204,6 +1205,11 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         self.update_hints()
         self.set_pronouns()
         self.update_timer(self.ctx.timer)
+        # Sent here, not via stored_data_notification_keys: Connected already
+        # flushed those before calling on_connect.
+        status_keys = client_status_keys(self.ctx.team, self.ctx.player_names)
+        asynckivy.start(self.ctx.send_msgs([{"cmd": "Get", "keys": status_keys},
+                                            {"cmd": "SetNotify", "keys": status_keys}]))
         self.top_appbar_layout.top_appbar.ui_built()
         if not "hint" in self.screen_manager.screen_names:
             self._create_screen("hint")

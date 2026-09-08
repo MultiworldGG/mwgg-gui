@@ -35,6 +35,7 @@ import urllib.parse
 import asynckivy
 from Utils import persistent_store, persistent_load, format_SI_prefix
 from mwgg_gui.constants import ROLE_LAUNCHER
+from mwgg_gui.components.client_status import team_goaled
 
 
 logger = logging.getLogger("MultiWorld")
@@ -104,7 +105,6 @@ class Timer(MDTopAppBarTitle):
     start_time = NumericProperty(0)
     elapsed_time = NumericProperty(0)
     is_running = BooleanProperty(False)
-    slot_info = ObjectProperty(None)
     has_been_started = BooleanProperty(False)  # Track if timer has ever been started
     ctx = ObjectProperty(None)
     _update_event = ObjectProperty(None)  # Store the scheduled event
@@ -125,7 +125,6 @@ class Timer(MDTopAppBarTitle):
         
     def on_ui_built(self):
         self.ctx = MDApp.get_running_app().ctx
-        self.slot_info = self.ctx.slot_info
 
     def on_is_running(self, instance, value):
         """Called when is_running property changes"""
@@ -177,17 +176,12 @@ class Timer(MDTopAppBarTitle):
             logger.exception(e)
     
     def update_timer(self):
-        """Update the elapsed time and check for goal condition"""
-       
-        # Normal timer operation
+        """Update the elapsed time and stop once the whole team has goaled"""
         if self.is_running:
             self.start_time = self.ctx.timer
             self.elapsed_time = time() - self.start_time
-            # Check for goal completion
-            if self.slot_info and self.slot_info.get('game_status') == "GOAL":
+            if team_goaled(self.ctx.stored_data, self.ctx.team, self.ctx.player_names):
                 self.stop()
-                return
-
 
     def on_elapsed_time(self, instance, value):
         """Called when elapsed_time property changes"""
