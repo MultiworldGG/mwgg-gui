@@ -48,3 +48,31 @@ def test_team_goaled_needs_every_slot(client_status, stored_data, expected):
 
 def test_team_goaled_is_false_without_players(client_status):
     assert not client_status.team_goaled({}, 0, {0: "Archipelago"})
+
+
+class _Player:
+    def __init__(self, game_status="PLAYING"):
+        self.game_status = game_status
+
+
+def test_apply_marks_goaled_players_once(client_status):
+    players = {1: _Player(), 2: _Player()}
+    stored = {"_read_client_status_0_1": GOAL, "_read_client_status_0_2": 20}
+    assert client_status.apply_client_status(stored, 0, players) == {1}
+    assert players[1].game_status == "GOAL"
+    assert players[2].game_status == "PLAYING"
+    assert client_status.apply_client_status(stored, 0, players) == set()
+
+
+def test_apply_reads_only_the_given_team(client_status):
+    players = {1: _Player()}
+    assert client_status.apply_client_status({"_read_client_status_1_1": GOAL}, 0, players) == set()
+    assert players[1].game_status == "PLAYING"
+
+
+def test_apply_skips_placeholder_entries(client_status):
+    # consume_players_package resets ui_player_data values to bare dicts
+    players = {1: {}, 2: _Player()}
+    stored = {"_read_client_status_0_1": GOAL, "_read_client_status_0_2": GOAL}
+    assert client_status.apply_client_status(stored, 0, players) == {2}
+    assert players[1] == {}

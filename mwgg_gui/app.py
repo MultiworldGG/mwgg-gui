@@ -119,7 +119,7 @@ from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
 from mwgg_gui.components.layout_mode import get_layout_mode, read_compact_mode
 from mwgg_gui.components.live_forwarding import LiveForwarding
-from mwgg_gui.components.client_status import client_status_keys
+from mwgg_gui.components.client_status import client_status_keys, apply_client_status
 
 from mwgg_gui.components.titlebar import LiveTitleMeta, Titlebar
 from mwgg_gui.console.console import ConsoleScreen
@@ -266,6 +266,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         self.ui_hint_data = {}
         self.ui_player_data = {}
         self._hint_render_signature = None
+        self._client_status_event = None
 
         self.local_player_data = UIPlayerData(
             slot_id=-1,  # Use -1 to indicate local/unconnected player
@@ -1210,6 +1211,9 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         status_keys = client_status_keys(self.ctx.team, self.ctx.player_names)
         asynckivy.start(self.ctx.send_msgs([{"cmd": "Get", "keys": status_keys},
                                             {"cmd": "SetNotify", "keys": status_keys}]))
+        # CommonClient stores the replies but has no ui dispatch for these keys.
+        if self._client_status_event is None:
+            self._client_status_event = Clock.schedule_interval(self._client_status_tick, 1)
         self.top_appbar_layout.top_appbar.ui_built()
         if not "hint" in self.screen_manager.screen_names:
             self._create_screen("hint")
@@ -1294,6 +1298,18 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             self.top_appbar_layout.top_appbar.timer.start_time = start_timer
         if not self.top_appbar_layout.top_appbar.timer.is_running:
             self.top_appbar_layout.top_appbar.timer.start_running_timer()
+
+    def _client_status_tick(self, dt):
+        try:
+            self.update_client_status()
+        except Exception:
+            logging.getLogger("Client").exception("client status update failed")
+
+    def update_client_status(self):
+        """Mark goaled players from the stored `_read_client_status_` values and redraw the slots sidebar."""
+        changed = apply_client_status(self.ctx.stored_data, self.ctx.team, self.ui_player_data)
+        if changed and "console" in self.screen_manager.screen_names:
+            self.console_screen.update_slots_list()
 
     def update_hints(self, force: bool = False):
         hints_key = f"_read_hints_{self.ctx.team}_{self.ctx.slot}"
