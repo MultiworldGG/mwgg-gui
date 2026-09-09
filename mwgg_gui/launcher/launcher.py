@@ -1134,15 +1134,15 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self._execute_host(self._host_result)
 
     def _execute_host(self, options):
-        """Start the Host component detached in its own console window; the
-        loading overlay follows its log until the server reports hosting."""
+        """Start the Host component in a terminal window of its own; the loading
+        overlay follows its log until the server reports hosting."""
+        from BaseUtils import launch_exe
         from LauncherComponents import find_component, get_exe
         from mwgg_gui.components import host_launch
 
-        base_cmd = get_exe(find_component("Host"))
-        cmd = host_launch.build_command(base_cmd, options.get('port'), options.get('admin-password'))
-        cwd = os.path.dirname(base_cmd[-1])
-        env = host_launch.server_env(os.environ, is_frozen())
+        component = find_component("Host")
+        cmd = host_launch.build_command(get_exe(component), options.get('port'),
+                                        options.get('admin-password'))
         log_folder = user_path("logs")
         known_logs = host_launch.list_server_logs(log_folder)
         if hasattr(self, '_host_result'):
@@ -1158,7 +1158,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.app.loading_layout.show_loading(display_logs=True)
         logger.info("[Host] Starting the MultiworldGG server in its own window...")
         try:
-            process = subprocess.Popen(cmd, cwd=cwd, env=env, **host_launch.server_popen_kwargs())
+            # the terminal the launcher's other CLI components use, so the server
+            # joins their window instead of opening a console of its own
+            launch_exe(cmd, True, title=component.display_name,
+                       extra_env=host_launch.server_env(is_frozen()))
         except Exception as e:
             logger.exception(f"Failed to start server: {e}")
             finish("Server Error", f"Failed to start server: {str(e)}", is_error=True)
@@ -1167,14 +1170,14 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
         def watch():
             host_launch.watch_server(
-                process, log_folder, known_logs,
+                log_folder, known_logs,
                 on_line=lambda line: logger.info(f"[Host] {line}"),
                 on_ready=lambda line: finish(
                     "Server Started", f"{line}\nServer commands go in the server's window."),
-                on_exit=lambda code: finish(
+                on_exit=lambda: finish(
                     "Server Stopped",
-                    f"The server window closed before hosting a game (exit code {code}). See the logs folder.",
-                    is_error=bool(code)),
+                    "The server closed before hosting a game. See the logs folder.",
+                    is_error=True),
                 on_timeout=lambda: finish(
                     "Server Starting", "The server is still starting; watch its window."))
 
