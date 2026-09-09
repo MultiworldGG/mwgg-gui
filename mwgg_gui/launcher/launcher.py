@@ -1136,39 +1136,52 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self._execute_host(self._host_result)
 
     def _execute_host(self, options):
-        """Execute the Host component with options - detached from client"""
+        """Start the Host component detached in its own console window; the
+        loading overlay follows its log until the server reports hosting."""
         from LauncherComponents import find_component, get_exe
+        from mwgg_gui.components import host_launch
 
         base_cmd = get_exe(find_component("Host"))
-        cmd = list(base_cmd)
+        cmd = host_launch.build_command(base_cmd, options.get('port'), options.get('admin-password'))
         cwd = os.path.dirname(base_cmd[-1])
-        env = None if is_frozen() else {**os.environ, 'KIVY_NO_ARGS': '1'}
+        env = host_launch.server_env(os.environ, is_frozen())
+        log_folder = user_path("logs")
+        known_logs = host_launch.list_server_logs(log_folder)
+        if hasattr(self, '_host_result'):
+            delattr(self, '_host_result')
 
-        if options.get('port'):
-            cmd.extend(["--port", str(options['port'])])
-            
-        if options.get('admin-password'):
-            cmd.extend(["--admin-password", options['admin-password']])
-        
-        logger.info(f"Starting detached server with command: {' '.join(cmd)}")
-        
-        # Launch server - console app will spawn its own terminal
+        def finish(title, message, is_error=False):
+            def show(dt):
+                self.app.loading_layout.hide_loading()
+                MessageBox(title, message, is_error=is_error).open()
+            Clock.schedule_once(show, 0)
+
+        logger.info(f"Starting local server with command: {' '.join(cmd)}")
+        self.app.loading_layout.show_loading(display_logs=True)
+        logger.info("[Host] Starting the MultiworldGG server in its own window...")
         try:
-            subprocess.Popen(
-                cmd,
-                cwd=cwd,
-                env=env
-            )
-            MessageBox("Server Started", "MultiworldGG Server has been started in a new terminal window.").open()
-            logger.info("Server launched successfully (detached)")
-            if hasattr(self, '_host_result'):
-                delattr(self, '_host_result')
+            process = subprocess.Popen(cmd, cwd=cwd, env=env, **host_launch.server_popen_kwargs())
         except Exception as e:
             logger.exception(f"Failed to start server: {e}")
-            MessageBox("Server Error", f"Failed to start server: {str(e)}").open()
-            if hasattr(self, '_host_result'):
-                delattr(self, '_host_result')
-    
+            finish("Server Error", f"Failed to start server: {str(e)}", is_error=True)
+            return
+        logger.info("[Host] Waiting for the server; if it asks, pick the multiworld data file in its window.")
+
+        def watch():
+            host_launch.watch_server(
+                process, log_folder, known_logs,
+                on_line=lambda line: logger.info(f"[Host] {line}"),
+                on_ready=lambda line: finish(
+                    "Server Started", f"{line}\nServer commands go in the server's window."),
+                on_exit=lambda code: finish(
+                    "Server Stopped",
+                    f"The server window closed before hosting a game (exit code {code}). See the logs folder.",
+                    is_error=bool(code)),
+                on_timeout=lambda: finish(
+                    "Server Starting", "The server is still starting; watch its window."))
+
+        threading.Thread(target=watch, name="HostWatch", daemon=True).start()
+
     def patch_game(self):
         """Patch the selected game"""
         # Step 1: Select patch file (.apbp)

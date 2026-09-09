@@ -31,12 +31,12 @@ MIN_SPEED = 0.016  # Fastest speed (60fps)
 MAX_SPEED = 0.050   # Slowest speed (20fps)
 DEFAULT_SPEED = 0.040  # Default speed (40ms)
 
-# Generate/Patch run as child processes; the launcher re-logs their stdout on
-# "Client" under these prefixes, so their own logger names never carry records
-# in this process.
+# Generate/Patch/Host run as child processes; the launcher re-logs their output
+# on "Client" under these prefixes, so their own logger names never carry
+# records in this process.
 LOG_SOURCE = "Client"
 LOG_TAIL_LINES = 100
-STREAM_PREFIXES = ("[Generate] ", "[Patch] ")
+STREAM_PREFIXES = ("[Generate] ", "[Patch] ", "[Host] ")
 CHILD_LOG_STAMP = re.compile(r"^\d{2}:\d{2}:\d{2} \[[A-Z]+\]\s*")
 # Not for users: scratch folders and the ROM prompt/path/checksum lines.
 HIDDEN_LINE_PATTERNS = (
