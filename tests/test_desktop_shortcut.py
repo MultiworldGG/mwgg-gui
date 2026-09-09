@@ -69,6 +69,13 @@ def test_no_game_omits_the_game_flag(desktop_shortcut, stub_base_utils):
     ]
 
 
+def test_manual_game_rides_along_with_the_manual_client(desktop_shortcut, stub_base_utils):
+    assert desktop_shortcut.client_shortcut_command("manual_autonauts_hopop", ("manual",)) == [
+        "C:/apps/MultiworldGG.exe", "--game", "manual_autonauts_hopop",
+        "--client-type", "manual",
+    ]
+
+
 def test_source_mode_keeps_the_interpreter(desktop_shortcut, stub_base_utils):
     stub_base_utils.get_client_exe = lambda: ["/venv/python", "/src/MultiWorld.py"]
     assert desktop_shortcut.client_shortcut_command(None, ("manual",)) == [

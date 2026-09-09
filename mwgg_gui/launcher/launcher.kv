@@ -166,7 +166,7 @@
                         pos_hint: {"center_y": 0.55}
                         group: 'client_type'
                         id: manual_checkbox
-                        on_active: app.launcher_screen.refresh_client_type()
+                        on_active: app.launcher_screen.set_manual_client(self.active)
             MDBoxLayout: # launcher components | connection fields
                 orientation: 'horizontal'
                 spacing: 10
@@ -366,7 +366,7 @@
                         id: manual_checkbox
                         group: 'client_type'
                         pos_hint: {"center_x": 0.5}
-                        on_active: app.launcher_screen.refresh_client_type()
+                        on_active: app.launcher_screen.set_manual_client(self.active)
             MDBoxLayout: # Launch and component buttons
                 id: game_components_box
                 orientation: 'vertical'

@@ -1437,11 +1437,10 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         for slot in self.ui_player_data:
             player_data[slot] = self.ui_player_data[slot].to_profile_dict()
 
-        # Get current stored data to compare
+        # Retrieved answers None for a slot that never stored a profile.
         current_player_data: dict[int, dict[str, any]] = {}
         for slot in self.ui_player_data.keys():
-            if f"profile_data_{self.ctx.team}_{slot}" in self.ctx.stored_data:
-                current_player_data[slot] = self.ctx.stored_data.get(f"profile_data_{self.ctx.team}_{slot}", {})
+            current_player_data[slot] = self.ctx.stored_data.get(f"profile_data_{self.ctx.team}_{slot}") or {}
 
         for slot, local_data in player_data.items():
             remote_data = current_player_data.get(slot, {})
