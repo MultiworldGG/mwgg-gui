@@ -70,6 +70,7 @@ from mwgg_gui.components.nav_drawer import NavDrawerMenu, NavDrawerLabel
 from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar, SearchBar
 from mwgg_gui.launcher.launcher_favorite_bar import FavoritesScroll, Favorite
 from mwgg_gui.components.dialog import MessageBox
+from mwgg_gui.launcher.manual_games import manual_launch_block
 from mwgg_gui.launcher.setup_guide import (extract_bundled_setup_doc,
                                            open_with_desktop,
                                            setup_guide_url)
@@ -95,13 +96,9 @@ _SKIP_GAME_VALIDATION_MODULES = {"_bizhawk", "_sni", "_tracker"}
 # Shown whenever no game is selected. The backend represents that state as the
 # generic "Archipelago" game (the text-client fallback slots Generate emits for
 # game-less players); the UI deliberately never surfaces that name.
-_NO_GAME_STATUS = ("Game not set, connecting using Text Client. "
-                   "Switch to Universal Tracker or set your game.")
+_NO_GAME_STATUS = ("Click on a game to select it or launch the Text Client")
 
-# Manual has no concrete game to pair with (selecting it deselects the game).
-_MANUAL_STATUS = "Manual games are chosen inside the Manual Client after launch."
-
-_TRACKER_STATUS = "Game not set, connecting using the Universal Tracker."
+_TRACKER_STATUS = "Click on a game to select it or launch the Universal Tracker."
 
 # A larger installer selection would overflow the favorites bar, so it is not seeded.
 _INSTALLER_FAVORITES_MAX = 10
@@ -472,19 +469,15 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             self.deselect_game()
             return
         ids = self.launcher_view.ids
-        if ids.manual_checkbox.active:
-            # A concrete game contradicts the game-less Manual Client; fall
-            # back to the game's own client.
-            ids.manual_checkbox.active = False
         self.selected_game = game_info
         # Any selected game gets its client by default; the Game Client
         # checkbox is the opt-out (down to the plain text/tracker client).
+        # The Manual Client radio stays on: the selection is its manual game.
         ids.game_client_checkbox.disabled = False
-        ids.game_client_checkbox.active = True
+        ids.game_client_checkbox.active = not ids.manual_checkbox.active
         if ids.text_client_checkbox.active:
             ids.text_client_checkbox.active = False
         self._refresh_client_type()
-        self.launcher_view.fallback_status = ""
         logger.info(f"Selected game: {game_info[1]}")
         self.launcher_view.module_name = game_info[0]
         self._update_component_strip()
@@ -565,8 +558,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     def set_text_client(self, active: bool):
         self._queue_client_reconcile("text" if active else None)
 
+    def set_manual_client(self, active: bool):
+        self._queue_client_reconcile("manual" if active else None)
+
     def refresh_client_type(self):
-        """Recompute the launch state after a tracker/manual radio change."""
+        """Recompute the launch state after a tracker radio change."""
         self._queue_client_reconcile(None)
 
     def _queue_client_reconcile(self, intent: str | None):
@@ -587,14 +583,14 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         text = ids.text_client_checkbox
         intent, self._client_intent = self._client_intent, None
 
-        if ids.manual_checkbox.active and self.selected_game:
-            # Manual games are chosen inside the Manual Client.
-            self.deselect_game()
-        # Game Client vs the plain Text Client: the later gesture wins.
-        if intent == "text" and game_client.active:
+        # Game Client vs the Text/Manual Client radios: the later gesture wins.
+        if intent in ("text", "manual") and game_client.active:
             game_client.active = False
-        elif intent == "game" and text.active:
-            text.active = False
+        elif intent == "game":
+            if text.active:
+                text.active = False
+            if ids.manual_checkbox.active:
+                ids.manual_checkbox.active = False
         game_client.disabled = not self.selected_game
         if not self.selected_game and game_client.active:
             game_client.active = False
@@ -616,8 +612,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             self.client_type = "game"
         else:
             self.client_type = "text"
-        if not self.selected_game:
-            self.launcher_view.fallback_status = self._no_game_status()
+        if self.client_type == "manual":
+            status = manual_launch_block(self.selected_game) or ""
+        else:
+            status = "" if self.selected_game else self._no_game_status()
+        self.launcher_view.fallback_status = status
         self.update_connect_button_text()
 
     def _launch_module(self) -> str:
@@ -642,8 +641,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         return (self.client_type,)
 
     def _no_game_status(self) -> str:
-        return {"manual": _MANUAL_STATUS,
-                "universal_tracker": _TRACKER_STATUS}.get(self.client_type, _NO_GAME_STATUS)
+        return _TRACKER_STATUS if self.client_type == "universal_tracker" else _NO_GAME_STATUS
 
     def load_favorite_games(self):
         """Load favorite games from app config"""
@@ -1464,6 +1462,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         """Drop a desktop shortcut that boots the current client selection
         directly, skipping the launcher. Server/slot/password stay out of it;
         the spawned client falls back to its persisted defaults."""
+        if self.client_type == "manual":
+            block = manual_launch_block(self.selected_game)
+            if block:
+                MessageBox("Desktop Shortcut", block, is_error=True).open()
+                return
         module = self.selected_game[0] if self.selected_game else ""
         name = self._shortcut_name()
         from mwgg_gui.launcher.desktop_shortcut import create_client_shortcut
@@ -1481,6 +1484,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             if self.client_type == "universal_tracker":
                 return f"MultiworldGG {self.selected_game[1]} Tracker"
             return f"MultiworldGG {self._selected_client_label()}"
+        if self.client_type == "manual" and self.selected_game:
+            return f"MultiworldGG {self.selected_game[1]}"
         return {"universal_tracker": "MultiworldGG Universal Tracker",
                 "manual": "MultiworldGG Manual Client"}.get(
                     self.client_type, "MultiworldGG Text Client")
@@ -1977,6 +1982,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         game_label = (self.selected_game[1] if client_module
                       else {"universal_tracker": "Universal Tracker",
                             "manual": "Manual Client"}.get(self.client_type, "Text Client"))
+        if self.client_type == "manual":
+            block = manual_launch_block(self.selected_game)
+            if block:
+                MessageBox("Manual Client", block, is_error=True).open()
+                return
 
         if game_module:
             self.app.logo_png = GameIndex.get_game(game_module).get("cover_url", None)
