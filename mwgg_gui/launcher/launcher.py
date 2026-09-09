@@ -457,15 +457,19 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             game = GameListPanel(
                 item_name=module_name, 
                 item_data=game_data,
-                on_game_select=lambda x, name=module_name, game_name=game_data['game_name']: self.on_game_selected((name, game_name))
+                on_game_select=lambda x, name=module_name, game_name=game_data['game_name']: self.on_game_selected((name, game_name), toggle=False)
             )
             self.games_mdlist.add_widget(game)
 
-    def on_game_selected(self, game_info: tuple[str, str]):
-        """Handle game selection from the game list or favorites bar;
-        selecting the already-selected game deselects it."""
+    def on_game_selected(self, game_info: tuple[str, str], toggle: bool = True):
+        """Handle game selection from the game list or favorites bar.
+
+        Args:
+            toggle: reselect the current game to deselect it. The favorites
+                bar toggles; the game list always selects.
+        """
         self._show_compact_side("play")
-        if self.selected_game and game_info[0] == self.selected_game[0]:
+        if toggle and self.selected_game and game_info[0] == self.selected_game[0]:
             self.deselect_game()
             return
         ids = self.launcher_view.ids
