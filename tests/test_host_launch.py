@@ -124,6 +124,21 @@ def test_watch_ignores_a_pid_it_never_saw(host_launch, tmp_path):
 
 
 def test_watch_times_out_when_the_server_never_reports(host_launch, tmp_path):
+    """Nothing wrote a log, so there is nothing to keep following."""
     events = _watch(host_launch, tmp_path, set(), sleep=lambda _: None,
                     timeout=5, ticks=[0, 1, 3, 5, 7])
     assert events == [("timeout",)]
+
+
+def test_watch_keeps_following_a_running_server_past_the_timeout(host_launch, tmp_path):
+    """The picker keeps a healthy server quiet, so the timeout releases the caller, not the watch."""
+    hosting = "Hosting game at 1.2.3.4:38281 (No password)"
+    new = tmp_path / "Server_2026_09_08_20_00_00.txt"
+    new.write_bytes(_init_record(7656))
+    writes = iter([lambda: None, lambda: new.open("ab").write(_record(hosting))])
+
+    def sleep(_):
+        next(writes, lambda: None)()
+
+    events = _watch(host_launch, tmp_path, set(), sleep=sleep, timeout=5, ticks=[0, 1, 5, 7])
+    assert [kind for kind, *_ in events] == ["line", "timeout", "line", "ready"]

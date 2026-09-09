@@ -1179,7 +1179,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     "The server closed before hosting a game. See the logs folder.",
                     is_error=True),
                 on_timeout=lambda: finish(
-                    "Server Starting", "The server is still starting; watch its window."))
+                    "Server Starting",
+                    "The server is still starting; watch its window."
+                    " It reports here once it is hosting."))
 
         threading.Thread(target=watch, name="HostWatch", daemon=True).start()
 

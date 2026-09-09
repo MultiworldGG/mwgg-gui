@@ -127,10 +127,13 @@ def watch_server(log_folder: str, known_logs: set[str], *,
                  clock: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] = time.sleep,
                  alive: Callable[[int], bool] = server_alive) -> None:
-    """Follow the server's new log until it reports hosting, its process ends, or `timeout` passes.
+    """Follow the server's new log until it reports hosting or its process ends.
 
     Blocking; run it on a worker thread. `known_logs` is list_server_logs() from
     before the launch, so an earlier run's file is never mistaken for this one.
+    `timeout` is when the caller is told the server is taking its time: a server
+    that has reported in is then followed for as long as it lives, because one
+    sitting on its file picker is healthy and the wait is the user's own.
     """
     deadline = clock() + timeout
     log_path = None
@@ -155,7 +158,9 @@ def watch_server(log_folder: str, known_logs: set[str], *,
         if exited:
             on_exit()
             return
-        if clock() >= deadline:
+        if deadline is not None and clock() >= deadline:
             on_timeout()
-            return
+            if pid is None:
+                return
+            deadline = None
         sleep(poll)
