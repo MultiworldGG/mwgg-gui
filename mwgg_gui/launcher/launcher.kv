@@ -79,20 +79,11 @@
         MDBoxLayout: # Inner padded layout
             orientation: 'vertical'
             spacing: dp(4)
-            MDBoxLayout: # Title & Favorites
+            MDBoxLayout: # Favorites
                 id: title_layout
                 orientation: 'vertical'
                 size_hint_y: None
-                height: dp(120)
-                MDLabel:
-                    size_hint_y: 0.37
-                    text: app.qotd()
-                    halign: 'center'
-                    theme_font_style: "Custom"
-                    font_style: "Title"
-                    role: "small"
-                    theme_text_color: "Custom"
-                    text_color: app.theme_cls.onSurfaceVariantColor
+                height: dp(128)
             MDBoxLayout: # Client types
                 orientation: 'horizontal'
                 spacing: dp(10)

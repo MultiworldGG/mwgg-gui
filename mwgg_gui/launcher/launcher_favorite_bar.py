@@ -38,44 +38,70 @@ Builder.load_string('''
     size_hint_x: None
     size_hint_y: None
     width: dp(85)
-    height: dp(65)
+    height: dp(128)
     pos_hint: {"center_y": 0.5}
+    overlap: True
     favorite_image: favorite_image
 
     FavoriteImage:
         source: root.game_cover_url
         id: favorite_image
 
-        canvas:
-            Color:
-                rgba: app.theme_cls.primaryColor if root.favorite_state == "selected" else app.theme_cls.transparentColor
-            BoxShadow:
-                inset: True
-                size: dp(85), dp(65)
-                offset: 0, 0
-                spread_radius: 5, 5
-                blur_radius: 10
 
+ 
     MDSmartTileOverlayContainer:
-        overlap: True
+        height: dp(128)
         orientation: 'vertical'
         overlay_mode: 'footer'
+        game_label: game_label
+
         FavoriteToggleButton:
             icon: "heart" if root.game_module in app.launcher_screen.saved_games else "heart-outline"
-            on_release: root.toggle_favorite()
-        MDLabel:
-            pos_hint: {"x": 0, "y": 0}
-            size_hint_y: .5
-            text: root.game_name
-            halign: 'center'
-            theme_font_style: "Custom"
-            font_style: "Monospace-SM"
-            role: "medium"
-            bold: True
             outline_color: app.theme_cls.onSurfaceVariantColor
             outline_width: 1
-            theme_text_color: "Custom"
-            text_color: app.theme_cls.surfaceContainerHighestColor
+            adaptive_height: True
+            padding: dp(2), dp(2), 0, 0
+            on_release: root.toggle_favorite()
+            pos_hint: {"y": 1, "right": 1}
+
+
+        MDRelativeLayout:
+            MDLabel:
+                id: game_label
+                pos_hint: {"x": 0, "y": 0}
+                padding: 2,
+                adaptive_height: True
+                text: root.game_name
+                halign: 'center'
+                theme_font_style: "Custom"
+                font_style: "Monospace-SM"
+                role: "medium"
+                bold: True
+                outline_color: app.theme_cls.surfaceContainerHighestColor
+                outline_width: 1
+                theme_text_color: "Custom"
+                text_color: app.theme_cls.onSurfaceVariantColor
+                canvas.before:
+                    # Not md_bg_color: MDLabel swaps it for a SmoothRoundedRectangle whose
+                    # translucent anti-aliased edge ignores the ScrollView stencil.
+                    Color:
+                        rgba: 0, 0, 0, .6
+                    Rectangle:
+                        pos: self.pos
+                        size: self.size
+
+            Widget:
+                canvas.after:
+                    Color:
+                        rgba: app.theme_cls.primaryColor if root.favorite_state == "selected" else app.theme_cls.transparentColor
+                    BoxShadow:
+                        inset: True
+                        size: dp(85), dp(128)
+                        offset: 0, 0
+                        spread_radius: 5, 5
+                        blur_radius: 10
+
+
 ''')
 
 
@@ -83,7 +109,9 @@ class FavoritesScroll(MDScrollView):
     favorites: ObjectProperty
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.favorites = MDBoxLayout(orientation='horizontal', spacing=dp(10), size_hint_x=None, size_hint_y=None, height=dp(75), width=dp(1000), pos_hint={"center_x": 0.5, "center_y": 0.5})
+        self.scroll_type = ["content"]
+        self.bar_width = dp(1)
+        self.favorites = MDBoxLayout(orientation='horizontal', spacing=dp(10), size_hint_x=None, size_hint_y=None, height=dp(128), width=dp(1000), pos_hint={"center_x": 0.5, "center_y": 0.5})
         self.add_widget(self.favorites)
 
 class FavoriteImage(MDSmartTileImage):
@@ -123,7 +151,10 @@ class Favorite(MDSmartTile):
             return ""
         try:
             game_data = GameIndex.get_game(self.game_module)
-            return game_data.get('cover_url', "") if game_data else ""
+            if game_data:
+                cover_url = game_data.get('cover_url',"")
+                return cover_url.replace("t_thumb", "t_cover_small").replace(".jpg", ".png") 
+            return ""
         except:
             return ""
 

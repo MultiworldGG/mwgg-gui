@@ -375,7 +375,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         with open(local_path("data", "QOTD.txt"), "r", encoding="utf-8") as f:
             qotd_lines = f.readlines()
             if qotd_lines:
-                todays_qotd = qotd_lines[int(int(datetime.now(UTC).strftime("%m%d")) % len(qotd_lines))]
+                todays_qotd = qotd_lines[int(int(datetime.now(UTC).strftime("%m%d")) % len(qotd_lines))].strip()
                 return "QOTD for " + datetime.now(UTC).strftime("%m/%d/%Y") + ": " + todays_qotd
         return "Blame TreZ"
 

@@ -505,7 +505,10 @@ class TopAppBar(MDTopAppBar):
             # ignores a zero size hint.
             drop_titles.append(self.ids.clock_label)
         if self.app.role == ROLE_LAUNCHER:
-            self.server_info_label.text = ""
+            self.server_info_label.text = self.app.qotd()
+            self.server_info_label.theme_font_style = "Custom"
+            self.server_info_label.font_style = "Title"
+            self.server_info_label.role = "small"
             drop_titles.append(self.timer)
             self.timer = None
             for icon, component_name in (("web", "MultiworldGG Website"),

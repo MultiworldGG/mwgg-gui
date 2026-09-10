@@ -372,7 +372,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         fave_scroll = FavoritesScroll()
         self.favorites_layout = fave_scroll.favorites
         self.launcher_view.ids.title_layout.add_widget(fave_scroll)
-        fave_scroll.size = (self.launcher_view.ids.title_layout.width, dp(100))
+        fave_scroll.size = (self.launcher_view.ids.title_layout.width, dp(130))
         
         self.available_games = get_available_worlds()
         self.load_favorite_games()
@@ -1998,7 +1998,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                 return
 
         if game_module:
-            self.app.logo_png = GameIndex.get_game(game_module).get("cover_url", None)
+            game_data = GameIndex.get_game(game_module)
+            key_url = game_data.get("key_art_url", None)
+            art_url = game_data.get("artwork_url", None)
+            cover_url = game_data.get("cover_url", None)
+            self.app.logo_png = key_url if key_url else art_url if art_url else cover_url
         if client_module:
             logger.info(f"Attempting to launch module: {game_label}")
         else:
