@@ -1,16 +1,18 @@
 """
-Admin command-line helpers for the bottom bar's admin input.
+Admin command-line helpers for the bottom bar's admin input and the Admin screen.
 
 Kivy-free on purpose: the GUI-side unit tests load it by file path.
 """
 from __future__ import annotations
 
 __all__ = ("ADMIN_COMMANDS", "available_admin_commands", "admin_say_line",
-           "complete_admin_command", "OPTION_SPECS", "STATUS_TAGS", "option_entries",
-           "parse_status_reply", "tagged_players", "player_display_name", "player_state",
-           "state_icon", "enrich_player_rows", "format_session_time")
+           "complete_admin_command", "QuietAdminPolls", "OPTION_SPECS", "STATUS_TAGS",
+           "option_entries", "parse_status_reply", "tagged_players", "tag_counts",
+           "player_display_name", "player_state", "state_icon", "enrich_player_rows",
+           "format_session_time")
 
 import re
+from collections import Counter
 from datetime import datetime
 from os.path import commonprefix
 from time import gmtime, strftime
@@ -86,6 +88,61 @@ def complete_admin_command(text: str, logged_in: bool) -> str | None:
     if len(common) <= len(word):
         return None
     return prefix + common
+
+
+# MultiServer._cmd_options: the header line, then one line per option.
+_OPTION_LINE = re.compile(r"^Option \S+ is set to ")
+
+
+class QuietAdminPolls:
+    """Console suppression for the admin commands the Admin screen sends on
+    its own. MultiServer echoes every `!admin` line back to its caller as
+    chat ("<alias>: !admin /players") and answers it with AdminCommandResult
+    packets; for a registered poll both are dropped, while what the user
+    typed still shows in full. Attribution is by order: a reply of the
+    right shape answers the oldest registered poll of its kind."""
+
+    def __init__(self) -> None:
+        self._echoes: Counter[str] = Counter()
+        self._players = 0
+        self._options = 0
+        self._in_options_run = False
+
+    def expect(self, line: str) -> None:
+        """Register one quiet send of `line`, an admin_say_line result."""
+        self._echoes[line] += 1
+        command = line.removeprefix("!admin").strip()
+        if command == "/players":
+            self._players += 1
+        elif command == "/options":
+            self._options += 1
+
+    def hide_echo(self, plaintext: str) -> bool:
+        """True for the chat echo of a registered poll."""
+        line = plaintext.rpartition(": ")[2]
+        if not self._echoes[line]:
+            return False
+        self._echoes[line] -= 1
+        return True
+
+    def hide_players_reply(self) -> bool:
+        """Call once per reply carrying a `players` payload."""
+        if not self._players:
+            return False
+        self._players -= 1
+        return True
+
+    def hide_options_reply(self, text: str) -> bool:
+        """Call with every AdminCommandResult text: the /options header of
+        a registered poll starts a hidden run that ends at the first line
+        that is not an option line."""
+        if text.startswith("Current options:"):
+            self._in_options_run = bool(self._options)
+            if self._in_options_run:
+                self._options -= 1
+        elif self._in_options_run:
+            self._in_options_run = bool(_OPTION_LINE.match(text))
+        return self._in_options_run
 
 
 # The MultiServer simple_options the Admin screen edits, in display order
@@ -185,6 +242,14 @@ def parse_status_reply(text: str):
 
 def tagged_players(players) -> int:
     return sum(1 for player in players if player.get("tagged"))
+
+
+def tag_counts(rows, tags) -> dict[str, int] | None:
+    """Players carrying each of `tags`, from /players rows; None when the
+    rows lack `tags` (older servers: `/status <tag>` counts instead)."""
+    if not rows or any("tags" not in row for row in rows):
+        return None
+    return {tag: sum(1 for row in rows if tag in row["tags"]) for tag in tags}
 
 
 def player_display_name(row: dict) -> str:

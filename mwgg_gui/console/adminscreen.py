@@ -8,10 +8,17 @@ bottom-right, with the admin command input on the bar's FAB.
 Data arrives through app.on_admin_command_result: the `players` and
 `options` payloads MultiServer attaches to /players, /options and /option
 replies, and the `/status <tag>` replies, parsed from their text so they
-work against any server. Every !admin command is broadcast to all players
-as chat, so the screen fetches once on first entry and otherwise refreshes
-on demand. Opt-in via client.admin_console; app.change_screen gates it
-behind AdminLoginDialog until the server confirms the host login.
+work against any server. MultiServer echoes an !admin line only to its
+caller and answers it privately, so the screen polls by itself: /players
+on entry, whenever the player state the client already mirrors changes
+(client status keys, aliases, BK flags) and every _PLAYERS_POLL_SECONDS
+while shown; /status per tag and /options once on first entry, /options
+again when a RoomUpdate moves hint_cost or a permission. app.admin_polls
+keeps those polls' echo and replies out of the console; the section
+buttons refresh loudly on demand. A poll left unanswered (a server
+without the payloads, a login another admin displaced) suspends polling
+until the next entry. Opt-in via client.admin_console; app.change_screen
+gates it behind AdminLoginDialog until the server confirms the host login.
 """
 __all__ = ("AdminScreen", "AdminHeader", "AdminInfoPane", "AdminOptionsPane")
 
@@ -35,8 +42,9 @@ from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
 from mwgg_gui.components.admin_commands import (
     STATUS_TAGS, admin_say_line, enrich_player_rows, format_session_time, option_entries,
-    parse_status_reply, player_display_name, player_state, state_icon, tagged_players)
+    parse_status_reply, player_display_name, player_state, state_icon, tag_counts, tagged_players)
 from mwgg_gui.components.bottomappbar import BottomAppBar
+from mwgg_gui.components.client_status import client_status_keys
 from mwgg_gui.console.console import ConsoleLayout
 from mwgg_gui.console.textconsole import ConsoleView
 from mwgg_gui.settings.settings_components import LabeledDropdown, LabeledSwitch
@@ -126,6 +134,7 @@ _STATUS_ICON_WIDTH = 36
 _NO_PLAYERS_HINT = "No player data yet. Refresh to fetch /players."
 _STATE_TO_STATUS = {"goal": 30, "ready": 10}
 _OPTION_FIELD_WIDTH = 96
+_PLAYERS_POLL_SECONDS = 15
 
 
 def _status_icon_cell(icon: str) -> AnchorLayout:
@@ -292,8 +301,12 @@ class AdminInfoPane(MDScrollView):
         self._render_tag_rows(getattr(self.app.ctx, "current_energy_link_value", None))
 
     def set_players(self, rows: list[dict]) -> None:
-        """Rows from /players: the richest source, never replaced by /status."""
+        """Rows from /players: the richest source, never replaced by /status;
+        their `tags` also feed the tag counts."""
         self._rows_from_players = True
+        counts = tag_counts(rows, STATUS_TAGS)
+        if counts is not None:
+            self._tag_counts.update(counts)
         self._render_players(rows)
 
     def set_players_from_status(self, players: list[dict]) -> None:
@@ -375,10 +388,15 @@ class AdminScreen(MDScreen, ThemableBehavior):
         super().__init__(**kwargs)
         self._status_event = None
         self._fetched = False
-        # Tags of the /status requests this screen sent and has not yet seen
-        # answered, for replies whose text names no tag; per-team player
-        # lists from the latest replies feed the fallback players table.
-        self._pending_status: deque[str] = deque()
+        self._poll_answered = True
+        self._last_poll = 0.0
+        self._room_seen = None
+        self._options_seen = None
+        # (tag, quiet) of the /status requests this screen sent and has not
+        # yet seen answered, for replies whose text names no tag; per-team
+        # player lists from the latest replies feed the fallback players table.
+        self._pending_status: deque[tuple[str, bool]] = deque()
+        self._quiet_tags: set[str] = set()
         self._last_status_tag: str | None = None
         self._status_teams: dict[int, list[dict]] = {}
         self._tag_teams: dict[str, dict[int, list[dict]]] = {}
@@ -413,9 +431,10 @@ class AdminScreen(MDScreen, ThemableBehavior):
         self.add_widget(self.bottom_appbar)
 
         snapshot = getattr(self.app, "_admin_snapshot", {}) or {}
-        self.receive_admin_result(snapshot)
+        self._show_payloads(snapshot)
         if "options" not in snapshot:
             self.options_pane.set_entries(self._local_option_entries())
+        self._options_seen = self._option_mirror()
         self.info_pane.refresh_session(self.app.ctx)
 
     def _local_option_entries(self, payload=None) -> list[dict]:
@@ -424,69 +443,125 @@ class AdminScreen(MDScreen, ThemableBehavior):
                               check_points=getattr(ctx, "check_points", None),
                               permissions=getattr(ctx, "permissions", None))
 
-    def receive_admin_result(self, args: dict) -> None:
-        """An admin reply (see app.on_admin_command_result): structured
-        `players` / `options` payloads, or a `/status` reply parsed from
-        its text (`status` names its team and tag on newer servers)."""
+    def _show_payloads(self, args: dict) -> None:
         if "players" in args:
             self.info_pane.set_players(args["players"])
         if "options" in args:
             self.options_pane.set_entries(self._local_option_entries(args["options"]))
+
+    def receive_admin_result(self, args: dict) -> bool:
+        """An admin reply (see app.on_admin_command_result): structured
+        `players` / `options` payloads, or a `/status` reply parsed from
+        its text (`status` names its team and tag on newer servers).
+        Returns True when it answers one of this screen's own polls."""
+        self._show_payloads(args)
+        polls = self.app.admin_polls
         text = "".join(part.get("text", "") for part in args.get("data", []))
+        quiet = polls.hide_options_reply(text)
+        if "players" in args:
+            self._poll_answered = True
+            quiet = polls.hide_players_reply() or quiet
         parsed = parse_status_reply(text)
         if parsed is not None:
-            self._receive_status(parsed, args.get("status") or {})
+            quiet = self._receive_status(parsed, args.get("status") or {}) or quiet
+        return quiet
 
-    def _receive_status(self, parsed: dict, payload: dict) -> None:
+    def _receive_status(self, parsed: dict, payload: dict) -> bool:
         team, players = parsed["team"], parsed["players"]
         # Replies come one per team, in request order; team 0 consumes the
-        # pending tag when neither the payload nor the text names one.
-        expected = self._pending_status.popleft() if team == 0 and self._pending_status else None
+        # pending entry when neither the payload nor the text names a tag.
+        expected, quiet = None, False
+        if team == 0 and self._pending_status:
+            expected, quiet = self._pending_status.popleft()
         tag = payload.get("tag") or parsed["tag"] or expected or self._last_status_tag
         self._status_teams[team] = players
         self.info_pane.set_players_from_status(
             [player for _, team_players in sorted(self._status_teams.items())
              for player in team_players])
         if not tag:
-            return
+            return False
         self._last_status_tag = tag
+        if team == 0:
+            self._quiet_tags.discard(tag)
+            if quiet:
+                self._quiet_tags.add(tag)
         teams = self._tag_teams.setdefault(tag, {})
         teams[team] = players
         self.info_pane.set_tag_status(
             tag, [player for team_players in teams.values() for player in team_players])
+        return tag in self._quiet_tags
 
-    def send_admin(self, text: str) -> None:
-        self.app.on_message(admin_say_line(text), None)
+    def send_admin(self, text: str, quiet: bool = False) -> None:
+        """Quiet sends bypass app.on_message (its orange echo and the input
+        history) and register with app.admin_polls, which drops the
+        server's echo and replies from the console."""
+        line = admin_say_line(text)
+        if not quiet:
+            self.app.on_message(line, None)
+            return
+        self.app.admin_polls.expect(line)
+        self.app.commandprocessor(line)
 
-    def refresh_players(self) -> None:
-        self.send_admin("/players")
+    def refresh_players(self, quiet: bool = False) -> None:
+        self.send_admin("/players", quiet)
 
-    def refresh_tags(self) -> None:
+    def refresh_tags(self, quiet: bool = False) -> None:
         for tag in STATUS_TAGS:
-            self._pending_status.append(tag)
-            self.send_admin(f"/status {tag}")
+            self._pending_status.append((tag, quiet))
+            self.send_admin(f"/status {tag}", quiet)
 
-    def refresh_options(self) -> None:
-        self.send_admin("/options")
+    def refresh_options(self, quiet: bool = False) -> None:
+        self.send_admin("/options", quiet)
 
     def apply_option(self, name: str, value: str) -> None:
         self.send_admin(f"/option {name} {value}")
 
+    def _option_mirror(self) -> tuple:
+        """The options RoomInfo and RoomUpdate keep current on the client."""
+        ctx = self.app.ctx
+        permissions = getattr(ctx, "permissions", None) or {}
+        return getattr(ctx, "hint_cost", None), tuple(sorted(permissions.items()))
+
+    def _room_signature(self) -> tuple:
+        """Player state the client already mirrors: aliases, the client
+        status keys app.on_connect subscribed to, and the BK flags."""
+        ctx = self.app.ctx
+        names = getattr(ctx, "player_names", None) or {}
+        stored = getattr(ctx, "stored_data", None) or {}
+        players = getattr(self.app, "ui_player_data", None) or {}
+        return (tuple(sorted(names.items())),
+                tuple(stored.get(key) for key in client_status_keys(getattr(ctx, "team", 0) or 0, names)),
+                tuple(getattr(player, "bk_mode", None) for _, player in sorted(players.items())))
+
     def _tick(self, dt) -> None:
-        self.header.refresh(self.app.ctx)
-        self.info_pane.refresh_session(self.app.ctx)
+        ctx = self.app.ctx
+        self.header.refresh(ctx)
+        self.info_pane.refresh_session(ctx)
+        if not getattr(ctx, "admin", False):
+            return
+        options = self._option_mirror()
+        if options != self._options_seen:
+            self._options_seen = options
+            self.refresh_options(quiet=True)
+        room = self._room_signature()
+        due = time() - self._last_poll >= _PLAYERS_POLL_SECONDS
+        # An unanswered poll suspends the next: a server without the payload
+        # or a displaced login would otherwise get a console line per poll.
+        if (room != self._room_seen or due) and self._poll_answered:
+            self._room_seen = room
+            self._poll_answered = False
+            self._last_poll = time()
+            self.refresh_players(quiet=True)
 
     def on_pre_enter(self, *args):
+        self._poll_answered, self._last_poll = True, 0.0
         self._tick(0)
         if self._status_event is None:
             self._status_event = Clock.schedule_interval(self._tick, 1)
         if not self._fetched and getattr(self.app.ctx, "admin", False):
-            # Each fetch is broadcast as chat, so only the first entry pulls
-            # everything; the section buttons refresh on demand.
             self._fetched = True
-            self.refresh_players()
-            self.refresh_tags()
-            self.refresh_options()
+            self.refresh_tags(quiet=True)
+            self.refresh_options(quiet=True)
 
     def on_leave(self, *args):
         if self._status_event is not None:

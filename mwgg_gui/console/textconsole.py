@@ -52,9 +52,13 @@ class ConsoleFilter(logging.Filter):
 
 @dataclass
 class ConsolePair(MarkupPair):
-    """Console line plus the flag the Admin screen's mirror drops on: item
-    sends, cheats, and hints all carry an item node."""
+    """Console line plus the flags consoles filter on. `item_traffic` (item
+    sends, cheats, and hints all carry an item node) drops the line from
+    the Admin screen's mirror; `hidden` drops it everywhere, set after
+    queueing when the packet turns out to answer one of the Admin screen's
+    own polls (app.on_admin_command_result)."""
     item_traffic: bool = False
+    hidden: bool = False
 
 
 class TextConsole(MarkupTextField, ThemableBehavior):
@@ -109,7 +113,8 @@ class TextConsole(MarkupTextField, ThemableBehavior):
     def append_items(self, items: list) -> None:
         """Append the queue items this console's line_filter accepts, as one
         set_texts call."""
-        accepted = [item for item in items if self.line_filter is None or self.line_filter(item)]
+        accepted = [item for item in items if not getattr(item, "hidden", False)
+                    and (self.line_filter is None or self.line_filter(item))]
         if not accepted:
             return
         texts = [self._texts_for(item) for item in accepted]
