@@ -120,6 +120,7 @@ from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
 from mwgg_gui.components.layout_mode import get_layout_mode, read_compact_mode
 from mwgg_gui.components.live_forwarding import LiveForwarding
+from mwgg_gui.components.admin_commands import QuietAdminPolls
 from mwgg_gui.components.client_status import client_status_keys, apply_client_status
 
 from mwgg_gui.components.titlebar import LiveTitleMeta, Titlebar
@@ -295,6 +296,10 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         # Latest `players` / `options` payloads from admin replies, so an
         # Admin screen built later starts populated.
         self._admin_snapshot: dict = {}
+        # The Admin screen's own polls; their echo and replies stay out of
+        # the console (print_json, on_admin_command_result).
+        self.admin_polls = QuietAdminPolls()
+        self._last_console_line: ConsolePair | None = None
         # Where the client-role menu's Back item returns from Settings, the
         # one screen without a bottom bar.
         self._screen_before_settings = "console"
@@ -1112,6 +1117,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
                 live.screen_manager.current = "console"
             live.screen_manager.remove_widget(live.screen_manager.get_screen("admin"))
             live.admin_screen = None
+            live.admin_polls = QuietAdminPolls()
         live.refresh_bottom_nav()
 
     def set_compact_mode(self, enabled: bool) -> None:
@@ -1152,14 +1158,20 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         """FrontendProtocol: an admin reply packet. MultiServer attaches
         `players` to /players, `options` to /options and /option, and
         `status` (team, tag) to /status replies; the Admin screen parses
-        /status text itself so older servers work too."""
+        /status text itself so older servers work too. A reply to one of
+        the screen's own polls is dropped from the console: CommonClient
+        printed it just before calling here, so it is the last line queued."""
         live = self._resolve_live_app()
         for key in ("players", "options"):
             if key in args:
                 live._admin_snapshot[key] = args[key]
         screen = getattr(live, "admin_screen", None)
-        if screen is not None:
-            screen.receive_admin_result(args)
+        if screen is None:
+            return
+        text = "".join(part.get("text", "") for part in args.get("data", []))
+        line = live._last_console_line
+        if screen.receive_admin_result(args) and line is not None and line.plaintext == text:
+            line.hidden = True
 
     def open_top_appbar_menu(self, menu_button):
         """Appbar hamburger hook. Launcher role: the nav drawer replaced the
@@ -1309,10 +1321,14 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         parser = KivyMarkupJSONtoTextParser(self.ctx)
         markup_text = parser(data)
         plaintext = "".join([node.get("text") for node in data])
+        live = self._resolve_live_app()
+        if live.admin_polls.hide_echo(plaintext):
+            return
         # Item sends, cheats, and hints all carry an item node; the Admin
         # screen's mirror drops those lines.
         item_traffic = any(node.get("type") == "item_id" for node in data)
-        self.text_buffer.put_nowait(ConsolePair(markup_text, plaintext, item_traffic))
+        live._last_console_line = ConsolePair(markup_text, plaintext, item_traffic)
+        self.text_buffer.put_nowait(live._last_console_line)
 
     def set_pronouns(self):
         pronouns = self.local_player_data.pronouns

@@ -174,3 +174,39 @@ def test_session_time(admin_commands):
     started, elapsed = admin_commands.format_session_time(1_000_000.0, 1_000_000.0 + 86400 + 61)
     assert elapsed == "1 day, 00:01:01"
     assert len(started) == 16
+
+
+def test_quiet_polls_hide_their_own_echo_and_players_reply(admin_commands):
+    polls = admin_commands.QuietAdminPolls()
+    assert not polls.hide_echo("Host: !admin /players")
+    assert not polls.hide_players_reply()
+    polls.expect("!admin /players")
+    polls.expect("!admin /status DeathLink")
+    assert polls.hide_echo("Host: !admin /players")
+    assert not polls.hide_echo("Host: !admin /players")
+    assert polls.hide_echo("Flat: Delilah: !admin /status DeathLink")
+    assert not polls.hide_echo("Host: !admin /status DeathLink")
+    assert polls.hide_players_reply()
+    assert not polls.hide_players_reply()
+
+
+def test_quiet_options_poll_hides_the_header_and_its_option_lines(admin_commands):
+    polls = admin_commands.QuietAdminPolls()
+    assert not polls.hide_options_reply("Current options:")
+    assert not polls.hide_options_reply("Option hint_cost is set to 10")
+    polls.expect("!admin /options")
+    assert polls.hide_options_reply("Current options:")
+    assert polls.hide_options_reply("Option hint_cost is set to 10")
+    assert polls.hide_options_reply("Option item_cheat is set to True")
+    assert not polls.hide_options_reply("Set option hint_cost to 5")
+    assert not polls.hide_options_reply("Option hint_cost is set to 5")
+    assert not polls.hide_options_reply("Current options:")
+
+
+def test_tag_counts_come_from_players_rows_when_they_carry_tags(admin_commands):
+    rows = [{"name": "A", "tags": ["DeathLink", "in_bk"]}, {"name": "B", "tags": []},
+            {"name": "C", "tags": ["DeathLink"]}]
+    assert admin_commands.tag_counts(rows, ("DeathLink", "in_bk", "TrapLink")) == {
+        "DeathLink": 2, "in_bk": 1, "TrapLink": 0}
+    assert admin_commands.tag_counts([{"name": "A"}], ("DeathLink",)) is None
+    assert admin_commands.tag_counts([], ("DeathLink",)) is None
