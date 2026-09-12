@@ -12,13 +12,15 @@ work against any server. MultiServer echoes an !admin line only to its
 caller and answers it privately, so the screen polls by itself: /players
 on entry, whenever the player state the client already mirrors changes
 (client status keys, aliases, BK flags) and every _PLAYERS_POLL_SECONDS
-while shown; /status per tag and /options once on first entry, /options
-again when a RoomUpdate moves hint_cost or a permission. app.admin_polls
-keeps those polls' echo and replies out of the console; the section
-buttons refresh loudly on demand. A poll left unanswered (a server
-without the payloads, a login another admin displaced) suspends polling
-until the next entry. Opt-in via client.admin_console; app.change_screen
-gates it behind AdminLoginDialog until the server confirms the host login.
+while shown; /status per tag and /options once the first `players`
+payload arrives, /options again when a RoomUpdate moves hint_cost or a
+permission. app.admin_polls keeps those polls' echo and replies out of
+the console; the section buttons refresh loudly on demand. An upstream
+Archipelago room broadcasts every !admin line and never sends
+AdminCommandResult, so a poll left unanswered suspends polling until the
+next entry (which also quiets a login another admin displaced). Opt-in
+via client.admin_console; app.change_screen gates it behind
+AdminLoginDialog until the server confirms the host login.
 """
 __all__ = ("AdminScreen", "AdminHeader", "AdminInfoPane", "AdminOptionsPane")
 
@@ -460,6 +462,10 @@ class AdminScreen(MDScreen, ThemableBehavior):
         quiet = polls.hide_options_reply(text)
         if "players" in args:
             self._poll_answered = True
+            if not self._fetched:
+                self._fetched = True
+                self.refresh_tags(quiet=True)
+                self.refresh_options(quiet=True)
             quiet = polls.hide_players_reply() or quiet
         parsed = parse_status_reply(text)
         if parsed is not None:
@@ -545,8 +551,8 @@ class AdminScreen(MDScreen, ThemableBehavior):
             self.refresh_options(quiet=True)
         room = self._room_signature()
         due = time() - self._last_poll >= _PLAYERS_POLL_SECONDS
-        # An unanswered poll suspends the next: a server without the payload
-        # or a displaced login would otherwise get a console line per poll.
+        # An unanswered poll suspends the next: an upstream room (every
+        # !admin line broadcast) or a displaced login would get one per poll.
         if (room != self._room_seen or due) and self._poll_answered:
             self._room_seen = room
             self._poll_answered = False
@@ -558,10 +564,6 @@ class AdminScreen(MDScreen, ThemableBehavior):
         self._tick(0)
         if self._status_event is None:
             self._status_event = Clock.schedule_interval(self._tick, 1)
-        if not self._fetched and getattr(self.app.ctx, "admin", False):
-            self._fetched = True
-            self.refresh_tags(quiet=True)
-            self.refresh_options(quiet=True)
 
     def on_leave(self, *args):
         if self._status_event is not None:
