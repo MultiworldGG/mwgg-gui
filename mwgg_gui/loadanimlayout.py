@@ -30,6 +30,9 @@ from kivy.uix.textinput import TextInput
 MIN_SPEED = 0.016  # Fastest speed (60fps)
 MAX_SPEED = 0.050   # Slowest speed (20fps)
 DEFAULT_SPEED = 0.040  # Default speed (40ms)
+# Surface colours, not black: onSurface text must stay readable in the light theme too.
+SCRIM_ALPHA = 0.7
+PANEL_ALPHA = 0.95
 
 # Generate/Patch/Host run as child processes; the launcher re-logs their output
 # on "Client" under these prefixes, so their own logger names never carry
@@ -81,7 +84,7 @@ class LoadingLogBox(TextInput):
         super().__init__(readonly=True, multiline=True, halign="left",
                          size_hint=(0.5, 0.2), pos_hint={"center_x": 0.5},
                          background_normal="", background_active="",
-                         background_color=(0, 0, 0, 0), cursor_color=(0, 0, 0, 0),
+                         cursor_color=(0, 0, 0, 0),
                          **kwargs)
         self._tail: list[str] = []
         self._handler = CallbackHandler(self._on_record)
@@ -131,6 +134,8 @@ class MWGGLoadingLayout(MDRelativeLayout):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.app = App.get_running_app()
+        self.theme_bg_color = "Custom"
+        self.md_bg_color = (0, 0, 0, 0)
 
         self.img_box = MDBoxLayout(theme_bg_color="Custom", md_bg_color=(0,0,0,0),
                                    pos_hint={'center_x': 0.5, 'center_y': 0.5},
@@ -145,7 +150,9 @@ class MWGGLoadingLayout(MDRelativeLayout):
         self.current_image = None
         self.current_frame = 0
         mono = self.app.theme_cls.font_styles["Monospace"]["small"]
-        self.log_box = LoadingLogBox(foreground_color=self.app.theme_cls.onSurfaceColor,
+        theme = self.app.theme_cls
+        self.log_box = LoadingLogBox(foreground_color=theme.onSurfaceColor,
+                                     background_color=(*theme.surfaceContainerHighColor[:3], PANEL_ALPHA),
                                      font_name=mono["font-name"], font_size=mono["font-size"])
         self.img_box.bind(pos=self._place_log_box, size=self._place_log_box)
         self.log_box.bind(size=self._place_log_box)
@@ -164,6 +171,7 @@ class MWGGLoadingLayout(MDRelativeLayout):
             
         if not self.loading and not self.img_box.parent:
             self.loading = True
+            self.md_bg_color = (*self.app.theme_cls.surfaceColor[:3], SCRIM_ALPHA)
             self.add_widget(self.img_box)
             if display_logs:
                 self.log_box.attach()
@@ -210,6 +218,7 @@ class MWGGLoadingLayout(MDRelativeLayout):
     def hide_loading(self, *args):
         if self.loading:
             self.loading = False
+            self.md_bg_color = (0, 0, 0, 0)
             if self._clock_event:
                 self._clock_event.cancel()
                 self._clock_event = None

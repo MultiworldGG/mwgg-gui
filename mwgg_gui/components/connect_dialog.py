@@ -131,7 +131,8 @@ class ConnectDialog(MDDialog):
         self.dismiss()
         Clock.schedule_once(lambda dt: self.app.loading_layout.show_loading(), 0)
         asyncio.create_task(self.app.ctx.connect(address))
-        Clock.schedule_once(lambda dt: self.app.loading_layout.hide_loading(), 2)
+        self.app.loading_autohide = Clock.schedule_once(
+            lambda dt: self.app.loading_layout.hide_loading(), 2)
 
     def dismiss(self, *args):
         """Close the nested dialog opened by `open()` (see class docstring)."""
