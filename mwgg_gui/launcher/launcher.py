@@ -427,6 +427,40 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         if manager is not None and manager.current != name:
             manager.current = name
 
+    def tour_targets(self, key: str) -> list:
+        """Widgets (or window rects) the launcher tour spotlights (see
+        components/tour_overlay). The menu step adds the open drawer so its
+        items stay clickable through the scrim."""
+        compact = self.app.layout_mode.compact
+        ids = self.launcher_view.ids
+        if key == "search":
+            return [self.search_bar if compact else self.important_appbar.ids.games_search_bar]
+        if key == "game_list":
+            if compact:
+                return [self.compact_manager]
+            # The list scrolls under the sliver header: only the part below it.
+            scroll = self.important_appbar.ids.scroll
+            header = self.important_appbar.ids.header
+            x, y = scroll.to_window(*scroll.pos)
+            top = header.to_window(*header.pos)[1]
+            return [(x, y, scroll.width, max(top - y, 0))]
+        if key == "favorites":
+            return [ids.title_layout]
+        if key == "client_type":
+            return [ids.client_type_row]
+        if key == "connection":
+            return [ids.server_layout]
+        if key == "launch":
+            return [ids.connect_button]
+        if key == "menu" and self.nav_drawer.status != "closed":
+            return [self.nav_drawer]
+        return []
+
+    def on_tour_step(self, key: str | None) -> None:
+        """Compact Mode shows the game list only for its own step."""
+        if self.app.layout_mode.compact:
+            self._show_compact_side("games" if key == "game_list" else "play")
+
     def on_fallback_status_changed(self, instance, value):
         """Update the padding of the launcher view based on the fallback status"""
         wide = dp(12) if self.app.layout_mode.compact else dp(50)
