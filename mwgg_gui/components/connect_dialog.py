@@ -131,7 +131,7 @@ class ConnectDialog(MDDialog):
         self.dismiss()
         Clock.schedule_once(lambda dt: self.app.loading_layout.show_loading(), 0)
         asyncio.create_task(self.app.ctx.connect(address))
-        self.app.loading_hide_timer = Clock.schedule_once(
+        self.app.loading_autohide = Clock.schedule_once(
             lambda dt: self.app.loading_layout.hide_loading(), 2)
 
     def dismiss(self, *args):

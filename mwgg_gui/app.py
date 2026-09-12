@@ -221,7 +221,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         self.role = role or os.environ.get("MWGG_ROLE", ROLE_LAUNCHER)
         self.client_type_hint = os.environ.get("MWGG_CLIENT_TYPE", "")
         self._launch_failure_shown = False
-        self.loading_hide_timer = None
+        self.loading_autohide = None
         # Routed world module (MWGG_GAME, exported by MultiWorld.py); empty
         # for the launcher and for unrouted clients.
         self.game_module = ""
@@ -861,12 +861,12 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
     async def show_loading_status(self, message: str) -> None:
         """FrontendProtocol: put the loading overlay up with `message` under the
         animation and return once a frame has drawn it. Cancels the connect
-        dialog's timed hide so the sequence ends with the core's hide_loading."""
+        dialog's scheduled auto-hide so the core ends the sequence with hide_loading."""
         if not hasattr(self, "loading_layout"):
             await self._drawn_frame()
-        if self.loading_hide_timer is not None:
-            self.loading_hide_timer.cancel()
-            self.loading_hide_timer = None
+        if self.loading_autohide is not None:
+            self.loading_autohide.cancel()
+            self.loading_autohide = None
         self.loading_layout.show_loading()
         self.loading_layout.post_status(message)
         await self._drawn_frame()
