@@ -48,10 +48,10 @@ LAUNCHER_TOUR = (
              "Click a game in the list to select it and return to the play screen."),
     TourStep("favorites", "Favorites",
              "Selected games show up on this bar. Click the heart on a game to "
-             "keep it here, one click away next time."),
+             "keep here, or click the heart again to remove it."),
     TourStep("client_type", "Choose a client type",
              "Game Client is the default for a selected game. Text Client is chat "
-             "and commands only, Universal Tracker adds location tracking, and "
+             "and commands only, Universal Tracker adds UT logic tracking, and "
              "Manual Client is for manual games."),
     TourStep("connection", "Enter the room details",
              "The server address, port, your slot name and the room password, if "
@@ -60,8 +60,9 @@ LAUNCHER_TOUR = (
              "Opens the client for your selection in its own window. The launcher "
              "stays open, so you can launch more clients."),
     TourStep("menu", "Everything else",
-             "Wondering where the other tools went? Start/Host Game, Generate, "
-             "Patch, Install APWorld, Settings and Exit all live in this menu."),
+             "Wondering where the other tools went? Host, Generate, "
+             "Patch, Install APWorld, etc all live in this menu. We've added some "
+             "new options as well, check out the Settings to see them."),
 )
 
 CLIENT_TOUR = (
@@ -80,7 +81,8 @@ CLIENT_TOUR = (
              "field searches items and locations to ask for a new hint."),
     TourStep("nav", "More screens",
              "Games that bring their own views, like a tracker or a map, add their "
-             "buttons to this row once you are connected."),
+             "buttons to this row once you are connected. If you prefer text on your "
+             "buttons, check the Settings menu for a toggle."),
     TourStep("menu", "Menu",
              "Reconnect, Settings and Exit are in this menu."),
 )
