@@ -107,6 +107,7 @@ from kivymd.uix.floatlayout import MDFloatLayout
 from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.navigationdrawer import MDNavigationLayout
 from kivymd.uix.appbar import MDBottomAppBar
+from kivymd.uix.dialog import MDDialog
 from mwgg_gui.components.safe_effect_widget import SafeEffectWidget
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.divider import MDDivider
@@ -128,6 +129,8 @@ from mwgg_gui.settings.settings_screen import SettingsScreen
 from mwgg_gui.components.topappbar import TopAppBarLayout
 from mwgg_gui.launcher.launcher import LauncherScreen
 from mwgg_gui.loadanimlayout import MWGGLoadingLayout
+from mwgg_gui.components.tour_overlay import TourOverlay
+from mwgg_gui.components.onboarding import TOURS, tour_pending, mark_tour_done
 from mwgg_gui.components.bottomappbar import BottomAppBar, BottomBarTextInput
 from mwgg_gui.components.bottom_nav import ClientTab, nav_entries, world_component_icon
 from mwgg_gui.components.module_launch import launch_status_lines, launch_failure_dialog, spawn_launcher
@@ -221,6 +224,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         self.role = role or os.environ.get("MWGG_ROLE", ROLE_LAUNCHER)
         self.client_type_hint = os.environ.get("MWGG_CLIENT_TYPE", "")
         self._launch_failure_shown = False
+        self._tour_offered = False
         self.loading_autohide = None
         # Routed world module (MWGG_GAME, exported by MultiWorld.py); empty
         # for the launcher and for unrouted clients.
@@ -325,6 +329,10 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             # opt-in Admin screen. Reads pass fallbacks for old client.ini.
             'bottom_nav_style': 'icons',
             'admin_console': '0',
+            # First-launch tours, one per role: '1' once finished or
+            # skipped. Reads pass fallback=False for old client.ini files.
+            'onboarding_launcher': '0',
+            'onboarding_client': '0',
         })
         # Tool-run suppression uses dynamic per-world keys
         # (tool_warning_ok_<slug>) read with fallback=False -- no defaults.
@@ -413,6 +421,8 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
                 self.loading_layout.show_loading(display_logs=True)
             else:
                 self._start_update_check()
+                # After the favorites bar has populated and the splash is gone.
+                Clock.schedule_once(self._maybe_start_tour, 1)
 
         super().on_start()
         Clock.schedule_once(on_start)
@@ -540,12 +550,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
                 from kivy.uix.effectwidget import PixelateEffect
                 self.loading_layout.effect_app = PixelateEffect(pixel_size=3)
                 self.pixelate_effect.effects = [self.loading_layout.effect_app]
-
-            # loading_layout must sit above the pixelated content
-            if hasattr(self, 'loading_layout') and self.loading_layout.parent:
-                self.loading_layout.parent.remove_widget(self.loading_layout)
-            if hasattr(self, 'loading_layout'):
-                self.root_layout.add_widget(self.loading_layout)
+            self._raise_overlays()
 
     def disable_effects(self):
         """Disable EffectWidget to prevent matrix transformation interference with StencilView"""
@@ -554,12 +559,15 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             self.pixelate_effect.remove_widget(self.main_layout)
             self.root_layout.add_widget(self.main_layout)
             self.pixelate_effect.effects = []
+            self._raise_overlays()
 
-            # loading_layout must sit above the main_layout
-            if hasattr(self, 'loading_layout') and self.loading_layout.parent:
-                self.loading_layout.parent.remove_widget(self.loading_layout)
-            if hasattr(self, 'loading_layout'):
-                self.root_layout.add_widget(self.loading_layout)
+    def _raise_overlays(self):
+        """Re-stack the tour and loading overlays above the (possibly
+        pixelated) content, loading on top."""
+        for overlay in (getattr(self, 'tour_overlay', None), getattr(self, 'loading_layout', None)):
+            if overlay is not None and overlay.parent is self.root_layout:
+                self.root_layout.remove_widget(overlay)
+                self.root_layout.add_widget(overlay)
 
     def on_stop(self):
         """Handle application shutdown properly"""
@@ -857,6 +865,57 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         """FrontendProtocol: dismiss the loading overlay if shown."""
         if hasattr(self, 'loading_layout') and self.loading_layout:
             self.loading_layout.hide_loading()
+        if self.role == ROLE_CLIENT:
+            # Next frame: the core's ready callback opens the connect dialog
+            # right after this, and the tour waits for dialogs.
+            Clock.schedule_once(self._maybe_start_tour, 0)
+
+    def _maybe_start_tour(self, *_args) -> None:
+        """Play this role's tour once per process while client.ini still
+        marks it pending, holding off while a dialog is open."""
+        if self._tour_offered or not tour_pending(self.app_config, self.role):
+            return
+        if any(isinstance(child, MDDialog) for child in Window.children):
+            Clock.schedule_once(self._maybe_start_tour, 0.5)
+            return
+        self._tour_offered = True
+        self.start_tour()
+
+    def start_tour(self) -> None:
+        """Play the role's tour over its home screen (launcher or console)."""
+        home = "launcher" if self.role == ROLE_LAUNCHER else "console"
+        if home in self.screen_manager.screen_names:
+            self.change_screen(home)
+        if not hasattr(self, 'tour_overlay'):
+            self.tour_overlay = TourOverlay(targets=self.tour_targets, on_step=self.on_tour_step)
+        if self.tour_overlay.parent is None:
+            self.root_layout.add_widget(self.tour_overlay)
+            self._raise_overlays()
+        self.tour_overlay.start(TOURS[self.role], on_finish=self._on_tour_finished)
+
+    def _on_tour_finished(self) -> None:
+        self.root_layout.remove_widget(self.tour_overlay)
+        mark_tour_done(self.app_config, self.role)
+        self.app_config.write()
+
+    def tour_targets(self, key: str) -> list:
+        """Live widgets (or window rects) a tour step spotlights: the appbar
+        menu button here, the rest from the launcher screen or the current
+        screen's bottom bar."""
+        found = []
+        if key == "menu":
+            found.append(self.top_appbar_layout.top_appbar.ids.menu_button)
+        if self.role == ROLE_LAUNCHER:
+            screen = getattr(self, 'launcher_screen', None)
+        else:
+            screen = getattr(self.screen_manager.current_screen, 'bottom_appbar', None)
+        if screen is not None:
+            found.extend(screen.tour_targets(key))
+        return found
+
+    def on_tour_step(self, key: typing.Optional[str]) -> None:
+        if self.role == ROLE_LAUNCHER and hasattr(self, 'launcher_screen'):
+            self.launcher_screen.on_tour_step(key)
 
     async def show_loading_status(self, message: str) -> None:
         """FrontendProtocol: put the loading overlay up with `message` under the

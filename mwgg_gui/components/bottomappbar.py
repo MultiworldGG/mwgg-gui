@@ -374,6 +374,23 @@ class BottomAppBar(MDBottomAppBar):
         for button in self.nav_box.children:
             button.selected = button.screen == screen_name
 
+    def tour_targets(self, key: str) -> list:
+        """Widgets the client tour spotlights on this bar (see
+        components/tour_overlay). The input step follows the text field
+        once the FAB has slid it up."""
+        if key == "input":
+            if self.docked:
+                return [self.text_input]
+            found = [self.ids.console_text_input_fab]
+            if self.text_input.parent is not None:
+                found.append(self.text_input)
+            return found
+        if key == "hint":
+            return [button for button in self.nav_box.children if button.screen == "hint"]
+        if key == "nav":
+            return [self.nav_box]
+        return []
+
     def on_bar_action(self, instance):
         if self.docked:
             return

@@ -52,3 +52,6 @@ from .progress_overlay import (
 from .safe_effect_widget import (
     SafeEffectWidget,
 )
+from .tour_overlay import (
+    TourOverlay,
+)

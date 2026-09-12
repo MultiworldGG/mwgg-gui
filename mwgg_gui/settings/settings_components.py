@@ -1058,6 +1058,14 @@ class InterfaceSettings(SettingsScrollBox):
                 on_switch=self.toggle_admin_console
             ))
 
+        help_section = SettingsSection(name="help_settings", title="Help")
+        tour_box = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(55), padding=dp(4), spacing=dp(4))
+        tour_box.add_widget(MDLabel(text="First-launch tour", theme_text_color="Secondary", size_hint_x=0.7))
+        tour_button = MDButton(MDButtonText(text="Replay"), style="filled")
+        tour_button.bind(on_release=lambda *_: self.app.start_tour())
+        tour_box.add_widget(tour_button)
+        help_section.add_widget(tour_box)
+
         # Add all sections to the layout
         self.layout.add_widget(display_section)
         self.layout.add_widget(layout_section)
@@ -1066,6 +1074,7 @@ class InterfaceSettings(SettingsScrollBox):
         if not compact:
             self.layout.add_widget(hint_section)
         self.layout.add_widget(nav_section)
+        self.layout.add_widget(help_section)
     
     def toggle_fullscreen(self, instance, value):
         def fullscreen_to_string(value: bool) -> str:
