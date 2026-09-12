@@ -43,12 +43,13 @@ LAUNCHER_TOUR = (
              "Type a game's name here and press Enter to see the matching games. "
              "The restore button clears the search and brings the play screen back."),
     TourStep("game_list", "Select the game",
-             "Click a game in the list to select it. Its client, tools and setup "
-             "guide fill in on the right.",
+             "Click a game in the list to select and move it to the Quick List. "
+             "Its client, tools and setup guide fill in on the right.",
              "Click a game in the list to select it and return to the play screen."),
-    TourStep("favorites", "Favorites",
-             "Selected games show up on this bar. Click the heart on a game to "
-             "keep here, or click the heart again to remove it."),
+    TourStep("favorites", "Quick List",
+             "Click the game you wish to select in this list, it will glow to indicate "
+             "it is selected. You can add more games to this list by searching for them "
+             "and clicking the heart will keep them here for next time."),
     TourStep("client_type", "Choose a client type",
              "Game Client is the default for a selected game. Text Client is chat "
              "and commands only, Universal Tracker adds UT logic tracking, and "
