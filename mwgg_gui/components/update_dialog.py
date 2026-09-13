@@ -42,7 +42,7 @@ from kivymd.uix.label import MDLabel
 from kivymd.uix.progressindicator import MDLinearProgressIndicator
 from kivymd.uix.scrollview import MDScrollView
 
-from mdtobbcode import MarkdownBoxLayout
+from mwgg_gui.components.mdtobbcode import MarkdownBoxLayout
 
 logger = logging.getLogger("Client")
 
