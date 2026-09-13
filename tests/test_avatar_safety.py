@@ -50,15 +50,16 @@ class _RecordingThread:
         _RecordingThread.started.append((self.target, self.args))
 
 
-def _with_recorded_threads(module):
+def _with_recorded_threads(module, monkeypatch):
     _RecordingThread.started = []
-    module.threading.Thread = _RecordingThread
+    # module.threading is the real module; an unrestored swap leaks into every later test
+    monkeypatch.setattr(module.threading, "Thread", _RecordingThread)
     return _RecordingThread
 
 
 def test_untrusted_urls_collapse_without_probing(monkeypatch):
     module = _load_avatar_safety(monkeypatch)
-    threads = _with_recorded_threads(module)
+    threads = _with_recorded_threads(module, monkeypatch)
     assert module.safe_avatar_source("") == ""
     assert module.safe_avatar_source("http://mw.prismativerse.com/a.png") == ""
     assert module.safe_avatar_source("https://evil.example/a.png") == ""
@@ -67,7 +68,7 @@ def test_untrusted_urls_collapse_without_probing(monkeypatch):
 
 def test_unknown_trusted_url_passes_and_probes_once(monkeypatch):
     module = _load_avatar_safety(monkeypatch)
-    threads = _with_recorded_threads(module)
+    threads = _with_recorded_threads(module, monkeypatch)
     assert module.safe_avatar_source(TRUSTED_URL) == TRUSTED_URL
     assert module.safe_avatar_source(TRUSTED_URL) == TRUSTED_URL
     assert threads.started == [(module._probe_avatar, (TRUSTED_URL,))]
@@ -75,7 +76,7 @@ def test_unknown_trusted_url_passes_and_probes_once(monkeypatch):
 
 def test_failed_probe_collapses_later_calls(monkeypatch):
     module = _load_avatar_safety(monkeypatch)
-    _with_recorded_threads(module)
+    _with_recorded_threads(module, monkeypatch)
 
     def _raise_404(*args, **kwargs):
         raise urllib.error.HTTPError(TRUSTED_URL, 404, "Not Found", None, None)
@@ -88,7 +89,7 @@ def test_failed_probe_collapses_later_calls(monkeypatch):
 
 def test_successful_probe_keeps_url_and_stops_reprobing(monkeypatch):
     module = _load_avatar_safety(monkeypatch)
-    threads = _with_recorded_threads(module)
+    threads = _with_recorded_threads(module, monkeypatch)
 
     class _Resp:
         def __enter__(self):
@@ -109,7 +110,7 @@ def test_successful_probe_keeps_url_and_stops_reprobing(monkeypatch):
 
 def test_avatar_source_substitutes_default_icon(monkeypatch):
     module = _load_avatar_safety(monkeypatch)
-    _with_recorded_threads(module)
+    _with_recorded_threads(module, monkeypatch)
     assert os.path.isfile(module.DEFAULT_AVATAR_SOURCE)
     assert module.avatar_source("") == module.DEFAULT_AVATAR_SOURCE
     assert module.avatar_source("https://evil.example/a.png") == module.DEFAULT_AVATAR_SOURCE
@@ -118,7 +119,7 @@ def test_avatar_source_substitutes_default_icon(monkeypatch):
 
 def test_mark_avatar_unavailable_collapses_later_calls(monkeypatch):
     module = _load_avatar_safety(monkeypatch)
-    threads = _with_recorded_threads(module)
+    threads = _with_recorded_threads(module, monkeypatch)
     module.mark_avatar_unavailable(TRUSTED_URL)
     assert module.safe_avatar_source(TRUSTED_URL) == ""
     assert module.avatar_source(TRUSTED_URL) == module.DEFAULT_AVATAR_SOURCE
