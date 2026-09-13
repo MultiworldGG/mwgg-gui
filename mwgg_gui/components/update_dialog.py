@@ -76,13 +76,6 @@ class UpdateDialog(MDDialog):
     def open(self):
         changelog_label = MarkdownBoxLayout(markdown_text=self.changelog)
 
-        changelog_label.bind(
-            width=lambda inst, val: setattr(inst, "text_size", (val, None))
-        )
-        changelog_label.bind(
-            texture_size=lambda inst, val: setattr(inst, "height", val[1])
-        )
-
         changelog_scroll = MDScrollView(
             changelog_label,
             size_hint_y=None,
