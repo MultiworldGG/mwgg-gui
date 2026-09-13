@@ -936,134 +936,76 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         """Execute the Generate component with options in a background thread"""
         from BaseUtils import is_frozen
         from LauncherComponents import find_component, get_exe
+        from mwgg_gui.components import generate_launch
 
         # base_cmd: [exe] frozen, [sys.executable, script] from source; resolved
         # via LauncherComponents so it can't drift from the built exe name.
         base_cmd = get_exe(find_component("Generate"))
         cmd = [*base_cmd, "--player-files-path", temp_dir]
         cwd = os.path.dirname(base_cmd[-1])
-        # PYTHONIOENCODING keeps the child's piped output UTF-8 regardless of
-        # locale; SKIP_REQUIREMENTS_UPDATE stops the child re-running the world
-        # updater the launcher already ran on cold start. KIVY_NO_ARGS disables
-        # Kivy's argument parser when running from source.
-        env = {**os.environ, 'PYTHONIOENCODING': 'utf-8', 'SKIP_REQUIREMENTS_UPDATE': '1'}
-        if not is_frozen():
-            env['KIVY_NO_ARGS'] = '1'
-        # Console-subsystem exe: suppress the window that would flash over the
-        # GUI on frozen Windows (output streams to the logger regardless).
-        popen_kwargs = {}
-        if is_windows:
-            popen_kwargs['creationflags'] = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
+        env = {**os.environ, **generate_launch.generate_env(is_frozen())}
 
         if options.get('seed'):
             cmd.extend(["--seed", str(options['seed'])])
-            
+
         if options.get('output_path'):
             cmd.extend(["--outputpath", options['output_path']])
-        
+
         if not os.path.exists(temp_dir):
             logger.error(f"Temp directory {temp_dir} does not exist!")
             MessageBox("Generation Error", f"Temp directory does not exist: {temp_dir}").open()
             return
-            
+
         logger.info(f"Starting generation with command: {' '.join(cmd)}")
         logger.info(f"Using temp directory: {temp_dir}")
-        
+
         # Show loading screen
         Clock.schedule_once(lambda dt: self.app.loading_layout.show_loading(display_logs=True), 0)
-        
+
+        def finish(title, message, is_error=False):
+            def show(dt):
+                self.app.loading_layout.hide_loading()
+                MessageBox(title, message, is_error=is_error).open()
+                self._cleanup_temp_dir(temp_dir)
+                for attr in ('_generation_temp_dir', '_generation_result'):
+                    if hasattr(self, attr):
+                        delattr(self, attr)
+            Clock.schedule_once(show, 0)
+
+        def show_restart_dialog(dt):
+            self.app.loading_layout.hide_loading()
+            MessageBox("Restart Required",
+                       "You will need to restart the launcher to apply updates.",
+                       is_error=True,
+                       callback=lambda x: self.restart_launcher()).open()
+
         def run_generation():
             """Run generation in background thread and stream output to logger"""
-            
             try:
-                process = subprocess.Popen(
-                    cmd,
-                    stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,
-                    encoding='utf-8',
-                    errors='replace',
-                    cwd=cwd,
-                    bufsize=1,  # Line buffered
-                    env=env,
-                    **popen_kwargs
-                )
-
-                # Stream stdout
-                for line in process.stdout:
-                    line = line.rstrip()
-                    if line:
-                        logger.info(f"[Generate] {line}")
-                
-                # Wait for process to complete
-                process.wait()
-                
-                # Capture any remaining stderr
-                stderr = process.stderr.read()
-                if stderr:
-                    for line in stderr.splitlines():
-                        if line.strip():
-                            logger.error(f"[Generate Error] {line}")
-                
-                # Hide loading screen and schedule UI update on main thread
-                def show_success_dialog(dt):
-                    self.app.loading_layout.hide_loading()
-                    MessageBox("Generation Complete", 
-                               "Game generation completed successfully!").open()
-                    # Cleanup after success
-                    self._cleanup_temp_dir(temp_dir)
-                    if hasattr(self, '_generation_temp_dir'):
-                        delattr(self, '_generation_temp_dir')
-                    if hasattr(self, '_generation_result'):
-                        delattr(self, '_generation_result')
-                
-                def show_failure_dialog(dt):
-                    self.app.loading_layout.hide_loading()
-                    MessageBox("Generation Failed", 
-                               f"Generation failed with code {process.returncode}:\n{error_msg}").open()
-                    # Cleanup after failure
-                    self._cleanup_temp_dir(temp_dir)
-                    if hasattr(self, '_generation_temp_dir'):
-                        delattr(self, '_generation_temp_dir')
-                    if hasattr(self, '_generation_result'):
-                        delattr(self, '_generation_result')
-
-                def show_restart_dialog(dt):
-                    self.app.loading_layout.hide_loading()
-                    MessageBox("Restart Required",
-                               "You will need to restart the launcher to apply updates.",
-                               is_error=True,
-                               callback=lambda x: self.restart_launcher()).open()
-
-
-                if process.returncode == 0:
-                    Clock.schedule_once(show_success_dialog, 0)
-                    logger.info("Generation completed successfully")
-                elif process.returncode == 10:
-                    # Exit code 10 means "wrong environment" - library updates needed
-                    logger.info("Generation requested launcher restart for environment refresh")
-                    Clock.schedule_once(show_restart_dialog, 0)
-                else:
-                    error_msg = stderr if stderr else "Unknown error"
-                    Clock.schedule_once(show_failure_dialog, 0)
-                    logger.error(f"Generation failed with return code {process.returncode}")
-                    
+                result = generate_launch.run_generate(
+                    cmd, cwd=cwd, env=env, on_line=lambda line: logger.info(f"[Generate] {line}"))
             except Exception as e:
                 logger.exception(f"Failed to execute generation: {e}")
-                def show_error_dialog(dt):
-                    self.app.loading_layout.hide_loading()
-                    MessageBox("Generation Error", 
-                               f"Failed to execute generation: {str(e)}").open()
-                    # Cleanup after error
-                    self._cleanup_temp_dir(temp_dir)
-                    if hasattr(self, '_generation_temp_dir'):
-                        delattr(self, '_generation_temp_dir')
-                    if hasattr(self, '_generation_result'):
-                        delattr(self, '_generation_result')
-                Clock.schedule_once(show_error_dialog, 0)
-        
-        # Start generation in background thread
-        thread = threading.Thread(target=run_generation, daemon=True)
-        thread.start()
+                finish("Generation Error", f"Failed to execute generation: {str(e)}")
+                return
+            for line in result.stderr.splitlines():
+                if line.strip():
+                    logger.error(f"[Generate Error] {line}")
+            if result.killed:
+                logger.error(f"Generate killed after {result.idle_seconds:.0f}s without output or CPU use")
+                finish("Generation Stalled", result.error_message(), is_error=True)
+            elif result.returncode == 0:
+                logger.info("Generation completed successfully")
+                finish("Generation Complete", "Game generation completed successfully!")
+            elif result.returncode == 10:
+                # Exit code 10 means "wrong environment" - library updates needed
+                logger.info("Generation requested launcher restart for environment refresh")
+                Clock.schedule_once(show_restart_dialog, 0)
+            else:
+                logger.error(f"Generation failed with return code {result.returncode}")
+                finish("Generation Failed", result.error_message())
+
+        threading.Thread(target=run_generation, name="Generate", daemon=True).start()
 
     def restart_launcher(self):
         """Restart the launcher with the same arguments (used after a
