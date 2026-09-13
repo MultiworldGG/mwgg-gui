@@ -42,6 +42,8 @@ from kivymd.uix.label import MDLabel
 from kivymd.uix.progressindicator import MDLinearProgressIndicator
 from kivymd.uix.scrollview import MDScrollView
 
+from mdtobbcode import MarkdownBoxLayout
+
 logger = logging.getLogger("Client")
 
 
@@ -72,15 +74,8 @@ class UpdateDialog(MDDialog):
         self.progress_label = None
 
     def open(self):
-        changelog_label = MDLabel(
-            text=self.changelog,
-            size_hint_y=None,
-            halign="left",
-            valign="top",
-            font_style="Body",
-            role="small",
-            padding=(dp(4), dp(4)),
-        )
+        changelog_label = MarkdownBoxLayout(markdown_text=self.changelog)
+
         changelog_label.bind(
             width=lambda inst, val: setattr(inst, "text_size", (val, None))
         )
@@ -101,8 +96,7 @@ class UpdateDialog(MDDialog):
                 text=(
                     f"MultiworldGG {_version_string(self.new_version)} is available. "
                     f"You are currently using version {_version_string(self.current_version)}.\n"
-                    "If you are currently playing a game listed in the changelog, "
-                    "consider finishing it before updating."
+                    "Would you like to update now?"
                 ),
             ),
             MDDialogContentContainer(changelog_scroll),
