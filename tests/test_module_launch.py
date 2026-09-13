@@ -6,6 +6,7 @@ starting a process.
 """
 from __future__ import annotations
 
+import configparser
 import importlib.util
 import subprocess
 import sys
@@ -27,6 +28,22 @@ def module_launch():
         yield module
     finally:
         sys.modules.pop(spec.name, None)
+
+
+def test_patch_client_type_reads_the_settings_key(module_launch):
+    config = configparser.ConfigParser()
+    assert module_launch.read_patch_client_type(config) == "text"
+    config.add_section("client")
+    config.set("client", "patch_client_type", " Universal_Tracker ")
+    assert module_launch.read_patch_client_type(config) == "universal_tracker"
+    config.set("client", "patch_client_type", "manual")
+    assert module_launch.read_patch_client_type(config) == "text"
+
+
+def test_patch_client_labels_round_trip(module_launch):
+    for value, label in module_launch.PATCH_CLIENT_LABELS.items():
+        assert module_launch.patch_client_type_from_label(label) == value
+    assert module_launch.patch_client_type_from_label("Bogus") == "text"
 
 
 def test_patch_launch_announces_the_patch(module_launch):

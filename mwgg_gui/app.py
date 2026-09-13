@@ -134,7 +134,8 @@ from mwgg_gui.components.tour_overlay import TourOverlay
 from mwgg_gui.components.onboarding import TOURS, tour_pending, mark_tour_done
 from mwgg_gui.components.bottomappbar import BottomAppBar, BottomBarTextInput
 from mwgg_gui.components.bottom_nav import ClientTab, nav_entries, world_component_icon
-from mwgg_gui.components.module_launch import launch_status_lines, launch_failure_dialog, spawn_launcher
+from mwgg_gui.components.module_launch import (
+    launch_status_lines, launch_failure_dialog, read_patch_client_type, spawn_launcher)
 from mwgg_gui.components.guidataclasses import UIPlayerData, UIHint, MarkupPair
 from mwgg_gui.components.columns import get_extra_columns
 from mwgg_gui.hint.hint_refresh import render_signature
@@ -334,6 +335,9 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             # opt-in Admin screen. Reads pass fallbacks for old client.ini.
             'bottom_nav_style': 'icons',
             'admin_console': '0',
+            # Client a double-clicked patch file boots: text or
+            # universal_tracker. Reads pass fallback for old client.ini files.
+            'patch_client_type': 'text',
             # First-launch tours, one per role: '1' once finished or
             # skipped. Reads pass fallback=False for old client.ini files.
             'onboarding_launcher': '0',
@@ -934,6 +938,11 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         self.loading_layout.show_loading()
         self.loading_layout.post_status(message)
         await self._drawn_frame()
+
+    def patch_client_type(self) -> str:
+        """Core hook: the Settings choice for a routed patch file, "text" or
+        "universal_tracker" (client.ini patch_client_type)."""
+        return read_patch_client_type(self.app_config)
 
     async def before_module_launch(self, module_name: str, **launch_kwargs) -> None:
         """Core hook, awaited by MultiWorld._route_module_when_ui_ready right

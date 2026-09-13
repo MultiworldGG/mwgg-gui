@@ -2,10 +2,14 @@ from __future__ import annotations
 """
 Frontend side of a routed module launch (MultiWorld._route_module_when_ui_ready).
 
-The core feature-detects `before_module_launch` and `on_module_launch_failed`
-on the frontend; the copy and policy behind both live here, Kivy-free.
+The core feature-detects `patch_client_type`, `before_module_launch` and
+`on_module_launch_failed` on the frontend; the copy and policy behind them
+live here, Kivy-free.
 """
 __all__ = (
+    "PATCH_CLIENT_LABELS",
+    "read_patch_client_type",
+    "patch_client_type_from_label",
     "launch_status_lines",
     "LaunchFailureDialog",
     "launch_failure_dialog",
@@ -21,6 +25,22 @@ from dataclasses import dataclass
 # Set on a client process by MultiWorld.py / BaseUtils.spawn_client; a launcher
 # it spawns must start clean (MWGG_ROLE is reassigned there, the rest are read as-is).
 _CLIENT_ENV_KEYS = ("MWGG_ROLE", "MWGG_GAME", "MWGG_CLIENT_TYPE", "MWGG_SKIP_UPDATE")
+
+# client.ini [client] patch_client_type -> Settings dropdown label. "text" boots
+# the game's client plain; "universal_tracker" attaches the tracker overlay to it.
+PATCH_CLIENT_LABELS = {"text": "Text Client", "universal_tracker": "Universal Tracker"}
+_PATCH_CLIENT_TYPES = {label: value for value, label in PATCH_CLIENT_LABELS.items()}
+
+
+def read_patch_client_type(config) -> str:
+    """The Settings choice for routed patch files; unknown or missing values
+    (a client.ini that predates the key) read as "text"."""
+    value = config.get("client", "patch_client_type", fallback="text").strip().lower()
+    return value if value in PATCH_CLIENT_LABELS else "text"
+
+
+def patch_client_type_from_label(label: str) -> str:
+    return _PATCH_CLIENT_TYPES.get(label, "text")
 
 
 def launch_status_lines(module_name: str, patch_file: str | None = None,

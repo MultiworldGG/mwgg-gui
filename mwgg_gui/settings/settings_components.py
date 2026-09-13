@@ -32,6 +32,8 @@ from kivymd.uix.selectioncontrol import MDCheckbox
 
 from mwgg_gui.components.mw_theme import THEME_OPTIONS, DEFAULT_TEXT_COLORS, RegisterFonts
 from mwgg_gui.components.layout_mode import read_compact_mode
+from mwgg_gui.components.module_launch import (
+    PATCH_CLIENT_LABELS, patch_client_type_from_label, read_patch_client_type)
 from mwgg_gui.constants import ROLE_LAUNCHER
 from mwgg_gui.overrides.colorpicker import MWColorPicker
 from mwgg_gui.components.dialog import MessageBox
@@ -1058,6 +1060,16 @@ class InterfaceSettings(SettingsScrollBox):
                 on_switch=self.toggle_admin_console
             ))
 
+        # Double-clicked patch files boot the game's client plain or with the
+        # tracker overlay; the core reads the choice through app.patch_client_type.
+        patch_section = SettingsSection(name="patch_settings", title="Patch Files")
+        patch_section.add_widget(LabeledDropdown(
+            text="Open patch files with",
+            items=list(PATCH_CLIENT_LABELS.values()),
+            current_item=PATCH_CLIENT_LABELS[read_patch_client_type(self.app.app_config)],
+            on_select=self.on_patch_client_type_select
+        ))
+
         help_section = SettingsSection(name="help_settings", title="Help")
         tour_box = MDBoxLayout(orientation="horizontal", size_hint_y=None, height=dp(55), padding=dp(4), spacing=dp(4))
         tour_box.add_widget(MDLabel(text="First-launch tour", theme_text_color="Secondary", size_hint_x=0.7))
@@ -1074,6 +1086,7 @@ class InterfaceSettings(SettingsScrollBox):
         if not compact:
             self.layout.add_widget(hint_section)
         self.layout.add_widget(nav_section)
+        self.layout.add_widget(patch_section)
         self.layout.add_widget(help_section)
     
     def toggle_fullscreen(self, instance, value):
@@ -1137,6 +1150,14 @@ class InterfaceSettings(SettingsScrollBox):
             self.app.set_admin_console_enabled(value)
         except Exception as e:
             logger.error(f"Error in toggle_admin_console: {e}", exc_info=True)
+
+    def on_patch_client_type_select(self, label):
+        try:
+            self.app.app_config.set('client', 'patch_client_type', patch_client_type_from_label(label))
+            self.app.app_config.write()
+            self.show_feedback("Applies to the next patch file you open")
+        except Exception as e:
+            logger.error(f"Error in on_patch_client_type_select: {e}", exc_info=True)
 
     def scroll_lines_change(self, instance, value):
         """Handle scroll lines slider change"""
