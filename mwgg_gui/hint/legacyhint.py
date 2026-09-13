@@ -125,18 +125,7 @@ class HintTooltipLabel(HoverLabel, MDTooltip):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.bind(height=self.set_height)
         self.app = App.get_running_app()
-
-    def set_height(self, inst, val):
-        w, h = self.texture_size
-        if h == 100:
-            return h
-        h = h + dp(8)
-        if self.parent:
-            if self.parent.height < h:
-                self.parent.height = h
-        return h
 
     def create_tooltip(self, text, pos):
         color = self.mw_color or None
@@ -295,6 +284,9 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
                                     pos_hint={"center_y": 0.5})
             self.add_widget(cell)
             self.extra_cells[column.key] = cell
+        self.text_cells = [child for child in self.children if hasattr(child, "texture_size")]
+        for cell in self.text_cells:
+            cell.bind(texture_size=self.fit_height)
 
     def select_status(self, status: HintStatus):
         ctx = App.get_running_app().ctx
@@ -335,12 +327,13 @@ class HintLabel(RecycleDataViewBehavior, MDBoxLayout):
         self.set_hidden(not active)
 
     def fit_height(self, *_args) -> None:
-        """Size the sticky header to its cells' rendered text. The header is built
-        before the table has its width, so texts wrap and the grow-only
-        set_height pins a tall row; this shrinks it back once textures settle."""
-        cells = [child for child in self.children if hasattr(child, "texture_size")]
-        text_height = max((child.texture_size[1] for child in cells), default=0) + dp(8)
-        self.height = max(self.minimum_height, text_height)
+        """Size the row to its tallest cell's rendered text, growing or shrinking."""
+        self.height = max(cell.texture_size[1] for cell in self.text_cells) + dp(8)
+
+    def refresh_view_layout(self, rv, index, layout, viewport):
+        super().refresh_view_layout(rv, index, layout, viewport)
+        # A reused view gets the height cached for its new index, which no texture change corrects.
+        self.fit_height()
 
     def refresh_view_attrs(self, rv, index, data):
         self.index = index
@@ -530,10 +523,6 @@ class HintLog(MDRecycleView, ColumnSortMixin, ColumnFilterMixin):
         header = cls()
         header.log = self
         header.refresh_view_attrs(self, None, self.header)
-        for cell in header.children:
-            if hasattr(cell, "texture_size"):
-                cell.bind(texture_size=header.fit_height)
-        header.fit_height()
         return header
 
     def pop_filter_dropdown_for(self, key: str, data: list[typing.Any], caller,
