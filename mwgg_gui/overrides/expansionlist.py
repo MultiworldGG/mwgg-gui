@@ -21,7 +21,8 @@ from textwrap import wrap
 from kivy.animation import Animation
 from kivy.metrics import dp, sp
 from kivy.uix.boxlayout import BoxLayout
-from kivy.properties import StringProperty, DictProperty, ObjectProperty, NumericProperty, BooleanProperty, ColorProperty
+from kivy.properties import (StringProperty, DictProperty, ObjectProperty, NumericProperty, BooleanProperty, ColorProperty,
+                             BoundedNumericProperty)
 from kivy.uix.behaviors import ButtonBehavior
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
 from kivymd.uix.behaviors import RotateBehavior, CommonElevationBehavior
@@ -78,6 +79,7 @@ class HintListItemHeader(MDBoxLayout, ButtonBehavior, ThemableBehavior):
 
 class SlotListItemHeader(MDBoxLayout, CommonElevationBehavior):
     """Header showing a slot's name (with pronouns) and game."""
+    elevation_level = BoundedNumericProperty(0, min=0, max=5, errorhandler=lambda value: min(value, 5))
     slot_name: StringProperty
     game: StringProperty
     panel: ObjectProperty
@@ -170,6 +172,7 @@ class GameListItemHeader(MDBoxLayout, ButtonBehavior, ThemableBehavior):
 
 class MWBaseListItem(MDBoxLayout, CommonElevationBehavior):
     """Base list item showing a hint's entrance, location, item, and goal."""
+    elevation_level = BoundedNumericProperty(0, min=0, max=5, errorhandler=lambda value: min(value, 5))
     entrance_texture: Tuple[NumericProperty, NumericProperty]
     slot_icon_entrance: ObjectProperty
     slot_text_entrance: ObjectProperty
@@ -223,22 +226,22 @@ class MWBaseListItem(MDBoxLayout, CommonElevationBehavior):
         if self.hint_data.assigned_classification:
             self.classification = self.hint_data.assigned_classification
         if self.classification == "Trap":
-            self.elevation_level = 1
+            self.elevation_level = 0
             self.shadow_color = item_colors["trap"]
         if self.classification == "Filler":
-            self.elevation_level = 2
+            self.elevation_level = 1
             self.shadow_color = item_colors["regular"]
         if self.classification == "Useful":
-            self.elevation_level = 3
+            self.elevation_level = 2
             self.shadow_color = item_colors["useful"]
         if self.classification == "Not Priority":
-            self.elevation_level = 4
+            self.elevation_level = 3
             self.shadow_color = item_colors["progression_deprioritized"]
         if self.classification == "Progression":
-            self.elevation_level = 5
+            self.elevation_level = 4
             self.shadow_color = item_colors["progression"]
         if self.classification == "Required for Goal":
-            self.elevation_level = 6
+            self.elevation_level = 5
             self.shadow_color = item_colors["progression_goal"]
         if self.found == "Found":
             self.elevation_level = 0
