@@ -37,6 +37,7 @@ _HEADER_HEIGHT = dp(48)
 _LOCATION_ITEM_HEIGHT = dp(36)
 _CONTENT_SPACING = dp(1)
 _CONTENT_PADDING_V = dp(4)
+_EMPTY_STATE_HEIGHT = dp(72)
 
 
 Builder.load_string('''
@@ -281,15 +282,17 @@ class TrackerRegionList(MDList):
         """Rebuild the region panels from the running TrackerGameContext."""
         tracker_core = getattr(ctx, "tracker_core", None)
         if tracker_core is None:
+            self._show_empty(
+                "Universal Tracker was not initialized.")
             logger.debug("populate_from_ctx: no tracker_core on ctx")
-            self.clear_widgets()
             return
 
         multiworld = getattr(tracker_core, "multiworld", None)
         player_id = getattr(tracker_core, "player_id", None)
         if multiworld is None or player_id is None:
-            logger.debug("populate_from_ctx: tracker_core not yet initialized")
-            self.clear_widgets()
+            self._show_empty(
+                "Waiting for the tracker to build this slot's world...")
+            logger.debug("tracker_core: waiting for build")
             return
 
         try:
@@ -301,7 +304,13 @@ class TrackerRegionList(MDList):
             logger.exception(
                 f"populate_from_ctx: group_reachable_by_top_level_branch failed: {exc}"
             )
-            self.clear_widgets()
+            self._show_empty(
+                "Tracker logic view failed")
+            return
+
+        if not branches:
+            self._show_empty(
+                "Nothing in logic right now.")
             return
 
         existing: dict[str, TrackerRegionPanel] = {}
@@ -334,3 +343,17 @@ class TrackerRegionList(MDList):
                 Clock.schedule_once(
                     lambda dt, p=panel: p.toggle_expansion(), 0.05
                 )
+
+    def _show_empty(self, message: str) -> None:
+        """Replace the panels with `message` and log `reason` once."""
+        self.clear_widgets()
+        label = MDLabel(
+            text=message, halign="center", valign="center",
+            size_hint_y=None, height=_EMPTY_STATE_HEIGHT,
+            padding=(dp(16), 0, dp(16), 0),
+            theme_text_color="Custom",
+            text_color=self.app.theme_cls.onSurfaceVariantColor,
+            font_style="Body", role="small",
+        )
+        label.bind(width=lambda inst, w: setattr(inst, "text_size", (w, None)))
+        self.add_widget(label)
