@@ -329,9 +329,10 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             'onboarding_client': '0',
         })
         # I'm being a little cheeky here :D
-        config.setdefaults('game_settings', {
-            'blueprince_primary_palette': 'Blue',
-        })
+        if not config.has_section('game_settings'):
+            config.add_section('game_settings')
+        config.set('game_settings', 'blueprince_primary_palette', 'Blue')
+
         config.setdefaults('security', {
             'suppress_apworld_install_warning': '0'
         })
