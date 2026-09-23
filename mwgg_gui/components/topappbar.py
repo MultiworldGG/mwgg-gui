@@ -134,10 +134,9 @@ class Timer(MDTopAppBarTitle):
             instance.text_color = self.theme_cls.onSurfaceVariantColor
     
     def start_running_timer(self):
-        """Start the timer (initial start or resume from pause)"""
+        """Start or resume the timer from the session start time the server holds."""
         if self.ctx.timer:
-            if self.ctx.timer > time():
-                self.start()
+            self.start()
 
     def start(self):
         """Start the timer (initial start or resume from pause)"""
@@ -176,12 +175,18 @@ class Timer(MDTopAppBarTitle):
             logger.exception(e)
     
     def update_timer(self):
-        """Update the elapsed time and stop once the whole team has goaled"""
-        if self.is_running:
-            self.start_time = self.ctx.timer
-            self.elapsed_time = time() - self.start_time
-            if team_goaled(self.ctx.stored_data, self.ctx.team, self.ctx.player_names):
-                self.stop()
+        """Update the elapsed time and stop on disconnect or once the whole team has goaled"""
+        if not self.is_running:
+            return
+        if not self.ctx.timer:
+            # reset_server_state() zeroes ctx.timer on disconnect; adopting it
+            # would date the start to the epoch.
+            self.stop()
+            return
+        self.start_time = self.ctx.timer
+        self.elapsed_time = time() - self.start_time
+        if team_goaled(self.ctx.stored_data, self.ctx.team, self.ctx.player_names):
+            self.stop()
 
     def on_elapsed_time(self, instance, value):
         """Called when elapsed_time property changes"""
@@ -581,6 +586,8 @@ class TopAppBar(MDTopAppBar):
     
     def on_disconnect(self):
         """Handle disconnect - called from Gui.py"""
+        if self.timer is not None:
+            self.timer.stop()
         self.server_info_label.on_disconnect()
 
     def open_profile(self):

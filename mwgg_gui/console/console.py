@@ -5,6 +5,8 @@ ConsoleSliverAppbar - Left side has the players, with expansion for hints TODO: 
 ConsoleLayout - Right contains the console
 """
 __all__ = ("ConsoleScreen", "ConsoleSliverAppbar", "ConsoleLayout")
+import logging
+
 from kivy.properties import ObjectProperty, StringProperty, BooleanProperty
 from kivy.core.window import Window
 from kivymd.app import MDApp
@@ -31,6 +33,8 @@ from mwgg_gui.components.columns import ColumnSortMixin, ColumnFilterMixin
 from mwgg_gui.components.mw_theme import AutoAdjustHeightBehavior
 
 import asynckivy
+
+logger = logging.getLogger("Client")
 
 Builder.load_string('''
 
@@ -132,6 +136,7 @@ class ConsoleSliverAppbar(MDSliverAppbar, ColumnSortMixin, ColumnFilterMixin):
         self.screen_manager.add_widget(self.logic_screen)
         self.screen_manager.bind(current_screen=self._on_current_screen)
         self.content.add_widget(self.screen_manager)
+        self.bind(tracker_mode=self._seed_logic_view)
 
     def set_bk(self):
         self.app.ctx.ui.set_bk()
@@ -158,6 +163,14 @@ class ConsoleSliverAppbar(MDSliverAppbar, ColumnSortMixin, ColumnFilterMixin):
         self.screen_manager.current = self.current_view
         if self.current_view == "logic":
             self.refresh_current_view()
+
+    def _seed_logic_view(self, *_args):
+        """Paint the logic view as soon as tracker mode turns on."""
+        if not self.tracker_mode:
+            return
+        console = getattr(self.app, "console_screen", None)
+        if console is not None:
+            Clock.schedule_once(lambda dt: console.update_tracker_locations(), 0)
 
     def handle_title_touch(self, title_widget, touch):
         '''Make the appbar title click-to-toggle when in Universal Tracker mode.'''
@@ -199,9 +212,14 @@ class ConsoleSliverAppbar(MDSliverAppbar, ColumnSortMixin, ColumnFilterMixin):
         if self.current_view == "logic" and self.tracker_mode:
             refresh = getattr(self.app.ctx, "tracker_overlay_refresh", None)
             if callable(refresh):
-                refresh()
-            else:
-                self.app.console_screen.update_tracker_locations()
+                try:
+                    refresh()
+                except Exception:
+                    logger.exception(
+                        "Tracker overlay refresh failed; repainting the logic "
+                        "view from the last tracker state")
+            # The hook repaints this pane only as its last step.
+            self.app.console_screen.update_tracker_locations()
         else:
             self.app.ctx.ui.update_hints(force=True)
 
