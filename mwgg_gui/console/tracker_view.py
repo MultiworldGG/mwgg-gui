@@ -52,7 +52,7 @@ Builder.load_string('''
     MDExpansionPanelHeader:
         id: panel_header
         size_hint_y: None
-        height: root.panel_header_height
+        height: max(root.panel_header_height, self.minimum_height)
         padding: dp(8), 0, dp(8), 0
         spacing: dp(4)
         MDIcon:
