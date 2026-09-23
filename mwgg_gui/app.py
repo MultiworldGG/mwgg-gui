@@ -316,38 +316,22 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             'admin_password': '',
             'scroll_lines': '3',
             'theme_style': 'Dark',
-            # Client processes may override this per world under
-            # game_settings as <module>_primary_palette (no defaults).
             'primary_palette': 'Purple',
             'font_scale': '1.0',
             'monospace_font': 'Argon',
-            # Portrait window with stacked panes; see components/layout_mode.
             'compact_mode': '0',
-            # Classic (MAIN-style) hint screen is the migration default; the
-            # new screen is opt-in. Every read must also pass
-            # fallback='classic' -- build_config never runs for a
-            # pre-existing client.ini, so the key may be absent there.
             'hint_screen': 'classic',
-            # Item-hover progression tooltips in the console. Reads pass
-            # fallback=True for pre-existing client.ini files.
             'item_tooltips': '1',
-            # Bottom-bar navigation: button style ("icons"/"text") and the
-            # opt-in Admin screen. Reads pass fallbacks for old client.ini.
             'bottom_nav_style': 'icons',
             'admin_console': '0',
-            # Client a double-clicked patch file boots: text or
-            # universal_tracker. Reads pass fallback for old client.ini files.
             'patch_client_type': 'text',
-            # First-launch tours, one per role: '1' once finished or
-            # skipped. Reads pass fallback=False for old client.ini files.
             'onboarding_launcher': '0',
             'onboarding_client': '0',
-        }, 
-        'game_settings', {
+        })
+        # I'm being a little cheeky here :D
+        config.setdefaults('game_settings', {
             'blueprince_primary_palette': 'Blue',
         })
-        # Tool-run suppression uses dynamic per-world keys
-        # (tool_warning_ok_<slug>) read with fallback=False -- no defaults.
         config.setdefaults('security', {
             'suppress_apworld_install_warning': '0'
         })
