@@ -342,6 +342,9 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             # skipped. Reads pass fallback=False for old client.ini files.
             'onboarding_launcher': '0',
             'onboarding_client': '0',
+        }, 
+        'game_settings', {
+            'blueprince_primary_palette': 'Blue',
         })
         # Tool-run suppression uses dynamic per-world keys
         # (tool_warning_ok_<slug>) read with fallback=False -- no defaults.
