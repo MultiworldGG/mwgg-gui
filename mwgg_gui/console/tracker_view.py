@@ -299,7 +299,9 @@ class TrackerRegionList(MDList):
             from worlds.tracker.overlay_features import (
                 group_reachable_by_top_level_branch,
             )
-            branches = group_reachable_by_top_level_branch(tracker_core)
+            branches = group_reachable_by_top_level_branch(
+                tracker_core,
+                include_glitched=bool(getattr(tracker_core, "enable_glitched_logic", True)))
         except Exception as exc:
             logger.exception(
                 f"populate_from_ctx: group_reachable_by_top_level_branch failed: {exc}"
