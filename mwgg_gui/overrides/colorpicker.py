@@ -1,6 +1,6 @@
 __all__ = ("MWColorPicker",)
 from kivy.properties import ColorProperty, StringProperty, ObjectProperty
-from PIL import Image
+from PIL import ImageGrab
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.textfield import MDTextFieldHintText
@@ -8,6 +8,7 @@ from kivymd.uix.fitimage import FitImage
 from kivy.lang import Builder
 from kivymd.theming import ThemableBehavior
 from kivy.utils import get_hex_from_color, get_color_from_hex
+from kivy.core.window import Window
 from kivy.metrics import dp
 import os
 import re
@@ -216,11 +217,12 @@ class MWColorPicker(MDBoxLayout):
         super().__init__(**kwargs)
         self.old_hex_color = old_hex_color
         self.size_hint = (1, None)
-        self.height = dp(250)
+        self.height = dp(250)  # Set a fixed height for the color picker
         
-        palette = os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "palette.png")
-        self.image = FitImage(source=palette, fit_mode="contain", size_hint_y=None, height=dp(228), pos_hint={"center_y": .5})
-        self._palette = Image.open(palette).convert("RGBA")
+        # Create and configure the image. "scale-down" never draws past the
+        # texture's 228 pixels (half size on Retina), so fix it at dp(228).
+        self.image = FitImage(source=os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "palette.png"),
+                              fit_mode="contain", size_hint_y=None, height=dp(228), pos_hint={"center_y": .5})
         # Create and configure the info layout
         self.info_layout = ColorInfoLayout(old_hex_color=self.old_hex_color)
         
@@ -261,15 +263,31 @@ class MWColorPicker(MDBoxLayout):
 
     def on_touch_down(self, touch):
         try:
+            # Check if touch is within the image's bounds
             if self.image.collide_point(touch.x, touch.y):
-                iw, ih = self.image.norm_image_size
-                u = (touch.x - self.image.center_x) / iw + 0.5
-                v = 0.5 - (touch.y - self.image.center_y) / ih
-                if 0 <= u < 1 and 0 <= v < 1:
-                    pw, ph = self._palette.size
-                    r, g, b, a = self._palette.getpixel((int(u * pw), int(v * ph)))
-                    if a:
-                        self.color = (r / 255, g / 255, b / 255, 1)
+
+                # Convert touch position to window coordinates
+                window_pos = self.to_window(touch.x, touch.y)
+                
+                # Window coordinates are GL pixels, but Window.left/top and the
+                # screen grab use the OS's window units: points on macOS (two
+                # pixels each on Retina), pixels on Windows and Linux.
+                density = Window._density
+
+                # Add window location offsets. Rounded because the macOS grab
+                # (screencapture -R, then resize) only takes whole units.
+                screen_x = round(Window.left + window_pos[0] / density)
+                # Get the "inverse" position of the window because kivy is weird
+                screen_y = round(Window.top + (Window.height - window_pos[1]) / density)
+                
+                # Get the color at the screen coordinates
+                pixel = ImageGrab.grab(bbox=(screen_x, screen_y-1, screen_x+1, screen_y)).load()[0,0]
+            
+                # Convert to normalized color
+                color = (pixel[0]/255, pixel[1]/255, pixel[2]/255, 1)
+                
+                # Update the color
+                self.color = color
                 return True
             elif self.info_layout.color_text.collide_point(touch.x, touch.y):
                 super().on_touch_down(touch)
