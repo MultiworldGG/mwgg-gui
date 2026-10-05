@@ -10,21 +10,47 @@ import sys
 # with vanilla Kivy defaults (Roboto, 800x600, no custom titlebar).
 from kivy.config import Config as MWKVConfig
 
-MWKVConfig.set("input", "mouse", "mouse,disable_multitouch")
-MWKVConfig.set("kivy", "exit_on_escape", "0")
-MWKVConfig.set("kivy", "default_font", ['Inter',
-                                        os.path.join("data", "fonts", "Inter-Regular.ttf"),
-                                        os.path.join("data", "fonts", "Inter-Italic.ttf"),
-                                        os.path.join("data", "fonts", "Inter-Bold.ttf"),
-                                        os.path.join("data", "fonts", "Inter-BoldItalic.ttf")])
-MWKVConfig.set("graphics", "width", "1099")
-MWKVConfig.set("graphics", "height", "699")
-# custom_titlebar only works on Windows; write "0" elsewhere to overwrite a
-# value persisted to KIVY_HOME by a previous Windows run.
-MWKVConfig.set("graphics", "custom_titlebar", "1" if sys.platform == "win32" else "0")
-MWKVConfig.set("graphics", "minimum_height", "480")
-MWKVConfig.set("graphics", "minimum_width", "400")
-MWKVConfig.set("graphics", "focus", "False")
+# Forced every boot: a stale config.ini must not break the window.
+for section, values in {
+    "input": {"mouse": "mouse,disable_multitouch"},
+    "kivy": {
+        "exit_on_escape": "0",
+        "default_font": ['Inter',
+                         os.path.join("data", "fonts", "Inter-Regular.ttf"),
+                         os.path.join("data", "fonts", "Inter-Italic.ttf"),
+                         os.path.join("data", "fonts", "Inter-Bold.ttf"),
+                         os.path.join("data", "fonts", "Inter-BoldItalic.ttf")],
+        "desktop": "1",
+        "pause_on_minimize": "0",
+    },
+    "graphics": {
+        "width": "1099",
+        "height": "699",
+        # custom_titlebar only works on Windows.
+        "custom_titlebar": "1" if sys.platform == "win32" else "0",
+        "minimum_height": "480",
+        "minimum_width": "400",
+        "focus": "False",
+        "resizable": "1",
+        "borderless": "0",
+        "window_state": "visible",
+        "position": "auto",
+        "rotation": "0",
+        "shaped": "0",
+        "show_taskbar_icon": "1",
+        "show_cursor": "1",
+        # User-owned; normalized for getboolean() in the settings switch.
+        "fullscreen": "1" if MWKVConfig.get("graphics", "fullscreen") == "1" else "0",
+    },
+}.items():
+    for key, value in values.items():
+        MWKVConfig.set(section, key, value)
+# Importing kivy already ran Modules.configure(); undo the screen module's env overrides.
+if MWKVConfig.has_option("modules", "screen"):
+    os.environ.pop("KIVY_METRICS_DENSITY", None)
+    os.environ.pop("KIVY_DPI", None)
+MWKVConfig.remove_section("modules")
+MWKVConfig.adddefaultsection("modules")
 MWKVConfig.write()
 
 if sys.platform == "win32":

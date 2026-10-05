@@ -135,6 +135,11 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
     title = "MultiworldGG"
     # Absolute via local_path so any CWD works; Kivy's default logo otherwise.
     icon = local_path("data", "icon.png")
+    # No F1 settings overlay; Kivy's panel would edit the window config forced in __init__.py.
+    use_kivy_settings = False
+
+    def _install_settings_keys(self, window):
+        pass
 
     base_title = StringProperty("MultiworldGG")
 

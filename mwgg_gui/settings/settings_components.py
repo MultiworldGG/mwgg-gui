@@ -981,7 +981,7 @@ class InterfaceSettings(SettingsScrollBox):
         display_section.add_widget(LabeledSwitch(
             text="Fullscreen",
             theme_text_color="Secondary",
-            active=bool(MWKVConfig.get('graphics', 'fullscreen', fallback=0)),
+            active=MWKVConfig.getboolean('graphics', 'fullscreen'),
             on_switch=self.toggle_fullscreen
         ))
         
