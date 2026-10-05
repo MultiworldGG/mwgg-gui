@@ -43,6 +43,14 @@ MWKVConfig.setdefaults("graphics", {
     "show_cursor": "1",
     "fullscreen": "0",
 })
+# The Clock reads maxfps once, at import. 0 is an uncapped busy loop, and
+# Kivy's F1 settings panel can save 0 or a non-integer.
+try:
+    _maxfps = MWKVConfig.getint("graphics", "maxfps")
+except ValueError:
+    _maxfps = 0
+if _maxfps < 1:
+    MWKVConfig.set("graphics", "maxfps", "60")
 MWKVConfig.write()
 
 if sys.platform == "win32":
