@@ -30,6 +30,7 @@ from time import time, strftime, gmtime, localtime
 from kivy.metrics import dp
 import logging
 import re
+import sys
 import asyncio
 import urllib.parse
 import asynckivy
@@ -619,7 +620,7 @@ class TopAppBarLayout(AnchorLayout):
     anchor_x = "left"
     anchor_y = "top"
     size_hint_x = 1
-    padding = 0,39,0,0
+    padding = 0, dp(39) if sys.platform == "win32" else 0, 0, 0
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

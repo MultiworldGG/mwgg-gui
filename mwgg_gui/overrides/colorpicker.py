@@ -9,6 +9,7 @@ from kivy.lang import Builder
 from kivymd.theming import ThemableBehavior
 from kivy.utils import get_hex_from_color, get_color_from_hex
 from kivy.core.window import Window
+from kivy.metrics import dp
 import os
 import re
 import logging
@@ -22,12 +23,12 @@ KV = """
     color_text: color_text
     cols: 2
     row_force_default: True
-    row_default_height: 80
+    row_default_height: dp(80)
     pos_hint: {"center_x": 0.5, "center_y": 0.5}
-    spacing: 5
+    spacing: dp(5)
     padding: 
     MDLabel:
-        width: 60
+        width: dp(60)
         size_hint_x: None
         text: "Color:"
         pos_hint: {"right": .9, "center_y": 0.5}
@@ -36,14 +37,14 @@ KV = """
             Color:
                 rgba: root.theme_cls.surfaceContainerLowestColor
             RoundedRectangle:
-                size: 160, 55
+                size: dp(160), dp(55)
                 pos: self.pos
-                radius: [5, 5, 5, 5]
+                radius: [dp(5)] * 4
         MDTextField:
             id: color_text
             size_hint_x: None
-            width: 160
-            padding: 5
+            width: dp(160)
+            padding: dp(5)
             pos_hint: {"x": 0, "y": 0}
             theme_font_name: "Custom"
             font_name: app.theme_cls.font_styles.Monospace['large']['font-name'] 
@@ -68,7 +69,7 @@ KV = """
                 bold: True
 
     Widget:
-        width: 60
+        width: dp(60)
         size_hint_x: None
         canvas.before:
             Color:
@@ -76,13 +77,13 @@ KV = """
             RoundedRectangle:
                 size: self.size
                 pos: self.pos
-                radius: [10, 10, 10, 10]
+                radius: [dp(10)] * 4
         size_hint: None, None
-        size: 50, 50
+        size: dp(50), dp(50)
     MDBoxLayout:
         orientation: "horizontal"
-        spacing: 5
-        padding: 5
+        spacing: dp(5)
+        padding: dp(5)
         pos_hint: {"center_x": 0.5, "center_y": 0.5}
         MDButton:
             id: apply_color_button
@@ -216,10 +217,12 @@ class MWColorPicker(MDBoxLayout):
         super().__init__(**kwargs)
         self.old_hex_color = old_hex_color
         self.size_hint = (1, None)
-        self.height = 250  # Set a fixed height for the color picker
+        self.height = dp(250)  # Set a fixed height for the color picker
         
-        # Create and configure the image
-        self.image = FitImage(source=os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "palette.png"), fit_mode='scale-down')  
+        # Create and configure the image. "scale-down" never draws past the
+        # texture's 228 pixels (half size on Retina), so fix it at dp(228).
+        self.image = FitImage(source=os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "palette.png"),
+                              fit_mode="contain", size_hint_y=None, height=dp(228), pos_hint={"center_y": .5})
         # Create and configure the info layout
         self.info_layout = ColorInfoLayout(old_hex_color=self.old_hex_color)
         
@@ -266,10 +269,16 @@ class MWColorPicker(MDBoxLayout):
                 # Convert touch position to window coordinates
                 window_pos = self.to_window(touch.x, touch.y)
                 
-                # Add window location offsets
-                screen_x = Window.left + window_pos[0]
+                # Window coordinates are GL pixels, but Window.left/top and the
+                # screen grab use the OS's window units: points on macOS (two
+                # pixels each on Retina), pixels on Windows and Linux.
+                density = Window._density
+
+                # Add window location offsets. Rounded because the macOS grab
+                # (screencapture -R, then resize) only takes whole units.
+                screen_x = round(Window.left + window_pos[0] / density)
                 # Get the "inverse" position of the window because kivy is weird
-                screen_y = Window.height - window_pos[1] + Window.top 
+                screen_y = round(Window.top + (Window.height - window_pos[1]) / density)
                 
                 # Get the color at the screen coordinates
                 pixel = ImageGrab.grab(bbox=(screen_x, screen_y-1, screen_x+1, screen_y)).load()[0,0]

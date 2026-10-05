@@ -56,8 +56,9 @@ KV = '''
         halign: "left"
         valign: "top"
         source: os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "titlebards.png")
-        size: self.texture_size
+        size: dp(250), dp(40)
         size_hint: None,None
+        fit_mode: "fill"
 
     MDFloatLayout:
         id: tblabel

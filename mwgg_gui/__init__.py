@@ -22,33 +22,81 @@ MWKVConfig.set("graphics", "height", "699")
 # custom_titlebar only works on Windows; write "0" elsewhere to overwrite a
 # value persisted to KIVY_HOME by a previous Windows run.
 MWKVConfig.set("graphics", "custom_titlebar", "1" if sys.platform == "win32" else "0")
-MWKVConfig.set("graphics", "minimum_height", "700")
-MWKVConfig.set("graphics", "minimum_width", "600")
+MWKVConfig.set("graphics", "minimum_height", "480")
+MWKVConfig.set("graphics", "minimum_width", "400")
 MWKVConfig.set("graphics", "focus", "False")
+# Window behaviour the launcher relies on (resizable edges, working min/max
+# buttons, a normal visible window). setdefaults only fills in keys missing
+# from config.ini; values already there are the user's and are left alone.
+MWKVConfig.setdefaults("kivy", {
+    "desktop": "1",
+    "pause_on_minimize": "0",
+})
+MWKVConfig.setdefaults("graphics", {
+    "resizable": "1",
+    "borderless": "0",
+    "window_state": "visible",
+    "position": "auto",
+    "rotation": "0",
+    "shaped": "0",
+    "show_taskbar_icon": "1",
+    "show_cursor": "1",
+    "fullscreen": "0",
+})
+# The Clock reads maxfps once, at import. 0 is an uncapped busy loop, and
+# Kivy's F1 settings panel can save 0 or a non-integer.
+try:
+    _maxfps = MWKVConfig.getint("graphics", "maxfps")
+except ValueError:
+    _maxfps = 0
+if _maxfps < 1:
+    MWKVConfig.set("graphics", "maxfps", "60")
 MWKVConfig.write()
 
 if sys.platform == "win32":
-    # Must run before the imports below pull in kivymd and create the Window.
-    # The process is deliberately DPI-unaware (see app.py's win32 block); pin
-    # Kivy at 96 DPI, since after a display reconnect its dynamic DPI handling
-    # can hit a zero density and enter a resize/layout loop.
-    # Ported from MultiworldGG main kvui.py (4e8effd4e).
+    # Per-monitor-v2 aware with SDL scaling off, so SDL window, mouse and
+    # hit-test coordinates are GL pixels. Must precede the Window import; the
+    # env var outranks Kivy's SDL hint. Awareness is set by call, not by
+    # SDL_WINDOWS_DPI_AWARENESS, which child SDL processes would inherit.
+    from ctypes import c_void_p, windll
+
+    os.environ["SDL_WINDOWS_DPI_SCALING"] = "0"
+    try:
+        windll.user32.SetProcessDpiAwarenessContext(c_void_p(-4))
+    except AttributeError:  # before Windows 10 1703
+        pass
+    else:
+        # SDL centres the window at its creation size, which is now in pixels.
+        scale = windll.user32.GetDpiForSystem() / 96
+        for key in ("width", "height"):
+            MWKVConfig.set("graphics", key, str(round(MWKVConfig.getint("graphics", key) * scale)))
+
     from kivy.core.window import Window
     from kivy.core.window.window_sdl2 import WindowSDL, _WindowsSysDPIWatch
 
     def _set_fixed_windows_density(self: WindowSDL):
         self._density = 1.
-        self.dpi = 96.
 
     def _ignore_windows_dpi_changes(self: _WindowsSysDPIWatch):
         pass
 
     WindowSDL._update_density_and_dpi = _set_fixed_windows_density
     Window._update_density_and_dpi()
+    # dp()/sp() and KivyMD font styles bake at creation: set dpi once, before
+    # kivymd imports, and never rescale per monitor.
+    try:
+        Window.dpi = float(windll.user32.GetDpiForWindow(Window._win.get_window_info().window) or 96)
+    except AttributeError:  # before Windows 10 1607
+        Window.dpi = 96.
     if Window._win_dpi_watch is not None:
         Window._win_dpi_watch.stop()
         Window._win_dpi_watch = None
     _WindowsSysDPIWatch.start = _ignore_windows_dpi_changes
+
+    from kivy.metrics import dp
+
+    # The titlebar hit-test border is in physical pixels.
+    MWKVConfig.set("graphics", "custom_titlebar_border", str(round(dp(5))))
 
 from .components import *
 from .console import *

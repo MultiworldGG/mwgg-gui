@@ -188,7 +188,6 @@ class TrackerRegionPanel(GameListPanel):
         self._tracker_locations = locations
         super().__init__(item_name=region_name, item_data=locations, **kwargs)
         self.size_hint_x = 1
-        self.width = 260
         self.pos_hint = {}
         self.region_name = region_name
         self.count_label_text = str(len(locations))

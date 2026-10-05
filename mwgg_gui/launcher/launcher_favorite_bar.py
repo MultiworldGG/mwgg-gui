@@ -69,7 +69,7 @@ Builder.load_string('''
             MDLabel:
                 id: game_label
                 pos_hint: {"x": 0, "y": 0}
-                padding: 2,
+                padding: dp(2),
                 adaptive_height: True
                 text: root.game_name
                 halign: 'center'

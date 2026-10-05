@@ -226,7 +226,6 @@ class HintScreen(MDScreen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.app = MDApp.get_running_app()
-        self.size = (Window.width, Window.height-185)
         
         # Initialize components
         self.bottom_appbar = BottomAppBar(screen_name="hint")
@@ -350,7 +349,7 @@ class HintLayout(AutoAdjustHeightBehavior, MDBoxLayout):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.app = MDApp.get_running_app()
-        self.y = 82
+        self.y = dp(82)
         # Create placeholder for future search and filter functionality
         self.search_placeholder = HintFeaturebar(
             height=dp(80),

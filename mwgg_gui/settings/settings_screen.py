@@ -95,9 +95,10 @@ def register_settings_section(name: str, title: str, factory, items: list | None
 
 # Define custom widgets in kv language
 KV = '''
+#:import sys sys
 SettingsNavLayout:
     size_hint_y: None
-    height: Window.height-103
+    height: Window.height - dp(103 if sys.platform == "win32" else 64)
     settings_nav_menu: settings_nav_menu
 
     MDScreenManager:
@@ -129,7 +130,7 @@ SettingsNavLayout:
     orientation: "vertical"
     size_hint_y: None
     pos_hint: {"center_x": 0.5}
-    height: Window.height-103
+    height: Window.height - dp(103 if sys.platform == "win32" else 64)
     md_bg_color: app.theme_cls.backgroundColor
 '''
 

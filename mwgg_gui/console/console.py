@@ -8,7 +8,6 @@ __all__ = ("ConsoleScreen", "ConsoleSliverAppbar", "ConsoleLayout")
 import logging
 
 from kivy.properties import ObjectProperty, StringProperty, BooleanProperty
-from kivy.core.window import Window
 from kivymd.app import MDApp
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.card.card import MDRelativeLayout
@@ -40,7 +39,7 @@ Builder.load_string('''
 
 <ConsoleLayout>:
     id: console_layout
-    pos: 0, 82 + app.layout_mode.docked_input
+    pos: 0, dp(82) + app.layout_mode.docked_input
 
 <ConsoleSliverAppbar>:
     pos_hint: {"x": 0, "top": 1}
@@ -48,6 +47,8 @@ Builder.load_string('''
     size_hint_x: None
     adaptive_height: True
     hide_appbar: True
+    max_height: dp(350)
+    radius: dp(20)
     deafened_icon: "headphones"
     tracker_mode: False
     current_view: "players"
@@ -247,8 +248,8 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
         self.size_hint = (1,1)
         self.pos_hint = {"center_x": 0.5, "center_y": 0.5}
         super().__init__(**kwargs)
-        self.slots_mdlist = MDList(width=260)
-        self.tracker_regions_mdlist = TrackerRegionList(width=260)
+        self.slots_mdlist = MDList()
+        self.tracker_regions_mdlist = TrackerRegionList()
 
         self.bottom_appbar = BottomAppBar(screen_name="console")
 
@@ -274,24 +275,27 @@ class ConsoleScreen(MDScreen, ThemableBehavior):
             return
         self.tracker_regions_mdlist.populate_from_ctx(self.app.ctx)
 
+    def _size_panes(self, _, size):
+        w, h = size
+        self.ui_console.height = h - dp(8)
+        if self.ui_console.size_hint_x is None:
+            self.ui_console.width = w - dp(264)
+            self.important_appbar.height = h - dp(8)
+
     def init_important(self):
-        self.consolegrid = ConsoleLayout(width=Window.width, height=Window.height-185)
+        self.consolegrid = ConsoleLayout()
+        self.consolegrid.bind(size=self._size_panes)
         self.add_widget(self.consolegrid)
         self.add_widget(self.bottom_appbar)
 
         if self.app.layout_mode.compact:
-            self.ui_console = ConsoleView(pos_hint={"x": 0, "y": 0},
-                                          size_hint=(1, 1-(8/Window.height)))
+            self.ui_console = ConsoleView(pos_hint={"x": 0, "y": 0}, size_hint_y=None)
             self.consolegrid.add_widget(self.ui_console)
             return
 
-        self.important_appbar.size_hint_x = 260/Window.width
-        self.important_appbar.size_hint_y=1-(8/Window.height)
-
-        self.ui_console = ConsoleView(pos_hint={"y": 0, "center_x": .5+(130/Window.width)},
-                                      size_hint_x=1-(264/Window.width),
-                                      size_hint_y=1-(8/Window.height))
-        self.important_appbar.ids.scroll.scroll_wheel_distance = 40
+        self.ui_console = ConsoleView(x=dp(262), pos_hint={"y": 0}, size_hint=(None, None))
+        self.important_appbar.size_hint_y = None
+        self.important_appbar.ids.scroll.scroll_wheel_distance = dp(40)
 
         # Players screen holds the slot/hint expansion list, sized to its content.
         self.slots_mdlist.size_hint_y = None

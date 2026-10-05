@@ -27,9 +27,11 @@ from kivy.app import App
 from kivy.uix.effectwidget import PixelateEffect
 from kivy.uix.textinput import TextInput
 
-MIN_SPEED = 0.016  # Fastest speed (60fps)
-MAX_SPEED = 0.050   # Slowest speed (20fps)
-DEFAULT_SPEED = 0.040  # Default speed (40ms)
+# Seconds per animation frame, timed on the wall clock: Clock intervals round up
+# to whole ticks, and the tick rate depends on the display's refresh rate.
+MIN_SPEED = 0.016
+MAX_SPEED = 0.050
+DEFAULT_SPEED = 0.050  # loading_animation.png's own frame time, which the splash plays at
 # Surface colours, not black: onSurface text must stay readable in the light theme too.
 SCRIM_ALPHA = 0.7
 PANEL_ALPHA = 0.95
@@ -139,14 +141,14 @@ class MWGGLoadingLayout(MDRelativeLayout):
 
         self.img_box = MDBoxLayout(theme_bg_color="Custom", md_bg_color=(0,0,0,0),
                                    pos_hint={'center_x': 0.5, 'center_y': 0.5},
-                                   size_hint=(None, None), size=(200, 200))
+                                   size_hint=(None, None), size=(dp(200), dp(200)))
         img = PILImage.open(img_path)
         for i, frame in enumerate(ImageSequence.Iterator(img)):
             new_frame = io.BytesIO()
             frame.save(new_frame,format="png", bitmap_format="png")
             new_frame.seek(0)  # Reset buffer position
             core_image = CoreImage(new_frame, ext='png', filename=f"frame_{i}.png")
-            self.frames.append(Image(texture=core_image.texture))
+            self.frames.append(Image(texture=core_image.texture, fit_mode="contain"))
         self.current_image = None
         self.current_frame = 0
         mono = self.app.theme_cls.font_styles["Monospace"]["small"]
@@ -180,32 +182,30 @@ class MWGGLoadingLayout(MDRelativeLayout):
                 self.app.enable_effects()
             else:
                 self.app.pixelate_effect.effects = [PixelateEffect(pixel_size=3)]
-            self._clock_event = Clock.schedule_interval(self.update_frame, speed)
-    
+            self.set_speed(speed)
+            self._clock_event = Clock.schedule_interval(self.update_frame, 0)
+
     def set_speed(self, speed):
-        """Set the animation speed. Speed should be between MIN_SPEED and MAX_SPEED."""
+        """Set seconds per frame, clamped to MIN_SPEED..MAX_SPEED; the shown frame stays put."""
         if not self.loading:
             return
-            
-        speed = max(MIN_SPEED, min(MAX_SPEED, speed))
-        
-        if self._clock_event:
-            self._clock_event.cancel()
-        
-        self._clock_event = Clock.schedule_interval(self.update_frame, speed)
-    
+        self._frame_seconds = max(MIN_SPEED, min(MAX_SPEED, speed))
+        self._anim_start = Clock.get_time()
+        self._start_frame = self.current_frame
+
     def update_frame(self, dt):
         if not self.loading or self.img_box is None:
             return False
-        
+        elapsed = Clock.get_time() - self._anim_start
+        frame = (self._start_frame + int(elapsed / self._frame_seconds)) % len(self.frames)
+        if self.current_image is not None and frame == self.current_frame:
+            return
         if self.current_image:
             self.img_box.remove_widget(self.current_image)
-        
-        self.current_image = self.frames[self.current_frame]
+        self.current_frame = frame
+        self.current_image = self.frames[frame]
         self.img_box.add_widget(self.current_image)
-        
-        self.current_frame = (self.current_frame + 1) % len(self.frames)
-    
+
     def post_status(self, message: str) -> None:
         """Show a status line under the animation; a no-op while not loading."""
         if not self.loading:

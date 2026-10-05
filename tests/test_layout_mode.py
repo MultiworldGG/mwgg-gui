@@ -37,7 +37,7 @@ def layout_mode():
         "kivy.clock": _stub("kivy.clock", Clock=types.SimpleNamespace()),
         "kivy.core.window": _stub("kivy.core.window", Window=types.SimpleNamespace()),
         "kivy.event": _stub("kivy.event", EventDispatcher=type("EventDispatcher", (), {})),
-        "kivy.metrics": _stub("kivy.metrics", dp=lambda value: value),
+        "kivy.metrics": _stub("kivy.metrics", Metrics=types.SimpleNamespace(), dp=lambda value: value),
         "kivy.properties": _stub(
             "kivy.properties",
             AliasProperty=_Property,
@@ -94,3 +94,20 @@ def test_window_geometry_per_mode(layout_mode):
     assert compact_size[0] < compact_size[1], "compact is a portrait window"
     assert compact_min[0] <= compact_size[0] and compact_min[1] <= compact_size[1]
     assert compact_min[0] < desktop_min[0]
+
+
+def test_unknown_work_area_never_forces_compact(layout_mode):
+    assert layout_mode.needs_compact(None) is False
+
+
+def test_work_area_below_desktop_minimum_forces_compact(layout_mode):
+    assert layout_mode.needs_compact((600, 700)) is False
+    assert layout_mode.needs_compact((1920, 1032)) is False
+    assert layout_mode.needs_compact((599, 1032)) is True
+    assert layout_mode.needs_compact((1280, 672)) is True
+
+
+def test_geometry_clipped_per_axis_to_work_area(layout_mode):
+    assert layout_mode.window_geometry(True, (1280, 672)) == ((460, 672), (400, 480))
+    assert layout_mode.window_geometry(False, (1000, 1032)) == ((1000, 700), (600, 700))
+    assert layout_mode.window_geometry(True, (380, 420)) == ((380, 420), (380, 420))

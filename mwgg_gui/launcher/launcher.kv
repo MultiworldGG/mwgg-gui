@@ -1,10 +1,11 @@
+#:import sys sys
 <LauncherScreen>:
     size_hint: 1,1
     pos_hint: {"center_x": 0.5, "center_y": 0.5}
 
 <LauncherLayout>:
     size_hint_y: None
-    height: Window.height-103
+    height: Window.height - dp(103 if sys.platform == "win32" else 64)
     MDScreenManager:
         id: launcher_screen_manager
         MDScreen:
@@ -27,7 +28,7 @@
                 source: os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "logo_bg.png")
                 size_hint: 1, None
                 height: dp(200)
-                fit_mode: "scale-down"
+                fit_mode: "contain"
                 pos_hint: {"center_x": 0.5, "top": 1}
             NavDrawerMenu:
                 id: launcher_nav_menu
@@ -72,7 +73,7 @@
         text_color: app.theme_cls.errorColor
     MDBoxLayout:
         orientation: 'vertical'
-        spacing: 30
+        spacing: dp(30)
         padding: dp(30)
         theme_bg_color: "Custom"
         md_bg_color: app.theme_cls.surfaceVariantColor
@@ -161,7 +162,7 @@
                         on_active: app.launcher_screen.set_manual_client(self.active)
             MDBoxLayout: # launcher components | connection fields
                 orientation: 'horizontal'
-                spacing: 10
+                spacing: dp(10)
                 MDScrollView: # launcher components
                     do_scroll_x: False
                     MDBoxLayout:
