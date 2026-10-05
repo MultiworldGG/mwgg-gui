@@ -102,6 +102,7 @@ from mwgg_gui.components.tour_overlay import TourOverlay
 from mwgg_gui.components.onboarding import TOURS, tour_pending, mark_tour_done
 from mwgg_gui.components.bottomappbar import BottomAppBar, BottomBarTextInput
 from mwgg_gui.components.bottom_nav import ClientTab, nav_entries, world_component_icon
+from mwgg_gui.components.connect_layout import ConnectLayout
 from mwgg_gui.components.module_launch import (
     launch_status_lines, launch_failure_dialog, read_patch_client_type, spawn_launcher)
 from mwgg_gui.components.guidataclasses import UIPlayerData, UIHint, MarkupPair
@@ -270,6 +271,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         # builtin slots.
         self._bottom_bars: weakref.WeakSet[BottomAppBar] = weakref.WeakSet()
         self._client_tabs: list[ClientTab] = []
+        self._connect_layout: ConnectLayout | None = None
         # Latest `players` / `options` payloads from admin replies, so an
         # Admin screen built later starts populated.
         self._admin_snapshot: dict = {}
@@ -773,6 +775,23 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         returned by `add_client_tab`."""
         self.remove_custom_screen(tab)
 
+    @property
+    def connect_layout(self) -> ConnectLayout:
+        """Per-world hook (kvui.GameManager API): the connect bar worlds add
+        status widgets to (see components/connect_layout)."""
+        live = self._resolve_live_app()
+        if live._connect_layout is None:
+            live._connect_layout = ConnectLayout()
+            live._host_connect_layout()
+        return live._connect_layout
+
+    def _host_connect_layout(self) -> None:
+        """Move the connect layout to the current screen's bottom bar; screens
+        without one (Settings) leave it where it was."""
+        bar = getattr(self.screen_manager.current_screen, "bottom_appbar", None)
+        if self._connect_layout is not None and bar is not None:
+            bar.host_connect_layout(self._connect_layout)
+
     def create_custom_screen(self, title: str, content=None, index: int = -1):
         """Two call shapes coexist here:
 
@@ -1121,6 +1140,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             self._screen_before_settings = name
         for bar in list(self._bottom_bars):
             bar.set_current(name)
+        self._host_connect_layout()
 
     def leave_settings(self) -> None:
         target = self._screen_before_settings

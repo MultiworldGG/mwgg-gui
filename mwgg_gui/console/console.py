@@ -39,7 +39,7 @@ Builder.load_string('''
 
 <ConsoleLayout>:
     id: console_layout
-    pos: 0, dp(82) + app.layout_mode.docked_input
+    pos: 0, dp(82) + app.layout_mode.connect_bar_height
 
 <ConsoleSliverAppbar>:
     pos_hint: {"x": 0, "top": 1}

@@ -3,8 +3,8 @@ BottomAppBar class - each screen's bottom bar. The left side carries the
 screen-navigation buttons (model in bottom_nav.py, repainted through
 MultiMDApp.refresh_bottom_nav); the FAB on the right slides the screen's
 text input (chat, hint search, admin command) up from the bar. Compact
-Mode drops the FAB, centers the buttons, and docks the text input
-permanently above the bar (see layout_mode.docked_input).
+Mode drops the FAB and keeps the text input open beside the buttons. The
+bar also hosts the app's connect layout (components/connect_layout).
 """
 from __future__ import annotations
 
@@ -28,7 +28,14 @@ from kivymd.uix.menu import MDDropdownMenu
 from mwgg_gui.components.admin_commands import (
     admin_say_line, available_admin_commands, complete_admin_command)
 from mwgg_gui.components.bottom_nav import NavEntry, icon_is_image
+from mwgg_gui.components.connect_layout import ConnectLayout
 from mwgg_gui.constants import TEXT_INPUT_ACTIONS
+
+# The slid-up text input spans the middle TEXT_INPUT_WIDTH of the bar and gives
+# its right end to the connect layout, which grows left from the FAB; widgets
+# that would leave it under MIN_TEXT_INPUT_WIDTH move to the full-width bar.
+TEXT_INPUT_WIDTH = 0.4
+MIN_TEXT_INPUT_WIDTH = dp(160)
 
 Builder.load_string('''
 <BottomAppBar>:
@@ -326,19 +333,21 @@ class BottomAppBar(MDBottomAppBar):
         self.docked = self.app.layout_mode.compact
         if self.docked:
             self._dock_layout()
+        else:
+            self.ids.console_text_input_fab.bind(x=self._place_connect_layout)
+        self.bind(pos=self._place_connect_layout, size=self._place_connect_layout)
         self.app.register_bottom_bar(self)
 
     def _dock_layout(self):
         self.remove_widget(self.ids.console_text_input_fab)
         self._fab_bottom_app_bar_button = None
-        self.nav_box.pos_hint = {"center_x": 0.5, "center_y": 0.5}
         if self.input_action is None:
             return
         self._configure_text_input()
-        self.text_input.size_hint = (0.94, None)
-        self.text_input.pos_hint = {"center_x": 0.5}
-        self.text_input.y = self.height + dp(8)
+        self.text_input.size_hint = (None, None)
+        self.text_input.pos_hint = {"center_y": 0.5}
         self.add_widget(self.text_input)
+        self.nav_box.bind(x=self._place_text_input, width=self._place_text_input)
 
     def _configure_text_input(self):
         action = self.input_action
@@ -347,12 +356,64 @@ class BottomAppBar(MDBottomAppBar):
         self.text_input.action_type = self.screen_name
 
     def add_widget(self, widget, index=0, canvas=None):
-        # The text input and nav box position themselves; keep them out of
-        # MDBottomAppBar's action-item layout.
-        if isinstance(widget, (MDTextField, BottomNavBox)):
+        # The text input, nav box and connect layout position themselves; keep
+        # them out of MDBottomAppBar's action-item layout.
+        if isinstance(widget, (MDTextField, BottomNavBox, ConnectLayout)):
             MDFloatLayout.add_widget(self, widget, index, canvas)
         else:
             super().add_widget(widget, index, canvas)
+
+    def host_connect_layout(self, layout: ConnectLayout) -> None:
+        """Take the app's connect layout from whichever bar showed it last."""
+        previous = layout.parent
+        if previous is self:
+            return
+        if previous is not None:
+            previous.remove_widget(layout)
+            layout.unbind(width=previous._place_connect_layout,
+                          minimum_width=previous._place_connect_layout)
+        # Below the nav box, FAB and text input: overflow slides under them
+        # instead of covering them and taking their presses.
+        self.add_widget(layout, index=len(self.children))
+        # minimum_width: a full bar keeps its width while its contents shrink.
+        layout.bind(width=self._place_connect_layout, minimum_width=self._place_connect_layout)
+        self._place_connect_layout()
+
+    def _hosted_connect_layout(self) -> ConnectLayout | None:
+        return next((child for child in self.children if isinstance(child, ConnectLayout)), None)
+
+    def _place_connect_layout(self, *_args) -> None:
+        layout = self._hosted_connect_layout()
+        if layout is not None:
+            layout.full_bar = self.docked or not self._connect_layout_fits(layout)
+            if layout.full_bar:
+                layout.pos_hint = {"x": 0}
+                layout.y = self.top
+            else:
+                layout.pos_hint = {"center_y": 0.5}
+                layout.right = self.ids.console_text_input_fab.x - dp(8)
+        self._place_text_input()
+
+    def _connect_layout_fits(self, layout: ConnectLayout) -> bool:
+        """Standard view: room for the widgets between the FAB and the text
+        input at MIN_TEXT_INPUT_WIDTH."""
+        input_right = self.x + self.width * (0.5 - TEXT_INPUT_WIDTH / 2) + MIN_TEXT_INPUT_WIDTH
+        return layout.content_width <= self.ids.console_text_input_fab.x - input_right - dp(16)
+
+    def _place_text_input(self, *_args) -> None:
+        """Compact: beside the nav buttons. Standard: the middle
+        TEXT_INPUT_WIDTH of the bar, up to an inline connect layout."""
+        if self.docked:
+            left = self.nav_box.right + dp(8)
+            right = self.right - dp(16)
+        else:
+            left = self.x + self.width * (0.5 - TEXT_INPUT_WIDTH / 2)
+            right = self.x + self.width * (0.5 + TEXT_INPUT_WIDTH / 2)
+            layout = self._hosted_connect_layout()
+            if layout is not None and layout.children and not layout.full_bar:
+                right = min(right, layout.x - dp(8))
+        self.text_input.x = left
+        self.text_input.width = max(right - left, 0)
 
     def rebuild_nav(self, entries: list[NavEntry], style: str, current: str) -> None:
         """Repaint the nav buttons; `style` is "icons" or "text"."""
@@ -414,8 +475,9 @@ class BottomAppBar(MDBottomAppBar):
             self.add_widget(self.text_input)
 
         self.text_input.y = -dp(60)
-        self.text_input.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
-        self.text_input.size_hint = (0.4, None)
+        self.text_input.pos_hint = {'center_y': 0.5}
+        self.text_input.size_hint = (None, None)
+        self._place_text_input()
 
         def animate_in(dt):
             Animation(y=dp(13), duration=0.2).start(self.text_input)

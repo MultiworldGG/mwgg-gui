@@ -556,6 +556,12 @@ class AutoAdjustHeightBehavior:
         super().__init__(**kwargs)
         self._update_adjusted_height()
         Window.bind(height=self._on_window_height)
+        if self.adjust_bottom_appbar:
+            # The connect bar grows and shrinks the reserved height at runtime.
+            try:
+                MDApp.get_running_app().layout_mode.bind(connect_bar_height=self._update_adjusted_height)
+            except AttributeError:
+                pass
     
     def _update_adjusted_height(self, *args):
         self.size_hint_y = adjust_height(
@@ -569,10 +575,10 @@ class AutoAdjustHeightBehavior:
         self._update_adjusted_height()
 
 
-def _docked_input_height() -> float:
-    """Compact mode docks the bottom bar's text input above the bar."""
+def _connect_bar_height() -> float:
+    """The full-width connect bar above the bottom bar (components/connect_layout)."""
     try:
-        return MDApp.get_running_app().layout_mode.docked_input
+        return MDApp.get_running_app().layout_mode.connect_bar_height
     except AttributeError:
         return 0
 
@@ -590,7 +596,7 @@ def adjust_height(title_bar: bool=True,
     if app_bar:
         removed_height += dp(64)
     if bottom_appbar:
-        removed_height += dp(82) + _docked_input_height()
+        removed_height += dp(82) + _connect_bar_height()
     if custom:
         removed_height += custom
     new_height = Window.height - removed_height

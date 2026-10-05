@@ -102,9 +102,9 @@ class LayoutMode(EventDispatcher):
     # The display cannot fit the desktop minimum; never persisted.
     forced = BooleanProperty(False)
     work_area: tuple[float, float] | None = None
-    # Height the bottom bar's permanently docked text input adds above the
-    # bar in compact mode (dp(56) field plus margins); 0 otherwise.
-    docked_input_height = NumericProperty(dp(72))
+    # Height screens reserve above the bottom bar for the full-width connect
+    # bar (components/connect_layout); 0 while it is empty or inside the bar.
+    connect_bar_height = NumericProperty(0)
 
     def _get_compact(self):
         return self.preferred or self.forced
@@ -113,12 +113,6 @@ class LayoutMode(EventDispatcher):
         self.preferred = value
 
     compact = AliasProperty(_get_compact, _set_compact, bind=("preferred", "forced"), cache=True)
-
-    def _get_docked_input(self):
-        return self.docked_input_height if self.compact else 0
-
-    docked_input = AliasProperty(
-        _get_docked_input, bind=("compact", "docked_input_height"), cache=True)
 
     def fit_display(self) -> None:
         bounds = _usable_bounds()
