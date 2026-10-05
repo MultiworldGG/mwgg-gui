@@ -12,6 +12,7 @@ __all__ = ('DefaultTheme',
 
 
 import os
+import sys
 from dataclasses import dataclass
 from kivy.core.text import LabelBase
 from kivymd.app import MDApp
@@ -584,10 +585,10 @@ def adjust_height(title_bar: bool=True,
     in the layout.
     """
     removed_height = 0
-    if title_bar:
-        removed_height += dp(43)
+    if title_bar and sys.platform == "win32":
+        removed_height += dp(39)
     if app_bar:
-        removed_height += dp(60)
+        removed_height += dp(64)
     if bottom_appbar:
         removed_height += dp(82) + _docked_input_height()
     if custom:

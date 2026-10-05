@@ -117,7 +117,7 @@ class SlotListItemHeader(MDBoxLayout, CommonElevationBehavior):
                 children_width += self.spacing
 
         if self.panel.width == 100:
-            text_width = 256 - dp(40) - dp(24) - children_width - self.padding[0] - self.padding[2]
+            text_width = dp(256 - 40 - 24) - children_width - self.padding[0] - self.padding[2]
         else:
             text_width = self.width - children_width - self.padding[0] - self.padding[2]
 
@@ -301,7 +301,7 @@ class SlotListItem(MWBaseListItem):
     def estimate_height(self):
         """Compute item height from real texture sizes (no reactive bindings)."""
         # Available width for text (total width - icon - padding - spacing)
-        text_width = 256 - dp(40) - dp(24) - dp(16)
+        text_width = dp(256 - 40 - 24 - 16)
         
         # Base height: padding + spacing
         nheight = dp(36) + (dp(4) * len(self.children))
@@ -582,7 +582,6 @@ class GameListItem(MDListItem, CommonElevationBehavior):
         self.text = text
         self.icon = icon
         self.tooltip_text = tooltip_text
-        self.width = 256
         self.pos_hint = {"center_y": 0.5}
 
         Clock.schedule_once(lambda x: self.remove_extra_container())
@@ -620,7 +619,6 @@ class GameListPanel(MDExpansionPanel):
         self.item_name = item_name
         self.item_data = item_data
         self.on_game_select = on_game_select
-        self.width = 256
         self.pos_hint = {"center_y": 0.5}
         if isinstance(self.item_data, UIPlayerData):
             Clock.schedule_once(lambda x: self.populate_slot_item(ctx=self.app.ctx))

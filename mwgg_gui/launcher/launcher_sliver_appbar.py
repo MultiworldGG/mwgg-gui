@@ -28,12 +28,16 @@ Builder.load_string('''
     size_hint_x: None
     adaptive_height: True
     hide_appbar: True
+    max_height: dp(350)
+    radius: dp(20)
     background_color: app.theme_cls.secondaryContainerColor
     MDSliverAppbarHeader:
         Image:
             source: os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "logo_bg.png")
             pos_hint: {"center_y": 0.55}
-            fit_mode: "scale-down"
+            # logo_bg.png's width; scale-down would cap it at texture pixels
+            size_hint_max_x: dp(256)
+            fit_mode: "contain"
     SearchBar:
         id: games_search_bar
                     

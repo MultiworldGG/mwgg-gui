@@ -9,7 +9,6 @@ display the text console.
 """
 from dataclasses import dataclass
 from typing import Callable, Optional
-from kivy.core.window import Window
 from kivymd.uix.floatlayout import MDFloatLayout
 from kivy.properties import ObjectProperty
 from kivymd.app import MDApp
@@ -35,6 +34,8 @@ Builder.load_string('''
     id: bottom_scroll_button
     icon: 'arrow-down-bold-outline'
     style: 'small'
+    right: self.parent.right - dp(20) if self.parent else 0
+    y: self.parent.y + dp(10) if self.parent else 0
 ''')
 
 class BottomScrollButton(MDFabButton):
@@ -145,11 +146,10 @@ class ConsoleView(MDFloatLayout):
     def __init__(self, mirror_of: TextConsole | None = None,
                  line_filter: Optional[Callable[[object], bool]] = None, **kwargs):
         super().__init__(**kwargs)
-        self.bottom_scroll_button = BottomScrollButton(opacity=0, x=Window.width - dp(60), y=dp(10))
-        chrome = 185 + MDApp.get_running_app().layout_mode.docked_input
+        self.bottom_scroll_button = BottomScrollButton(opacity=0)
         self.text_console = TextConsole(bottom_scroll_button=self.bottom_scroll_button, pos_hint={"x": 0, "y": 0},
-                                        size_hint=(1-(4/Window.width),1-(chrome/Window.height)),
-                                        pull_buffer=mirror_of is None, line_filter=line_filter)
+                                        size_hint_x=None, pull_buffer=mirror_of is None, line_filter=line_filter)
+        self.bind(width=lambda _, w: setattr(self.text_console, "width", w - dp(4)))
         if mirror_of is not None:
             mirror_of.mirrors.append(self.text_console)
         self.add_widget(self.text_console)

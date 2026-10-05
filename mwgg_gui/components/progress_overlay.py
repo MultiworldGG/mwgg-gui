@@ -36,8 +36,8 @@ Builder.load_string('''
         Color:
             rgba: [0, 0, 0, 0.3]
         Rectangle:
-            pos: self.x, self.y+2
-            size: self.p_width, self.height-4
+            pos: self.x, self.y+dp(2)
+            size: self.p_width, self.height-dp(4)
 ''')
 
 
@@ -49,8 +49,7 @@ class ProgressOverlay(Widget):
     """
     
     p_width: NumericProperty = NumericProperty(0)
-    height: NumericProperty = NumericProperty(64)
-    prog_size: ReferenceListProperty = ReferenceListProperty(p_width, height)
+    prog_size: ReferenceListProperty = ReferenceListProperty(p_width, Widget.height)
     
     def __init__(self, **kwargs):
         super().__init__(**kwargs)

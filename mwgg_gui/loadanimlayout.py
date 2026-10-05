@@ -139,14 +139,14 @@ class MWGGLoadingLayout(MDRelativeLayout):
 
         self.img_box = MDBoxLayout(theme_bg_color="Custom", md_bg_color=(0,0,0,0),
                                    pos_hint={'center_x': 0.5, 'center_y': 0.5},
-                                   size_hint=(None, None), size=(200, 200))
+                                   size_hint=(None, None), size=(dp(200), dp(200)))
         img = PILImage.open(img_path)
         for i, frame in enumerate(ImageSequence.Iterator(img)):
             new_frame = io.BytesIO()
             frame.save(new_frame,format="png", bitmap_format="png")
             new_frame.seek(0)  # Reset buffer position
             core_image = CoreImage(new_frame, ext='png', filename=f"frame_{i}.png")
-            self.frames.append(Image(texture=core_image.texture))
+            self.frames.append(Image(texture=core_image.texture, fit_mode="contain"))
         self.current_image = None
         self.current_frame = 0
         mono = self.app.theme_cls.font_styles["Monospace"]["small"]

@@ -25,7 +25,6 @@ from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.floatlayout import MDFloatLayout
 from kivy.lang import Builder
-from kivy.core.window import Window
 from kivy.properties import ObjectProperty
 from kivy.uix.screenmanager import NoTransition
 from kivymd.uix.screenmanager import MDScreenManager
@@ -307,7 +306,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
     def __init__(self,**kwargs):
         super().__init__(**kwargs)
         self.game_filter = []
-        self.games_mdlist = MDList(width=260)
+        self.games_mdlist = MDList()
         # Empty = every installed game (see set_game_list).
         self.game_tag_filter = ""
         self.selected_game = ""
@@ -372,7 +371,6 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         fave_scroll = FavoritesScroll()
         self.favorites_layout = fave_scroll.favorites
         self.launcher_view.ids.title_layout.add_widget(fave_scroll)
-        fave_scroll.size = (self.launcher_view.ids.title_layout.width, dp(130))
         
         self.available_games = get_available_worlds()
         self.load_favorite_games()
@@ -387,18 +385,18 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.refresh_world_components()
 
     def _build_content(self, content_screen):
-        self.important_appbar.size_hint_x = 260/Window.width
         self.important_appbar.size_hint_y=1
-        self.launcher_view.size_hint_x = 1-(264/Window.width)
+        self.launcher_view.size_hint_x = None
         self.launcher_view.size_hint_y =1
+        content_screen.bind(width=lambda _, w: setattr(self.launcher_view, "width", w - dp(264)))
 
-        self.important_appbar.ids.scroll.scroll_wheel_distance = 40
+        self.important_appbar.ids.scroll.scroll_wheel_distance = dp(40)
         #self.important_appbar.ids.scroll.y = 82
 
         self.important_appbar.content.add_widget(self.games_mdlist)
 
         content_screen.add_widget(self.important_appbar)
-        self.launcher_view.pos_hint={"y": 0, "x": 260/Window.width}
+        self.launcher_view.pos_hint={"right": 1, "y": 0}
         content_screen.add_widget(self.launcher_view)
 
     def _build_compact_content(self, content_screen):
@@ -411,7 +409,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         play = MDScreen(name="play")
         play.add_widget(self.launcher_view)
         games = MDScreen(name="games")
-        scroll = MDScrollView(do_scroll_x=False, scroll_wheel_distance=40)
+        scroll = MDScrollView(do_scroll_x=False, scroll_wheel_distance=dp(40))
         self.games_mdlist.size_hint_x = 1
         scroll.add_widget(self.games_mdlist)
         games.add_widget(scroll)

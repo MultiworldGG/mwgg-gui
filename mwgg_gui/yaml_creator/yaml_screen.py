@@ -28,7 +28,6 @@ from typing import Optional
 
 import asynckivy
 from kivy.clock import Clock
-from kivy.core.window import Window
 from kivy.lang import Builder
 from kivy.metrics import dp
 from kivy.properties import ObjectProperty, StringProperty
@@ -163,7 +162,6 @@ class YamlScreen(InnerMDScreen):
         self._left = MDBoxLayout(
             orientation="vertical",
             size_hint=(1 if compact else 0.58, None),
-            height=self._left_height(),
             spacing=dp(6),
             # theme_bg_color = "Custom",
             # md_bg_color = self.theme_cls.surfaceContainerColor
@@ -197,11 +195,7 @@ class YamlScreen(InnerMDScreen):
         self._left.add_widget(self._header_box)
 
         # --- scroll box: pixel-sized wrapper holding the MDScrollView.
-        self._scroll_box = MDBoxLayout(
-            orientation="vertical",
-            size_hint=(1, None),
-            height=self._scroll_box_height(),
-        )
+        self._scroll_box = MDBoxLayout(orientation="vertical", size_hint=(1, None))
         self._form_scroll = MDScrollView(
             size_hint_x=1,
             do_scroll_x=False,
@@ -209,7 +203,7 @@ class YamlScreen(InnerMDScreen):
         self._scroll_box.add_widget(self._form_scroll)
         self._left.add_widget(self._scroll_box)
 
-        Window.bind(height=self._on_window_resize)
+        self._grid.bind(height=self._fit_left)
 
         self._grid.add_widget(self._left)
 
@@ -226,7 +220,7 @@ class YamlScreen(InnerMDScreen):
             self._grid.add_widget(self._preview)
 
         # Bottom action bar (plain Save / Cancel).
-        bar = MDBoxLayout(
+        self._bar = bar = MDBoxLayout(
             orientation="horizontal",
             size_hint_y=None,
             height=dp(56),
@@ -257,32 +251,17 @@ class YamlScreen(InnerMDScreen):
 
     # ----- pixel-height sizing --------------------------------------------
 
-    # Chrome (title + top + bottom bars) reserved by every screen; raw
-    # pixels, NOT dp; same constant as launcher.kv:8 and hintscreen.py:229.
-    # god I hate hardcoding. We added a height calculator but sure, whatever.
-    _CHROME_PX = 142
-
-    def _left_height(self) -> float:
-        """Total height of the _left pane: window minus chrome minus
-        the bottom action bar minus the grid's vertical padding."""
-        return max(
-            dp(180),
-            Window.height - self._CHROME_PX - dp(64) - dp(12),
-        )
-
     def _header_height(self) -> float:
         """HeaderCard height: one row, or the stacked compact layout."""
         return dp(124) if self.app.layout_mode.compact else dp(64)
 
-    def _scroll_box_height(self) -> float:
-        """Height of the scroll box: _left height minus the header box."""
-        return max(dp(120), self._left_height() - self._header_height())
-
-    def _on_window_resize(self, _window, _height):
-        if getattr(self, "_left", None) is not None:
-            self._left.height = self._left_height()
-        if getattr(self, "_scroll_box", None) is not None:
-            self._scroll_box.height = self._scroll_box_height()
+    def _fit_left(self, grid, height):
+        left = self._left
+        left.height = max(dp(180), height - grid.padding[1] - grid.padding[3])
+        self._scroll_box.height = max(
+            dp(120),
+            left.height - self._header_box.height - self._bar.height - 2 * left.spacing,
+        )
 
     # ----- mode toggle ----------------------------------------------------
 

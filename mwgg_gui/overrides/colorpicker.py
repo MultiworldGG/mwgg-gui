@@ -1,6 +1,6 @@
 __all__ = ("MWColorPicker",)
 from kivy.properties import ColorProperty, StringProperty, ObjectProperty
-from PIL import ImageGrab
+from PIL import Image
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.gridlayout import MDGridLayout
 from kivymd.uix.textfield import MDTextFieldHintText
@@ -8,7 +8,7 @@ from kivymd.uix.fitimage import FitImage
 from kivy.lang import Builder
 from kivymd.theming import ThemableBehavior
 from kivy.utils import get_hex_from_color, get_color_from_hex
-from kivy.core.window import Window
+from kivy.metrics import dp
 import os
 import re
 import logging
@@ -22,12 +22,12 @@ KV = """
     color_text: color_text
     cols: 2
     row_force_default: True
-    row_default_height: 80
+    row_default_height: dp(80)
     pos_hint: {"center_x": 0.5, "center_y": 0.5}
-    spacing: 5
+    spacing: dp(5)
     padding: 
     MDLabel:
-        width: 60
+        width: dp(60)
         size_hint_x: None
         text: "Color:"
         pos_hint: {"right": .9, "center_y": 0.5}
@@ -36,14 +36,14 @@ KV = """
             Color:
                 rgba: root.theme_cls.surfaceContainerLowestColor
             RoundedRectangle:
-                size: 160, 55
+                size: dp(160), dp(55)
                 pos: self.pos
-                radius: [5, 5, 5, 5]
+                radius: [dp(5)] * 4
         MDTextField:
             id: color_text
             size_hint_x: None
-            width: 160
-            padding: 5
+            width: dp(160)
+            padding: dp(5)
             pos_hint: {"x": 0, "y": 0}
             theme_font_name: "Custom"
             font_name: app.theme_cls.font_styles.Monospace['large']['font-name'] 
@@ -68,7 +68,7 @@ KV = """
                 bold: True
 
     Widget:
-        width: 60
+        width: dp(60)
         size_hint_x: None
         canvas.before:
             Color:
@@ -76,13 +76,13 @@ KV = """
             RoundedRectangle:
                 size: self.size
                 pos: self.pos
-                radius: [10, 10, 10, 10]
+                radius: [dp(10)] * 4
         size_hint: None, None
-        size: 50, 50
+        size: dp(50), dp(50)
     MDBoxLayout:
         orientation: "horizontal"
-        spacing: 5
-        padding: 5
+        spacing: dp(5)
+        padding: dp(5)
         pos_hint: {"center_x": 0.5, "center_y": 0.5}
         MDButton:
             id: apply_color_button
@@ -216,10 +216,11 @@ class MWColorPicker(MDBoxLayout):
         super().__init__(**kwargs)
         self.old_hex_color = old_hex_color
         self.size_hint = (1, None)
-        self.height = 250  # Set a fixed height for the color picker
+        self.height = dp(250)
         
-        # Create and configure the image
-        self.image = FitImage(source=os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "palette.png"), fit_mode='scale-down')  
+        palette = os.path.join(os.getenv("KIVY_DATA_DIR"), "images", "palette.png")
+        self.image = FitImage(source=palette, fit_mode="contain", size_hint_y=None, height=dp(228), pos_hint={"center_y": .5})
+        self._palette = Image.open(palette).convert("RGBA")
         # Create and configure the info layout
         self.info_layout = ColorInfoLayout(old_hex_color=self.old_hex_color)
         
@@ -260,25 +261,15 @@ class MWColorPicker(MDBoxLayout):
 
     def on_touch_down(self, touch):
         try:
-            # Check if touch is within the image's bounds
             if self.image.collide_point(touch.x, touch.y):
-
-                # Convert touch position to window coordinates
-                window_pos = self.to_window(touch.x, touch.y)
-                
-                # Add window location offsets
-                screen_x = Window.left + window_pos[0]
-                # Get the "inverse" position of the window because kivy is weird
-                screen_y = Window.height - window_pos[1] + Window.top 
-                
-                # Get the color at the screen coordinates
-                pixel = ImageGrab.grab(bbox=(screen_x, screen_y-1, screen_x+1, screen_y)).load()[0,0]
-            
-                # Convert to normalized color
-                color = (pixel[0]/255, pixel[1]/255, pixel[2]/255, 1)
-                
-                # Update the color
-                self.color = color
+                iw, ih = self.image.norm_image_size
+                u = (touch.x - self.image.center_x) / iw + 0.5
+                v = 0.5 - (touch.y - self.image.center_y) / ih
+                if 0 <= u < 1 and 0 <= v < 1:
+                    pw, ph = self._palette.size
+                    r, g, b, a = self._palette.getpixel((int(u * pw), int(v * ph)))
+                    if a:
+                        self.color = (r / 255, g / 255, b / 255, 1)
                 return True
             elif self.info_layout.color_text.collide_point(touch.x, touch.y):
                 super().on_touch_down(touch)

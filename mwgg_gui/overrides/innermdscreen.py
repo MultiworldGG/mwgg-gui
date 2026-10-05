@@ -22,6 +22,7 @@ from __future__ import annotations
 
 __all__ = ("InnerMDScreen",)
 
+from kivy.metrics import dp
 from kivy.properties import ObjectProperty
 from kivymd.theming import ThemableBehavior
 from kivymd.uix.boxlayout import MDBoxLayout
@@ -78,7 +79,7 @@ class InnerMDScreen(MDScreen, ThemableBehavior):
         self.content.adjust_bottom_appbar = self.adjust_bottom_appbar
         self.content._update_adjusted_height()
         if self.adjust_bottom_appbar:
-            self.content.y = 82
+            self.content.y = dp(82)
         MDScreen.add_widget(self, self.content)
 
     # ----- widget management ----------------------------------------------

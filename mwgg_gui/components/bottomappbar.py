@@ -394,7 +394,7 @@ class BottomAppBar(MDBottomAppBar):
     def on_bar_action(self, instance):
         if self.docked:
             return
-        if self.text_input.parent and self.text_input.y > -50:
+        if self.text_input.parent and self.text_input.y > -dp(50):
             self.hide_text_input()
         else:
             self.show_text_input()
@@ -413,12 +413,12 @@ class BottomAppBar(MDBottomAppBar):
         if not self.text_input.parent:
             self.add_widget(self.text_input)
 
-        self.text_input.y = -60
+        self.text_input.y = -dp(60)
         self.text_input.pos_hint = {'center_x': 0.5, 'center_y': 0.5}
         self.text_input.size_hint = (0.4, None)
 
         def animate_in(dt):
-            Animation(y=13, duration=0.2).start(self.text_input)
+            Animation(y=dp(13), duration=0.2).start(self.text_input)
 
         Clock.schedule_once(animate_in, 0.1)
         self.text_input.focus = True
@@ -427,7 +427,7 @@ class BottomAppBar(MDBottomAppBar):
         """Hide the text input with animation"""
         if self.text_input.parent and not self.docked:
             def animate_out(dt):
-                Animation(y=-60, duration=0.2).start(self.text_input)
+                Animation(y=-dp(60), duration=0.2).start(self.text_input)
                 def remove_widget(dt2):
                     if self.text_input.parent:
                         self.remove_widget(self.text_input)

@@ -26,9 +26,9 @@ Builder.load_string('''
         Color:
             rgba: 0,0,0,.3
         RoundedRectangle:
-            size: (self.width-14, self.height-14)
-            pos: (self.x+7, self.y+7)
-            radius: [15,]
+            size: (self.width-dp(14), self.height-dp(14))
+            pos: (self.x+dp(7), self.y+dp(7))
+            radius: [dp(15),]
     Label:
         text: root.text
         size: root.size
