@@ -22,8 +22,8 @@ MWKVConfig.set("graphics", "height", "699")
 # custom_titlebar only works on Windows; write "0" elsewhere to overwrite a
 # value persisted to KIVY_HOME by a previous Windows run.
 MWKVConfig.set("graphics", "custom_titlebar", "1" if sys.platform == "win32" else "0")
-MWKVConfig.set("graphics", "minimum_height", "700")
-MWKVConfig.set("graphics", "minimum_width", "600")
+MWKVConfig.set("graphics", "minimum_height", "480")
+MWKVConfig.set("graphics", "minimum_width", "400")
 MWKVConfig.set("graphics", "focus", "False")
 MWKVConfig.write()
 

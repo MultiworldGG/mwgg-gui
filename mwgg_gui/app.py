@@ -231,6 +231,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         self.layout_mode = get_layout_mode()
         self.layout_mode.compact = read_compact_mode(self.app_config)
         if type(self)._active_instance is self:
+            self.layout_mode.fit_display()
             self.layout_mode.apply_window_geometry()
 
         self.ctx = ctx

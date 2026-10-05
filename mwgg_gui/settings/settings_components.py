@@ -31,7 +31,7 @@ from kivymd.uix.snackbar import MDSnackbar, MDSnackbarText
 from kivymd.uix.selectioncontrol import MDCheckbox
 
 from mwgg_gui.components.mw_theme import THEME_OPTIONS, DEFAULT_TEXT_COLORS, RegisterFonts
-from mwgg_gui.components.layout_mode import read_compact_mode
+from mwgg_gui.components.layout_mode import read_compact_mode, window_geometry
 from mwgg_gui.components.module_launch import (
     PATCH_CLIENT_LABELS, patch_client_type_from_label, read_patch_client_type)
 from mwgg_gui.constants import ROLE_LAUNCHER
@@ -987,12 +987,23 @@ class InterfaceSettings(SettingsScrollBox):
         
         # Layout section
         layout_section = SettingsSection(name="layout_settings", title="Layout")
+        layout_mode = self.app.layout_mode
         layout_section.add_widget(LabeledSwitch(
             text="Compact Mode",
             theme_text_color="Secondary",
-            active=read_compact_mode(self.app.app_config),
-            on_switch=self.toggle_compact_mode
+            active=layout_mode.forced or read_compact_mode(self.app.app_config),
+            on_switch=self.toggle_compact_mode,
+            disabled=layout_mode.forced
         ))
+        if layout_mode.forced:
+            layout_section.add_widget(MDLabel(
+                text="Forced: this display offers {:.0f}x{:.0f}; desktop needs {}x{}".format(
+                    *layout_mode.work_area, *window_geometry(False)[1]),
+                font_style="Body",
+                role="small",
+                theme_text_color="Secondary",
+                adaptive_height=True
+            ))
         layout_section.add_widget(LabeledSwitch(
             text="All Players Chat",
             theme_text_color="Secondary",
