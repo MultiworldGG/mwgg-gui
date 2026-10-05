@@ -978,10 +978,13 @@ class InterfaceSettings(SettingsScrollBox):
         
         # Display section
         display_section = SettingsSection(name="display_settings", title="Display")
+        fullscreen = MWKVConfig.get('graphics', 'fullscreen', fallback='0')
         display_section.add_widget(LabeledSwitch(
             text="Fullscreen",
             theme_text_color="Secondary",
-            active=MWKVConfig.getboolean('graphics', 'fullscreen'),
+            # Parsed like Kivy's Window does: "auto" and "fake" are fullscreen
+            # modes that getboolean() would reject.
+            active=fullscreen in ('auto', 'fake') or fullscreen.lower() in ('true', '1', 'yes'),
             on_switch=self.toggle_fullscreen
         ))
         
