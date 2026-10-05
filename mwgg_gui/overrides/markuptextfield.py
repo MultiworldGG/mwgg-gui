@@ -403,9 +403,6 @@ class MarkupTextField(MarkupTextFieldHoverBehavior, TextInput, ThemableBehavior)
 
     def _refresh_text(self, text, *largs):
         """Override to update plain text lines when text is refreshed"""
-        # Check if our tokenizer made the lines empty.
-        if text == '':
-            return
         if len(largs) <= 1:
             self._carried_tags = []  # full rebuild: nothing carries in from a previous pass
         super(MarkupTextField, self)._refresh_text(text, *largs)
