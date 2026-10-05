@@ -78,10 +78,11 @@ from kivymd.uix.dialog import MDDialog
 from mwgg_gui.components.safe_effect_widget import SafeEffectWidget
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.divider import MDDivider
+from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 
 from NetUtils import KivyMarkupJSONtoTextParser, JSONMessagePart, SlotType, HintStatus, MWGGUIHintStatus
-from Utils import persistent_load
+from Utils import persistent_load, format_SI_prefix
 # from Utils import async_start, get_input_text_from_response
 from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
@@ -1551,13 +1552,20 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
                     if hasattr(self.ui_player_data[slot], item):
                         setattr(self.ui_player_data[slot], item, data)
 
-    # def enable_energy_link(self):
-    #     if not hasattr(self, "energy_link_label"):
-    #         self.energy_link_label = self.top_appbar_layout.top_appbar.energy_link_label
+    def enable_energy_link(self) -> None:
+        """Per-world hook (kvui.GameManager API): an EnergyLink label in the
+        connect bar. Worlds may retitle it through `energy_link_label`."""
+        live = self._resolve_live_app()
+        if "energy_link_label" not in vars(live):
+            live.energy_link_label = MDLabel(text="Energy Link: Standby", size_hint_x=None,
+                                             width=150, halign="center")
+            live.connect_layout.add_widget(live.energy_link_label)
 
-    # def set_new_energy_link_value(self):
-    #     if hasattr(self.top_appbar_layout.top_appbar, "energy_link_label"):
-    #         self.top_appbar_layout.top_appbar.set_energy_link_value(self.ctx.current_energy_link_value)
+    def set_new_energy_link_value(self) -> None:
+        """FrontendProtocol: show the pool CommonClient stored from the EnergyLink SetReply."""
+        live = self._resolve_live_app()
+        if "energy_link_label" in vars(live):
+            live.energy_link_label.text = f"EL: {format_SI_prefix(live.ctx.current_energy_link_value)}J"
 
     @property
     def logo_png(self):
