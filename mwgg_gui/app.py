@@ -15,14 +15,6 @@ from collections import deque
 # if "pytest" not in sys.modules and "unittest" not in sys.modules and "test" not in sys.argv[0]:
 #     assert "kivy" not in sys.modules, "gui needs instansiation first"
 
-if sys.platform == "win32":
-    import ctypes
-
-    # kivy 2.2.0 introduced DPI awareness on Windows, but it makes the UI enter an infinitely recursive re-layout
-    # by setting the application to not DPI Aware, Windows handles scaling the entire window on its own, ignoring kivy's
-
-    #windll.user32.SetProcessDpiAwarenessContext(c_int64(-4))
-
 # from CommonClient import console_loop
 # from MultiServer import console
 # apname = "Archipelago" if not Utils.archipelago_name else Utils.archipelago_name
@@ -66,31 +58,6 @@ if sys.platform == "win32":
         return _orig_create_window(self, *largs)
 
     _WindowSDL.create_window = _create_window_borderless_titlebar
-
-    # Re-arm the NULL-hwnd hook on the real SDL window so its WM_DPICHANGED
-    # (per-monitor DPI) handling works.
-    def _rearm_dpi_watch_on_sdl_hwnd() -> None:
-        watch = getattr(Window, "_win_dpi_watch", None)
-        if watch is None:
-            return
-        try:
-            sdl_hwnd = Window._win.get_window_info().window
-        except Exception:
-            logging.getLogger("Client").warning(
-                "Could not resolve SDL window handle; DPI-change handling disabled",
-                exc_info=True)
-            return
-        if watch.hwnd == sdl_hwnd:
-            return
-        from kivy.input.providers.wm_common import WNDPROC, \
-            SetWindowLong_WndProc_wrapper
-        watch.stop()
-        watch.hwnd = sdl_hwnd
-        watch.new_windProc = WNDPROC(watch._wnd_proc)
-        watch.old_windProc = SetWindowLong_WndProc_wrapper(
-            watch.hwnd, watch.new_windProc)
-
-    _rearm_dpi_watch_on_sdl_hwnd()
 else:
     Window.clearcolor = [0, 0, 0, 1]
 # Window title is set via MultiMDApp.title -- Kivy's App.run() applies that
@@ -263,6 +230,8 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
 
         self.layout_mode = get_layout_mode()
         self.layout_mode.compact = read_compact_mode(self.app_config)
+        if type(self)._active_instance is self:
+            self.layout_mode.apply_window_geometry()
 
         self.ctx = ctx
         self.commandprocessor = self.ctx.command_processor(self.ctx)

@@ -17,7 +17,7 @@ from kivy.event import EventDispatcher
 from kivy.metrics import dp
 from kivy.properties import AliasProperty, BooleanProperty, NumericProperty
 
-# (size, minimum size) per mode. The desktop values match the historical
+# (size, minimum size) per mode, in dp. The desktop values match the historical
 # post-splash resize and the graphics config minimums.
 _WINDOW_GEOMETRY = {
     False: ((1100, 700), (600, 700)),
@@ -38,6 +38,11 @@ def window_geometry(compact: bool) -> tuple[tuple[int, int], tuple[int, int]]:
     return _WINDOW_GEOMETRY[bool(compact)]
 
 
+def _window_units(value: float) -> int:
+    """dp to SDL window units (Windows: pixels, macOS: points)."""
+    return round(dp(value) / Window._density)
+
+
 class LayoutMode(EventDispatcher):
     compact = BooleanProperty(False)
     # Height the bottom bar's permanently docked text input adds above the
@@ -52,11 +57,11 @@ class LayoutMode(EventDispatcher):
 
     def apply_window_geometry(self) -> None:
         size, minimum = window_geometry(self.compact)
-        Window.size = size
-        Window.minimum_width, Window.minimum_height = minimum
+        Window.size = tuple(map(_window_units, size))
+        Window.minimum_width, Window.minimum_height = map(_window_units, minimum)
         # On win32 Window.width/height read the GL surface, which SDL resizes
-        # only after the property observers already ran, so kv bindings such
-        # as `Window.height-103` keep the old value; re-dispatch next frame.
+        # only after the property observers already ran, so kv bindings on
+        # `Window.height` keep the old value; re-dispatch next frame.
         Clock.schedule_once(lambda dt: Window.property("_size").dispatch(Window), 0)
 
 
