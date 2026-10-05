@@ -148,3 +148,15 @@ def test_sdl_failure_logs_unknowns(pacing):
         "FramePacing: swap interval ?, display ? Hz, vsync '', maxfps 60, "
         "clock 77.0 fps, 60.0 flips/s"
     ]
+
+
+def test_idle_window_is_flagged(pacing):
+    pacing.module.schedule_frame_pacing_log(at=10, span=2)
+    pacing.clock.run(8.0)
+    pacing.window.flip(4)
+    pacing.clock.run(10.0)
+
+    assert pacing.logger.lines == [
+        "FramePacing: swap interval 1, display 60 Hz, vsync '', maxfps 60, "
+        "clock 77.0 fps, 2.0 flips/s (too few redraws to judge vsync)"
+    ]

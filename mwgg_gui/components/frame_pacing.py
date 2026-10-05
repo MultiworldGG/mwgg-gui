@@ -44,8 +44,10 @@ def _sdl_pacing() -> tuple[int | str, int | str]:
 
 def schedule_frame_pacing_log(at: float = 10, span: float = 2) -> None:
     """Log frame pacing once, `at` s from now, with flips counted over the
-    `span` s before it. Clock fps counts loop passes, flips/s counts swaps.
-    The window must clear the ~4.5 s of launcher startup stalls after on_start."""
+    `span` s before it. Clock fps counts loop passes, flips/s counts swaps;
+    ticks that skip the redraw never wait on vsync, so an idle window cannot
+    show it. The window must clear the ~4.5 s of launcher startup stalls after
+    on_start."""
     flips = 0
 
     def count(*_):
@@ -55,11 +57,13 @@ def schedule_frame_pacing_log(at: float = 10, span: float = 2) -> None:
     def report(start, _dt):
         Window.unbind(on_flip=count)
         interval, refresh = _sdl_pacing()
+        fps = Clock.get_fps()
+        flip_rate = flips / (Clock.get_time() - start)
         Logger.info(
             "FramePacing: swap interval %s, display %s Hz, vsync %r, maxfps %s, "
-            "clock %.1f fps, %.1f flips/s",
+            "clock %.1f fps, %.1f flips/s%s",
             interval, refresh, Config.get("graphics", "vsync"), Config.get("graphics", "maxfps"),
-            Clock.get_fps(), flips / (Clock.get_time() - start))
+            fps, flip_rate, " (too few redraws to judge vsync)" if flip_rate < fps / 2 else "")
 
     def begin(_dt):
         Window.bind(on_flip=count)
