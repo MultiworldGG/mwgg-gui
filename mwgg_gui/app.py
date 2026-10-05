@@ -86,6 +86,7 @@ from Utils import persistent_load
 from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
 from mwgg_gui.components.layout_mode import get_layout_mode, read_compact_mode
+from mwgg_gui.components.frame_pacing import schedule_frame_pacing_log
 from mwgg_gui.components.live_forwarding import LiveForwarding
 from mwgg_gui.components.admin_commands import QuietAdminPolls
 from mwgg_gui.components.client_status import client_status_keys, apply_client_status
@@ -398,6 +399,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
 
         super().on_start()
         Clock.schedule_once(on_start)
+        schedule_frame_pacing_log()
         # Terminate the splash screen after the UI is fully initialized
         Clock.schedule_once(lambda dt: self.terminate_splash_screen_wrapper())
 
