@@ -49,6 +49,8 @@ MWKVConfig.setdefaults("graphics", {
     "show_taskbar_icon": "1",
     "show_cursor": "1",
     "fullscreen": "0",
+    # components/flip_sync; the NVIDIA vsync stall it works around is Windows-only.
+    "sync_after_flip": "1" if sys.platform == "win32" else "0",
 })
 # The Clock reads maxfps once, at import. 0 is an uncapped busy loop, and
 # Kivy's F1 settings panel can save 0 or a non-integer.

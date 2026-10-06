@@ -1,8 +1,8 @@
 """Frame pacing log line (components/frame_pacing.py).
 
-frame_pacing.py imports Kivy and layout_mode at module level, so it is loaded
-by file path with those imports stubbed; the tests drive the scheduled
-callbacks by hand.
+frame_pacing.py imports Kivy, flip_sync and layout_mode at module level, so it
+is loaded by file path with those imports stubbed; the tests drive the
+scheduled callbacks by hand.
 """
 from __future__ import annotations
 
@@ -96,6 +96,8 @@ def pacing():
         "kivy.logger": _stub("kivy.logger", Logger=logger),
         "mwgg_gui": _stub("mwgg_gui"),
         "mwgg_gui.components": _stub("mwgg_gui.components"),
+        "mwgg_gui.components.flip_sync": _stub(
+            "mwgg_gui.components.flip_sync", flip_sync_state=lambda: "on"),
         "mwgg_gui.components.layout_mode": _stub(
             "mwgg_gui.components.layout_mode", _loaded_sdl=_sdl),
     }
@@ -130,7 +132,7 @@ def test_logs_once_with_flip_rate_over_the_window(pacing):
     assert pacing.clock.scheduled == []
     assert pacing.logger.lines == [
         "FramePacing: swap interval 1, display 144 Hz, vsync '', maxfps 60, "
-        "clock 77.0 fps, 60.0 flips/s"
+        "clock 77.0 fps, 60.0 flips/s, flip sync on"
     ]
 
 
@@ -140,13 +142,15 @@ def test_sdl_failure_logs_unknowns(pacing):
 
     pacing.module._loaded_sdl = no_sdl
     pacing.module.schedule_frame_pacing_log(at=5, span=1)
+    # Read when the line is logged, after install_flip_sync's first flip.
+    pacing.module.flip_sync_state = lambda: "unavailable (GL lookup failed: OSError())"
     pacing.clock.run(4.0)
     pacing.window.flip(60)
     pacing.clock.run(5.0)
 
     assert pacing.logger.lines == [
         "FramePacing: swap interval ?, display ? Hz, vsync '', maxfps 60, "
-        "clock 77.0 fps, 60.0 flips/s"
+        "clock 77.0 fps, 60.0 flips/s, flip sync unavailable (GL lookup failed: OSError())"
     ]
 
 
@@ -158,5 +162,5 @@ def test_idle_window_is_flagged(pacing):
 
     assert pacing.logger.lines == [
         "FramePacing: swap interval 1, display 60 Hz, vsync '', maxfps 60, "
-        "clock 77.0 fps, 2.0 flips/s (too few redraws to judge vsync)"
+        "clock 77.0 fps, 2.0 flips/s (too few redraws to judge vsync), flip sync on"
     ]
