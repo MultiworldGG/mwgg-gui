@@ -3,6 +3,13 @@ from __future__ import annotations
 import os
 import sys
 
+from BaseUtils import local_path, write_path
+
+# Must precede the first kivy import: Kivy reads KIVY_HOME once and falls back to ~/.kivy.
+os.environ.setdefault("KIVY_DATA_DIR", local_path("kivy", "data"))
+os.environ.setdefault("KIVY_HOME", write_path("data"))
+os.makedirs(os.environ["KIVY_HOME"], exist_ok=True)
+
 # kivy.core modules apply Config at import time (core.text registers the
 # default font, core.window sizes/styles the window), so these must be set
 # before ANY kivy.core import below. Setting them later only reaches the
