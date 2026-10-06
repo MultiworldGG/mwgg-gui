@@ -78,10 +78,11 @@ from kivymd.uix.dialog import MDDialog
 from mwgg_gui.components.safe_effect_widget import SafeEffectWidget
 from kivymd.uix.textfield import MDTextField
 from kivymd.uix.divider import MDDivider
+from kivymd.uix.label import MDLabel
 from kivymd.uix.screen import MDScreen
 
 from NetUtils import KivyMarkupJSONtoTextParser, JSONMessagePart, SlotType, HintStatus, MWGGUIHintStatus
-from Utils import persistent_load
+from Utils import persistent_load, format_SI_prefix
 # from Utils import async_start, get_input_text_from_response
 from mwgg_gui.constants import ROLE_LAUNCHER, ROLE_CLIENT
 from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
@@ -102,6 +103,7 @@ from mwgg_gui.components.tour_overlay import TourOverlay
 from mwgg_gui.components.onboarding import TOURS, tour_pending, mark_tour_done
 from mwgg_gui.components.bottomappbar import BottomAppBar, BottomBarTextInput
 from mwgg_gui.components.bottom_nav import ClientTab, nav_entries, world_component_icon
+from mwgg_gui.components.connect_layout import ConnectLayout
 from mwgg_gui.components.module_launch import (
     launch_status_lines, launch_failure_dialog, read_patch_client_type, spawn_launcher)
 from mwgg_gui.components.guidataclasses import UIPlayerData, UIHint, MarkupPair
@@ -270,6 +272,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         # builtin slots.
         self._bottom_bars: weakref.WeakSet[BottomAppBar] = weakref.WeakSet()
         self._client_tabs: list[ClientTab] = []
+        self._connect_layout: ConnectLayout | None = None
         # Latest `players` / `options` payloads from admin replies, so an
         # Admin screen built later starts populated.
         self._admin_snapshot: dict = {}
@@ -773,6 +776,23 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         returned by `add_client_tab`."""
         self.remove_custom_screen(tab)
 
+    @property
+    def connect_layout(self) -> ConnectLayout:
+        """Per-world hook (kvui.GameManager API): the connect bar worlds add
+        status widgets to (see components/connect_layout)."""
+        live = self._resolve_live_app()
+        if live._connect_layout is None:
+            live._connect_layout = ConnectLayout()
+            live._host_connect_layout()
+        return live._connect_layout
+
+    def _host_connect_layout(self) -> None:
+        """Move the connect layout to the current screen's bottom bar; screens
+        without one (Settings) leave it where it was."""
+        bar = getattr(self.screen_manager.current_screen, "bottom_appbar", None)
+        if self._connect_layout is not None and bar is not None:
+            bar.host_connect_layout(self._connect_layout)
+
     def create_custom_screen(self, title: str, content=None, index: int = -1):
         """Two call shapes coexist here:
 
@@ -1121,6 +1141,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             self._screen_before_settings = name
         for bar in list(self._bottom_bars):
             bar.set_current(name)
+        self._host_connect_layout()
 
     def leave_settings(self) -> None:
         target = self._screen_before_settings
@@ -1531,13 +1552,20 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
                     if hasattr(self.ui_player_data[slot], item):
                         setattr(self.ui_player_data[slot], item, data)
 
-    # def enable_energy_link(self):
-    #     if not hasattr(self, "energy_link_label"):
-    #         self.energy_link_label = self.top_appbar_layout.top_appbar.energy_link_label
+    def enable_energy_link(self) -> None:
+        """Per-world hook (kvui.GameManager API): an EnergyLink label in the
+        connect bar. Worlds may retitle it through `energy_link_label`."""
+        live = self._resolve_live_app()
+        if "energy_link_label" not in vars(live):
+            live.energy_link_label = MDLabel(text="Energy Link: Standby", size_hint_x=None,
+                                             width=150, halign="center")
+            live.connect_layout.add_widget(live.energy_link_label)
 
-    # def set_new_energy_link_value(self):
-    #     if hasattr(self.top_appbar_layout.top_appbar, "energy_link_label"):
-    #         self.top_appbar_layout.top_appbar.set_energy_link_value(self.ctx.current_energy_link_value)
+    def set_new_energy_link_value(self) -> None:
+        """FrontendProtocol: show the pool CommonClient stored from the EnergyLink SetReply."""
+        live = self._resolve_live_app()
+        if "energy_link_label" in vars(live):
+            live.energy_link_label.text = f"EL: {format_SI_prefix(live.ctx.current_energy_link_value)}J"
 
     @property
     def logo_png(self):

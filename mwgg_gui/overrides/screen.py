@@ -26,7 +26,7 @@ from mwgg_gui.components.mw_theme import AutoAdjustHeightBehavior
 Builder.load_string('''
 <CustomLayout>:
     id: custom_layout
-    pos: 0, dp(82) + app.layout_mode.docked_input
+    pos: 0, dp(82) + app.layout_mode.connect_bar_height
 ''')
 
 class CustomLayout(AutoAdjustHeightBehavior, MDRelativeLayout):
