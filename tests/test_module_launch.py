@@ -99,3 +99,46 @@ def test_spawn_launcher_runs_the_client_exe_detached(module_launch, monkeypatch)
     assert kwargs["start_new_session"] is True
     assert "MWGG_ROLE" not in kwargs["env"]
     assert "MWGG_GAME" not in kwargs["env"]
+
+
+@pytest.fixture
+def drop_core(monkeypatch):
+    """Stub the core lookups dropped_patch_route uses: patch manifests by path, an
+    index by game name, and custom worlds that only register on a rescan."""
+    state = {"manifests": {}, "index": {"Paper Mario": "papermario"}, "custom": {}, "rescans": 0}
+
+    def register_custom_worlds():
+        state["rescans"] += 1
+        state["index"].update(state["custom"])
+
+    utils = types.ModuleType("Utils")
+    utils.read_patch_game_name = state["manifests"].get
+    utils.register_custom_worlds = register_custom_worlds
+    igdb = types.ModuleType("mwgg_igdb")
+    igdb.GameIndex = types.SimpleNamespace(get_module_for_game=lambda game: state["index"].get(game))
+    monkeypatch.setitem(sys.modules, "Utils", utils)
+    monkeypatch.setitem(sys.modules, "mwgg_igdb", igdb)
+    return state
+
+
+def test_dropped_non_patch_has_no_route(module_launch, drop_core):
+    assert module_launch.dropped_patch_route("C:/Downloads/notes.txt") == (None, None)
+    assert drop_core["rescans"] == 0
+
+
+def test_dropped_patch_routes_by_manifest_not_suffix(module_launch, drop_core):
+    drop_core["manifests"]["C:/Downloads/MW_P1.unregistered"] = "Paper Mario"
+    assert module_launch.dropped_patch_route("C:/Downloads/MW_P1.unregistered") == ("Paper Mario", "papermario")
+    assert drop_core["rescans"] == 0
+
+
+def test_dropped_patch_rescans_custom_worlds_added_after_boot(module_launch, drop_core):
+    drop_core["manifests"]["C:/Downloads/MW_P1.apnew"] = "New Game"
+    drop_core["custom"]["New Game"] = "new_game"
+    assert module_launch.dropped_patch_route("C:/Downloads/MW_P1.apnew") == ("New Game", "new_game")
+    assert drop_core["rescans"] == 1
+
+
+def test_dropped_patch_for_unknown_game_has_no_module(module_launch, drop_core):
+    drop_core["manifests"]["C:/Downloads/MW_P1.apnew"] = "New Game"
+    assert module_launch.dropped_patch_route("C:/Downloads/MW_P1.apnew") == ("New Game", None)

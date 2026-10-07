@@ -69,6 +69,7 @@ from mwgg_gui.components.nav_drawer import NavDrawerMenu, NavDrawerLabel
 from mwgg_gui.launcher.launcher_sliver_appbar import LauncherSliverAppbar, SearchBar
 from mwgg_gui.launcher.launcher_favorite_bar import FavoritesScroll, Favorite
 from mwgg_gui.components.dialog import MessageBox
+from mwgg_gui.components.module_launch import dropped_patch_route
 from mwgg_gui.launcher.manual_games import manual_launch_block
 from mwgg_gui.launcher.setup_guide import (extract_bundled_setup_doc,
                                            open_with_desktop,
@@ -1802,6 +1803,41 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
         self._persist_last_connect(host_port, slot_name)
         self._check_spawn_health(process, "Text Client")
+
+    def open_dropped_file(self, path: str) -> None:
+        """Launch a patch dropped on the window the way a double-click does: in
+        its own client process, with the Settings patch client type."""
+        from BaseUtils import spawn_client
+
+        logger.info(f"File dropped on the launcher: {path}")
+        name = os.path.basename(path)
+        try:
+            game, module = dropped_patch_route(path)
+        except Exception as e:
+            logger.exception(f"Could not read dropped file {path}")
+            MessageBox("Not a Patch File", f"{name} could not be read as a patch file: {e}",
+                       is_error=True).open()
+            return
+        if game is None:
+            MessageBox("Not a Patch File",
+                       f"{name} is not a patch file. Drop the patch from your room page or host.",
+                       is_error=True).open()
+            return
+        if module is None:
+            MessageBox("Unknown Game",
+                       f"No installed or indexed world handles {game}, needed for {name}.",
+                       is_error=True).open()
+            return
+
+        try:
+            process = spawn_client(launch_file=path, client_type=self.app.patch_client_type())
+        except Exception as e:
+            logger.error(f"Failed to launch {game}: {e}")
+            MessageBox("Launch Error", f"Failed to launch {game}: {str(e)}", is_error=True).open()
+            return
+
+        self.show_snackbar(f"Opening {name}...")
+        self._check_spawn_health(process, game)
 
     def _check_spawn_health(self, process: subprocess.Popen, game_label: str, on_settle=None) -> None:
         """~3s after spawning, check whether the child exited immediately
