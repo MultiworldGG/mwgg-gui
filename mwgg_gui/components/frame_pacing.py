@@ -14,6 +14,7 @@ from kivy.config import Config
 from kivy.core.window import Window
 from kivy.logger import Logger
 
+from mwgg_gui.components.flip_sync import flip_sync_state
 from mwgg_gui.components.layout_mode import _loaded_sdl
 
 
@@ -61,9 +62,10 @@ def schedule_frame_pacing_log(at: float = 10, span: float = 2) -> None:
         flip_rate = flips / (Clock.get_time() - start)
         Logger.info(
             "FramePacing: swap interval %s, display %s Hz, vsync %r, maxfps %s, "
-            "clock %.1f fps, %.1f flips/s%s",
+            "clock %.1f fps, %.1f flips/s%s, flip sync %s",
             interval, refresh, Config.get("graphics", "vsync"), Config.get("graphics", "maxfps"),
-            fps, flip_rate, " (too few redraws to judge vsync)" if flip_rate < fps / 2 else "")
+            fps, flip_rate, " (too few redraws to judge vsync)" if flip_rate < fps / 2 else "",
+            flip_sync_state())
 
     def begin(_dt):
         Window.bind(on_flip=count)
