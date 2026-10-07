@@ -364,6 +364,10 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
                 return "QOTD for " + datetime.now(UTC).strftime("%m/%d/%Y") + ": " + todays_qotd
         return "Blame TreZ"
 
+    def _on_drop_file(self, _window, filename: bytes, *_args) -> None:
+        """Kivy fires once per file dropped on the launcher window."""
+        self.launcher_screen.open_dropped_file(os.fsdecode(filename))
+
     def on_start(self):
         """Set up additional build necessities that
         cannot be done in the constructor"""
@@ -380,6 +384,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             self.change_screen("console")
         else:
             self.change_screen("launcher")
+            Window.bind(on_drop_file=self._on_drop_file)
 
         def on_start(*args):
             self.root.md_bg_color = self.theme_cls.surfaceColor

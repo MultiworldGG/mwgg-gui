@@ -15,6 +15,7 @@ __all__ = (
     "launch_failure_dialog",
     "launcher_env",
     "spawn_launcher",
+    "dropped_patch_route",
 )
 
 import os
@@ -80,3 +81,21 @@ def spawn_launcher() -> subprocess.Popen:
     from BaseUtils import get_client_exe, _detached_popen_kwargs
     return subprocess.Popen(list(get_client_exe()), env=launcher_env(os.environ),
                             **_detached_popen_kwargs())
+
+
+def dropped_patch_route(path: str) -> tuple[str | None, str | None]:
+    """(game, module) for a dropped file, routed by the container's archipelago.json,
+    never its suffix. game is None for a non-patch file; module is None when no
+    installed, indexed or custom world handles the game."""
+    from Utils import read_patch_game_name, register_custom_worlds
+    from mwgg_igdb import GameIndex
+
+    game = read_patch_game_name(path)
+    if not game:
+        return None, None
+    module = GameIndex.get_module_for_game(game)
+    if module is None:
+        # custom_worlds is scanned once at boot; pick up apworlds added since.
+        register_custom_worlds()
+        module = GameIndex.get_module_for_game(game)
+    return game, module
