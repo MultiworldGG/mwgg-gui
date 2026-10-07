@@ -1,9 +1,10 @@
 """
 Moves the vsync wait off the GIL (kivy/kivy#9411). Kivy releases the GIL only
-around the buffer swap, but NVIDIA's Windows driver returns from the swap at
-once and stalls the next frame's first GL call, made with the GIL held, until
-vblank. After each swap this clears and finishes through ctypes, which releases
-the GIL for each call, so the wait lands there. Config graphics.sync_after_flip.
+around the buffer swap, but drivers (NVIDIA's among them) may return from the
+swap at once and stall the next frame's first GL call, made with the GIL held,
+until vblank. vsync defaults to 0, but a driver setting can force it on. After
+each swap this clears and finishes through ctypes, which releases the GIL for
+each call, so the wait lands there. Config graphics.sync_after_flip.
 """
 from __future__ import annotations
 
@@ -18,7 +19,6 @@ from kivy.config import Config
 from kivy.core.window import Window
 from kivy.core.window.window_sdl2 import WindowSDL
 from kivy.graphics.cgl import cgl_get_initialized_backend_name
-from kivy.graphics.opengl import GL_VENDOR, glGetString
 from kivy.logger import Logger
 
 from mwgg_gui.components.layout_mode import _loaded_sdl
@@ -73,8 +73,7 @@ def _disable(reason: str) -> None:
 
 def install_flip_sync() -> None:
     """Patch WindowSDL.flip once, when graphics.sync_after_flip is on and the
-    window has an NVIDIA desktop GL context; the GL functions resolve on the
-    first flip."""
+    window has a desktop GL context; the GL functions resolve on the first flip."""
     global _state
     if _state != "off" or not _sync_enabled() or not isinstance(Window, WindowSDL):
         return
@@ -83,10 +82,6 @@ def install_flip_sync() -> None:
         return
     if backend == "angle_sdl2":
         _state = "unavailable (ANGLE renders through Direct3D)"
-        return
-    vendor = glGetString(GL_VENDOR)
-    if not vendor.startswith(b"NVIDIA"):  # AMD and Intel wait inside the swap
-        _state = f"unavailable (GL vendor {vendor.decode(errors='replace')})"
         return
     original = WindowSDL.flip
     gl = None
