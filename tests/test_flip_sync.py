@@ -2,7 +2,7 @@
 
 flip_sync.py imports Kivy and layout_mode at module level, so it is loaded by
 file path with those imports stubbed; the `env` fixture then swaps in a fake
-window, config, GL backend, GL vendor and GL functions. The last test makes
+window, config, GL backend and GL functions. The last test makes
 real blocking C calls through the module's own prototype to check the GIL is
 released.
 """
@@ -41,7 +41,6 @@ def flip_sync():
         "kivy.core.window.window_sdl2": _stub("kivy.core.window.window_sdl2", WindowSDL=None),
         "kivy.graphics": _stub("kivy.graphics"),
         "kivy.graphics.cgl": _stub("kivy.graphics.cgl", cgl_get_initialized_backend_name=None),
-        "kivy.graphics.opengl": _stub("kivy.graphics.opengl", GL_VENDOR=0x1F00, glGetString=None),
         "kivy.logger": _stub("kivy.logger", Logger=None),
         "mwgg_gui": _stub("mwgg_gui"),
         "mwgg_gui.components": _stub("mwgg_gui.components"),
@@ -64,9 +63,9 @@ def flip_sync():
 
 @pytest.fixture
 def env(flip_sync):
-    """An SDL window on Linux with NVIDIA's sdl2 GL backend; `calls` logs swaps and GL calls."""
+    """An SDL window on Linux with the sdl2 GL backend; `calls` logs swaps and GL calls."""
     env = types.SimpleNamespace(
-        module=flip_sync, backend="sdl2", vendor=b"NVIDIA Corporation",
+        module=flip_sync, backend="sdl2",
         calls=[], lookups=[], wrapped=[], warnings=[],
         addresses={b"glClear": _CLEAR, b"glFinish": _FINISH}, failing={})
 
@@ -95,7 +94,6 @@ def env(flip_sync):
     flip_sync.Config = env.config
     flip_sync.Window, flip_sync.WindowSDL = env.window, WindowSDL
     flip_sync.cgl_get_initialized_backend_name = lambda: env.backend
-    flip_sync.glGetString = lambda name: env.vendor
     flip_sync.Logger = types.SimpleNamespace(warning=lambda msg, *args: env.warnings.append(msg % args))
     flip_sync._loaded_sdl = lambda: types.SimpleNamespace(SDL_GL_GetProcAddress=get_proc_address)
     flip_sync._gl_function = gl_function
@@ -173,16 +171,12 @@ def test_windows_takes_gl_from_opengl32_exports(env, monkeypatch, backend):
     assert env.wrapped == [(_CLEAR, (ctypes.c_uint,)), (_FINISH, ())]
 
 
-@pytest.mark.parametrize("backend, vendor, reason", [
-    ("angle_sdl2", b"NVIDIA Corporation", "ANGLE renders through Direct3D"),
-    ("glew", b"ATI Technologies Inc.", "GL vendor ATI Technologies Inc."),
-])
-def test_angle_and_other_gl_vendors_are_reported_unavailable(env, backend, vendor, reason):
+def test_angle_is_reported_unavailable(env):
     original = env.WindowSDL.flip
-    env.module.sys.platform, env.backend, env.vendor = "win32", backend, vendor
+    env.module.sys.platform, env.backend = "win32", "angle_sdl2"
     env.module.install_flip_sync()
     assert env.WindowSDL.flip is original
-    assert env.module.flip_sync_state() == f"unavailable ({reason})"
+    assert env.module.flip_sync_state() == "unavailable (ANGLE renders through Direct3D)"
 
 
 def _lookup_null(env):
