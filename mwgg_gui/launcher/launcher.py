@@ -20,7 +20,7 @@ __all__ = ('LauncherScreen',
 import asynckivy
 from kivy.clock import Clock
 from kivy.metrics import dp
-from kivy.properties import StringProperty, ObjectProperty, ListProperty, ColorProperty
+from kivy.properties import StringProperty, ObjectProperty, ListProperty, ColorProperty, BooleanProperty
 from kivymd.uix.screen import MDScreen
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.floatlayout import MDFloatLayout
@@ -151,6 +151,7 @@ class LauncherViewBase(MDBoxLayout):
     server_layout: ObjectProperty
     title_layout: ObjectProperty
     fallback_status = StringProperty(_NO_GAME_STATUS)
+    has_favorites = BooleanProperty(False)
 
 class LauncherView(LauncherViewBase):
     pass
@@ -443,7 +444,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             top = header.to_window(*header.pos)[1]
             return [(x, y, scroll.width, max(top - y, 0))]
         if key == "favorites":
-            return [ids.title_layout]
+            return [ids.title_layout] if self.launcher_view.has_favorites else []
         if key == "client_type":
             return [ids.client_type_row]
         if key == "connection":
@@ -695,6 +696,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         except (KeyError):
             self.favorite_games = []
             self.saved_games = []
+        # Sized now: populate_favorites runs after the launcher is already on screen.
+        self.launcher_view.has_favorites = bool(self.favorite_games)
         logger.debug(f"Loaded {len(self.favorite_games)} favorite games")
 
 #####################FAVORITES#############################
@@ -716,13 +719,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         """Populate the favorites with favorite games"""
         try:
             self.favorites_layout.clear_widgets()
-            
-            if not self.favorite_games and not game_module:
-                # Add a placeholder item when no favorites
-                placeholder = Favorite(game_name="", game_module="")
-                self.favorites_layout.add_widget(placeholder)
-                return
-            
+
             for name in self.favorite_games:
 
                 try:
@@ -737,6 +734,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
                     
         except Exception as e:
             logger.error(f"Failed to populate favorites tabs: {e}")
+        # Collapses the bar; modules missing from the index render no tile.
+        self.launcher_view.has_favorites = bool(self.favorites_layout.children)
 
     def add_to_favorite_bar(self, module_name: str):
         """Add a game to favorites"""
