@@ -277,13 +277,7 @@ class DefaultTheme(ThemableBehavior):
         return self.markup_tags_theme.load_color(self.app_config, color_name, default_value, theme_style_index)
 
     def apply_text_colors(self) -> dict[str, str]:
-        """Point TEXT_COLORS and the console parser's color codes at the
-        current theme style's markup colors.
-
-        Returns:
-            Lowercase old hex to new hex for each color that changed, for
-            recoloring lines already rendered with the old colors.
-        """
+        """Point parser/text colors at newly applied theme (startup/settings change/etc)"""
         remap = {}
         for color_name in DEFAULT_TEXT_COLORS:
             new = getattr(self.markup_tags_theme, color_name)[self._theme_style_index]
