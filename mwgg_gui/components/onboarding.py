@@ -48,8 +48,8 @@ LAUNCHER_TOUR = (
              "Click a game in the list to select it and return to the play screen."),
     TourStep("favorites", "Quick List",
              "Click the game you wish to select in this list, it will glow to indicate "
-             "it is selected. You can add more games to this list by searching for them "
-             "and clicking the heart will keep them here for next time."),
+             "it is selected. Games you pick from the game list are added here and kept "
+             "for next time; clear a game's heart to stop keeping it."),
     TourStep("client_type", "Choose a client type",
              "Game Client is the default for a selected game. Text Client is chat "
              "and commands only, Universal Tracker adds UT logic tracking, and "

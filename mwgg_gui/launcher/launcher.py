@@ -491,9 +491,16 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             game = GameListPanel(
                 item_name=module_name, 
                 item_data=game_data,
-                on_game_select=lambda x, name=module_name, game_name=game_data['game_name']: self.on_game_selected((name, game_name), toggle=False)
+                on_game_select=lambda x, name=module_name, game_name=game_data['game_name']: self.select_listed_game((name, game_name))
             )
             self.games_mdlist.add_widget(game)
+
+    def select_listed_game(self, game_info: tuple[str, str]):
+        """Game-list picks are saved as favorites so their tile stays in the
+        favorites bar; the tile's heart removes the favorite."""
+        if game_info[0] not in self.saved_games:
+            self.save_favorite_games(game_info[0])
+        self.on_game_selected(game_info, toggle=False)
 
     def on_game_selected(self, game_info: tuple[str, str], toggle: bool = True):
         """Handle game selection from the game list or favorites bar.
