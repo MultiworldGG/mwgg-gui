@@ -118,21 +118,23 @@ class Timer(MDTopAppBarTitle):
         self.font_style = "Monospace"
         self.role = "large"
         self.theme_text_color = "Custom"
-        self.text_color = self.theme_cls.onSurfaceVariantColor
+        self._apply_text_color()
         self.text = "00:00:00"
         # Bind the elapsed_time property to update the display
         self.bind(elapsed_time=self.on_elapsed_time)
         self.bind(is_running=self.on_is_running)
+        self.theme_cls.bind(primaryColor=self._apply_text_color,
+                            onSurfaceVariantColor=self._apply_text_color)
         
     def on_ui_built(self):
         self.ctx = MDApp.get_running_app().ctx
 
     def on_is_running(self, instance, value):
         """Called when is_running property changes"""
-        if value:
-            instance.text_color = self.theme_cls.primaryColor
-        else:
-            instance.text_color = self.theme_cls.onSurfaceVariantColor
+        self._apply_text_color()
+
+    def _apply_text_color(self, *_):
+        self.text_color = self.theme_cls.primaryColor if self.is_running else self.theme_cls.onSurfaceVariantColor
     
     def start_running_timer(self):
         """Start or resume the timer from the session start time the server holds."""

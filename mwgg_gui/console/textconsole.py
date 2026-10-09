@@ -82,21 +82,24 @@ class TextConsole(MarkupTextField, ThemableBehavior):
         self.font_name = self.theme_cls.font_styles.Monospace['small']['font-name']
         self.font_size = self.theme_cls.font_styles.Monospace['small']['font-size']
         self.line_spacing = self.theme_cls.font_styles.Monospace['small']['line-height']
-        self.selection_color = self.theme_cls.secondaryColor
-        self.selection_color[3] = 0.3
         self.text_default_color = self.app.theme_mw.markup_tags_theme.default_color[0 if self.app.theme_mw.theme_style == "Light" else 1]
         self.multiline = True
         self.do_wrap = True
         self.auto_indent = True
         self.use_menu = True
         self.readonly = True
-        self.cursor_color = self.theme_cls.primaryColor
+        self._apply_theme_colors()
+        self.theme_cls.bind(primaryColor=self._apply_theme_colors, secondaryColor=self._apply_theme_colors)
         self.text_buffer = self.app.text_buffer
         Clock.schedule_once(self.set_all_players_chat, 0)
         # self.lines_to_scroll = int(self.app.config.get('client', 'scroll_lines', fallback=3))
 
         if pull_buffer:
             Clock.schedule_interval(self.add_text_from_buffer, 0)
+
+    def _apply_theme_colors(self, *_):
+        self.selection_color = self.theme_cls.secondaryColor[:3] + [0.3]
+        self.cursor_color = self.theme_cls.primaryColor
 
     def set_all_players_chat(self, dt):
         self.app.ctx.all_players_chat = self.app.app_config.getboolean('client', 'all_players_chat', fallback=True)
