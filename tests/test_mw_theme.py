@@ -65,7 +65,11 @@ def _load_mw_theme():
         ),
         "PIL": _stub("PIL", Image=types.SimpleNamespace()),
         "numpy": _stub("numpy"),
-        "NetUtils": _stub("NetUtils", TEXT_COLORS={}),
+        "NetUtils": _stub(
+            "NetUtils",
+            TEXT_COLORS={},
+            KivyMarkupJSONtoTextParser=type("KivyMarkupJSONtoTextParser", (), {"color_codes": None}),
+        ),
         "BaseUtils": _stub("BaseUtils", local_path=lambda *parts: ""),
         "mwgg_gui": _stub("mwgg_gui"),
         "mwgg_gui.overrides": _stub("mwgg_gui.overrides", md_icons={}),
@@ -114,6 +118,30 @@ def test_load_markup_color_forwards_theme_style_index():
     default = mw_theme.DEFAULT_TEXT_COLORS["trap_item_color"]
     assert theme.load_markup_color("trap_item_color", 1) == default
     assert mw_theme.TEXT_COLORS["trap_item_color"] == default[1]
+
+
+def test_apply_text_colors_switches_style_and_returns_remap(monkeypatch):
+    theme = object.__new__(mw_theme.DefaultTheme)
+    theme.markup_tags_theme = mw_theme.MarkupTagsTheme()
+    theme.markup_tags_theme.location_color = ["123ABC", "00c51b"]
+    dark = {name: value[1] for name, value in mw_theme.DEFAULT_TEXT_COLORS.items()}
+    monkeypatch.setattr(mw_theme, "TEXT_COLORS", dict(dark))
+    codes = {"red": "#ff0000", **dark}
+    monkeypatch.setattr(mw_theme.KivyMarkupJSONtoTextParser, "color_codes", codes)
+
+    theme._theme_style_index = 0
+    remap = theme.apply_text_colors()
+
+    assert remap["fafafa"] == "080808"
+    assert remap["00c51b"] == "123ABC"
+    assert remap["6ec471"] == "419F44"
+    assert len(remap) == len(mw_theme.DEFAULT_TEXT_COLORS)
+    assert mw_theme.TEXT_COLORS["location_color"] == "123ABC"
+    assert codes["location_color"] == "123ABC"
+    assert codes["red"] == "#ff0000"
+
+    # Nothing changed since: no remap.
+    assert theme.apply_text_colors() == {}
 
 
 class _MemoryConfig(configparser.ConfigParser):

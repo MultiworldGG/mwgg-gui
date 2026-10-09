@@ -191,6 +191,10 @@ class LauncherHostContent(MDBoxLayout):
             size_hint_x=0.8,
             pos_hint={"center_x": 0.5},
         )
+        self.theme_cls.bind(onSurfaceVariantColor=self._recolor_upload_note)
+
+    def _recolor_upload_note(self, _theme, color):
+        self._upload_note.text_color = color
 
     def set_mode(self, mode: str):
         if mode == self.mode:

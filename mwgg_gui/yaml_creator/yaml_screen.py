@@ -155,6 +155,7 @@ class YamlScreen(InnerMDScreen):
             theme_bg_color = "Custom",
             md_bg_color=self.theme_cls.surfaceContainerLowColor
         )
+        self.theme_cls.bind(surfaceContainerLowColor=self._recolor_grid)
 
         # Left pane: pixel-sized wrapper boxes per region. MDScrollView's
         # size_hint cascade breaks as a sibling of a fixed-height widget
@@ -254,6 +255,9 @@ class YamlScreen(InnerMDScreen):
     def _header_height(self) -> float:
         """HeaderCard height: one row, or the stacked compact layout."""
         return dp(124) if self.app.layout_mode.compact else dp(64)
+
+    def _recolor_grid(self, _theme, color):
+        self._grid.md_bg_color = color
 
     def _fit_left(self, grid, height):
         left = self._left

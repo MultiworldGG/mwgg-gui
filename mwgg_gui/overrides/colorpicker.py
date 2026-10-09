@@ -1,5 +1,5 @@
 __all__ = ("MWColorPicker",)
-from kivy.properties import ColorProperty, StringProperty, ObjectProperty
+from kivy.properties import AliasProperty, ColorProperty, StringProperty, ObjectProperty
 from PIL import ImageGrab
 from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.gridlayout import MDGridLayout
@@ -15,6 +15,8 @@ import re
 import logging
 
 logger = logging.getLogger("MultiWorld")
+
+_HEX_PATTERN = re.compile(r"#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})")
 
 KV = """
 <ColorInfoLayout>:
@@ -88,12 +90,15 @@ KV = """
         MDButton:
             id: apply_color_button
             pos_hint: {"center_x": 0.5, "center_y": 0.5}
+            # on_press runs before the dialog's on_release dismiss.
+            on_press: root.on_text_field_change(root.color_text.text)
             MDButtonText:
                 theme_text_color: "Primary"
                 text: "Apply"
         MDButton:
             id: revert_color_button
             pos_hint: {"center_x": 0.5, "center_y": 0.5}
+            on_press: root.revert_color()
             MDButtonText:
                 theme_text_color: "Primary"
                 text: "Revert"
@@ -116,92 +121,28 @@ class ColorHintText(MDTextFieldHintText, ThemableBehavior):
 class ColorInfoLayout(MDGridLayout, ThemableBehavior):
     color = ColorProperty([0, 0, 0, 0])
     old_color = ColorProperty([0, 0, 0, 0])
-    hex_color = StringProperty("#000000")
     old_hex_color = StringProperty("#000000")
     apply_color_button = ObjectProperty(None)
     revert_color_button = ObjectProperty(None)
     color_text = ObjectProperty(None)
-    _updating = False  # Flag to prevent update loops
 
     def __init__(self, old_hex_color, **kwargs):
         super().__init__(**kwargs)
         self.old_hex_color = old_hex_color
         self.old_color = get_color_from_hex(old_hex_color)
-        self.bind(color=self._on_color_change)
-        self.bind(hex_color=self._on_hex_color_change)
 
-    def on_parent(self, *args):
-        if self.parent:
-            self.color = self.parent.color
-            self.hex_color = self.parent.hex_color
-            self.revert_color_button.bind(on_press=lambda x: self.revert_color())
-
-    def _on_color_change(self, instance, value):
-        if self._updating:
-            return
-        try:
-            self._updating = True
-            # Convert color to hex and strip alpha
-            hex_color = get_hex_from_color(value).lstrip('#')[:6]
-            if self.color_text:
-                self.color_text.text = f"#{hex_color}"
-                self.color_text.text_color_focus = value
-                self.color_text.text_color_normal = value
-            # Update hex_color through the parent MWColorPicker
-            if hasattr(self.parent, 'hex_color'):
-                self.parent.hex_color = hex_color
-                self.hex_color = hex_color
-            if hasattr(self.parent, 'color'):
-                self.parent.color = value
-                self.color = value
-        except Exception as e:
-            logger.error(f"Error in _on_color_change: {e}", exc_info=True)
-        finally:
-            self._updating = False
-
-    def _on_hex_color_change(self, instance, value):
-        if self._updating:
-            return
-        logger.debug(f"Hex color changed to: {value}")
-        try:
-            self._updating = True
-            if self.color_text:
-                if not value.startswith('#'):
-                    value = f"#{value}"
-                self.color_text.text = value
-                self.color_text.text_color_focus = value
-                self.color_text.text_color_normal = value
-        except Exception as e:
-            logger.error(f"Error in _on_hex_color_change: {e}", exc_info=True)
-        finally:
-            self._updating = False
+    def on_color(self, instance, value):
+        self.color_text.text = get_hex_from_color(value)[:7]
 
     def on_text_field_change(self, text):
-        if self._updating:
-            return
-        logger.debug(f"ColorInfoLayout on_text_field_change called with text: {text}")
-        try:
-            self._updating = True
-            # Validate hex color format
-            hex_pattern = r'^(?:#)?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$'
-            if re.match(hex_pattern, text):
-                # Remove # if present and ensure 6 characters
-                clean_text = text.lstrip('#')
-                if len(clean_text) == 3:
-                    # Convert 3-digit hex to 6-digit
-                    clean_text = ''.join(c + c for c in clean_text)
-                
-                logger.debug(f"Valid hex color detected: {clean_text}")
-                # Update hex_color through the parent MWColorPicker
-                if hasattr(self.parent, 'hex_color'):
-                    logger.debug(f"Updating parent hex_color to: {clean_text}")
-                    self.parent.hex_color = clean_text
-                    # Also update our own hex_color to keep KV in sync
-                    self.hex_color = clean_text
-        except Exception as e:
-            logger.error(f"Error in on_text_field_change: {e}", exc_info=True)
-        finally:
-            self._updating = False
+        """Show a typed #rgb or #rrggbb; anything else snaps the field back."""
+        match = _HEX_PATTERN.fullmatch(text.strip())
+        if match:
+            digits = match.group(1)
+            if len(digits) == 3:
+                digits = "".join(c * 2 for c in digits)
+            self.color = get_color_from_hex(digits)
+        self.on_color(self, self.color)
 
     def revert_color(self, *args):
         self.color = self.old_color
@@ -209,8 +150,7 @@ class ColorInfoLayout(MDGridLayout, ThemableBehavior):
 class MWColorPicker(MDBoxLayout):
     orientation = "horizontal"
     color = ColorProperty([0, 0, 0, 0])
-    hex_color = StringProperty("#000000")
-    _updating = False  # Flag to prevent update loops
+    hex_color = AliasProperty(lambda self: get_hex_from_color(self.color)[1:7], bind=("color",))
 
     def __init__(self, old_hex_color, **kwargs):
         logger.debug("Initializing MWColorPicker")
@@ -228,38 +168,8 @@ class MWColorPicker(MDBoxLayout):
         
         self.add_widget(self.info_layout)
         self.add_widget(self.image)
-        self.bind(color=self._on_color_change)
-        self.bind(hex_color=self._on_hex_color_change)
-
-    def _on_color_change(self, instance, value):
-        if self._updating:
-            return
-        logger.debug(f"Color changed to: {value}")
-        try:
-            self._updating = True
-            self.info_layout.color = value
-        except Exception as e:
-            logger.error(f"Error in _on_color_change: {e}", exc_info=True)
-        finally:
-            self._updating = False
-
-    def _on_hex_color_change(self, instance, value):
-        if self._updating:
-            return
-        logger.debug(f"Hex color changed to: {value}")
-        try:
-            self._updating = True
-            # Update the color based on the new hex value
-            if not value.startswith('#'):
-                value = '#' + value
-            color = get_color_from_hex(value)
-            self.color = (color[0], color[1], color[2], 1)  # Force alpha to 1
-            # Update the info layout's hex_color to keep KV in sync
-            self.info_layout.hex_color = value.lstrip('#')
-        except Exception as e:
-            logger.error(f"Error in _on_hex_color_change: {e}", exc_info=True)
-        finally:
-            self._updating = False
+        self.bind(color=self.info_layout.setter("color"))
+        self.info_layout.bind(color=self.setter("color"))
 
     def on_touch_down(self, touch):
         try:

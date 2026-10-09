@@ -31,7 +31,7 @@ except ImportError:
 from PIL import Image
 import numpy
 
-from NetUtils import TEXT_COLORS
+from NetUtils import TEXT_COLORS, KivyMarkupJSONtoTextParser
 from BaseUtils import local_path
 
 DEFAULT_TEXT_COLORS = {
@@ -275,6 +275,20 @@ class DefaultTheme(ThemableBehavior):
         """Load a single markup color from the config"""
         default_value = DEFAULT_TEXT_COLORS[color_name]
         return self.markup_tags_theme.load_color(self.app_config, color_name, default_value, theme_style_index)
+
+    def apply_text_colors(self) -> dict[str, str]:
+        """Point parser/text colors at newly applied theme (startup/settings change/etc)"""
+        remap = {}
+        for color_name in DEFAULT_TEXT_COLORS:
+            new = getattr(self.markup_tags_theme, color_name)[self._theme_style_index]
+            old = TEXT_COLORS.get(color_name, new).lower()
+            if old != new.lower():
+                remap.setdefault(old, new)
+            TEXT_COLORS[color_name] = new
+        # Cached once per process and shared by every parser instance.
+        if KivyMarkupJSONtoTextParser.color_codes is not None:
+            KivyMarkupJSONtoTextParser.color_codes.update(TEXT_COLORS)
+        return remap
 
     def recolor_atlas(self):
         """Recolor the atlas image by replacing pixels close to target colors with their respective theme colors.

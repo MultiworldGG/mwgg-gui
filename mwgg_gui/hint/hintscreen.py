@@ -28,7 +28,7 @@ from kivymd.uix.list import MDList
 from kivymd.uix.behaviors import CommonElevationBehavior
 from kivy.uix.recycleview import RecycleDataModel, RecycleDataModelBehavior, RecycleView
 from kivy.uix.recycleview.views import RecycleDataViewBehavior
-from NetUtils import HintStatus, MWGGUIHintStatus, TEXT_COLORS
+from NetUtils import HintStatus, MWGGUIHintStatus
 from mwgg_gui.overrides.expansionlist import HintListItem, IconBadge, HintListItemHeader, GameListPanel, HintListDropdown
 from mwgg_gui.components.guidataclasses import UIHint
 from mwgg_gui.components.bottomappbar import BottomAppBar
@@ -711,13 +711,6 @@ status_names: typing.Dict[HintStatus, str] = {
     HintStatus.HINT_PRIORITY: "Important",
 }
 """Mapping of hint status values to their human-readable display names."""
-
-status_colors: typing.Dict[HintStatus, str] = {
-    HintStatus.HINT_NO_PRIORITY: TEXT_COLORS["regular_item_color"],
-    HintStatus.HINT_AVOID: TEXT_COLORS["trap_item_color"],
-    HintStatus.HINT_PRIORITY: TEXT_COLORS["progression_item_color"],
-}
-"""Mapping of hint status values to their color names for display."""
 
 status_sort_weights: dict[HintStatus | MWGGUIHintStatus, int] = {
     HintStatus.HINT_FOUND: 0,
