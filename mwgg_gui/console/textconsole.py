@@ -19,11 +19,11 @@ from kivy.lang import Builder
 from kivy.metrics import dp
 import logging
 from logging.handlers import QueueHandler
-from multiprocessing import Queue
-from multiprocessing.queues import Empty
+from queue import Empty, Queue
 from kivy.utils import get_hex_from_color
 from mwgg_gui.overrides.markuptextfield import MarkupTextField
 from mwgg_gui.components.guidataclasses import MarkupPair
+from mwgg_gui.console.markup_recolor import recolor_markup
 
 from NetUtils import TEXT_COLORS
 
@@ -73,6 +73,7 @@ class TextConsole(MarkupTextField, ThemableBehavior):
         super().__init__(bottom_scroll_button=bottom_scroll_button, **kwargs)
         self.app = MDApp.get_running_app()
         self.line_filter = line_filter
+        self.pull_buffer = pull_buffer
         # Secondary consoles (the Admin screen) receive every item this one
         # drains, through their own line_filter; only one console may consume
         # app.text_buffer.
@@ -122,11 +123,26 @@ class TextConsole(MarkupTextField, ThemableBehavior):
         self.set_texts("\n".join(markup for markup, _ in texts),
                        "\n".join(plaintext for _, plaintext in texts))
 
-    def add_text_from_buffer(self, dt):
-        chunk_size = 50  # Process up to 50 items per frame
+    def recolor(self, remap: dict[str, str]) -> None:
+        """Re-render this console and its mirrors in the current TEXT_COLORS.
+
+        Args:
+            remap: Lowercase old hex to new hex, from DefaultTheme.apply_text_colors.
+        """
+        if self.pull_buffer:
+            # Queued lines were parsed with the old colors.
+            self.add_text_from_buffer(0, chunk_size=None)
+        self.text_default_color = TEXT_COLORS["default_color"]
+        self._refresh_text(recolor_markup(self.text, remap))
+        self._update_plaintext_lines()
+        for mirror in self.mirrors:
+            mirror.recolor(remap)
+
+    def add_text_from_buffer(self, dt, chunk_size: Optional[int] = 50):
+        """Append up to chunk_size queued items, or all of them for None."""
         items = []
         try:
-            for _ in range(chunk_size):
+            while chunk_size is None or len(items) < chunk_size:
                 items.append(self.text_buffer.get_nowait())
         except Empty:
             pass

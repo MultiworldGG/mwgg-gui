@@ -420,7 +420,9 @@ class ColorPreviewBox(MDBoxLayout):
         # The dialog is a child of a button, 
         # so I need to set the alpha here to 0 to avoid button behavior
         dialog.state_press = 0
-        
+        # Once per dialog, not per pick: a console re-render is slow.
+        dialog.bind(on_dismiss=lambda *_: MDApp.get_running_app().refresh_text_colors())
+
         def apply(self, *args):
             dialog.dismiss()
         
@@ -471,6 +473,7 @@ class ColorBox(MDBoxLayout):
         self.color = get_color_from_hex(self.color_attr[self.index])
         if self.on_reset:
             self.on_reset(self.attr_name, self.color_attr)
+        MDApp.get_running_app().refresh_text_colors()
 
 class SettingsScrollBox(MDScrollView):
     """Scrollable box for settings"""

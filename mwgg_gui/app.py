@@ -7,7 +7,7 @@ import typing
 import weakref
 import asynckivy
 from datetime import datetime, UTC
-from multiprocessing import Queue
+from queue import Queue
 from logging.handlers import QueueHandler
 from collections import deque
 
@@ -583,6 +583,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         self.theme_cls.primary_palette = self.theme_mw.primary_palette
         self.root.md_bg_color = self.theme_cls.surfaceColor
         self.theme_mw.recolor_atlas()
+        self.redraw_theme_baked_views()
 
     def change_theme(self):
         '''
@@ -595,6 +596,38 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         self.theme_cls.primary_palette = self.theme_mw.primary_palette
         self.root.md_bg_color = self.theme_cls.surfaceColor
         self.theme_mw.recolor_atlas()
+        self.refresh_text_colors(redraw=True)
+
+    def refresh_text_colors(self, redraw: bool = False):
+        '''
+        Apply the current theme style's text colors to new console lines
+        and recolor the lines already shown. The views that bake colors
+        into their rows are rebuilt when a text color changed, or always
+        with redraw.
+        '''
+        remap = self.theme_mw.apply_text_colors()
+        if remap:
+            try:
+                console = self.console_screen.ui_console.text_console
+            except AttributeError:
+                pass  # launcher, or the console screen is not built yet
+            else:
+                console.recolor(remap)
+        if remap or redraw:
+            self.redraw_theme_baked_views()
+
+    def redraw_theme_baked_views(self):
+        '''
+        Rebuild the views that copy theme colors into their rows when built:
+        the hint screen, slots sidebar, tracker logic view, and the server
+        info pages.
+        '''
+        if "hint" in self.screen_manager.screen_names:
+            self.update_hints(force=True)
+        if "console" in self.screen_manager.screen_names and self.console_screen.important_appbar.tracker_mode:
+            self.console_screen.update_tracker_locations()
+        if getattr(self.ctx, "total_locations", None):
+            self.top_appbar_layout.top_appbar.update_server_info(self.ctx)
 
     def set_age_filter(self, value: str):
         '''
