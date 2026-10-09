@@ -179,6 +179,7 @@ KV = '''
         index: root.index
         color_attr: root.color_attr
         color: root.color
+        on_color: root.color = self.color
         attr_name: root.attr_name
         size_hint_x: None
         pos_hint: {"top": 1}
