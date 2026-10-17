@@ -991,7 +991,14 @@ class InterfaceSettings(SettingsScrollBox):
             active=fullscreen in ('auto', 'fake') or fullscreen.lower() in ('true', '1', 'yes'),
             on_switch=self.toggle_fullscreen
         ))
-        
+        if self.app.role == ROLE_LAUNCHER:
+            display_section.add_widget(LabeledSwitch(
+                text="Quote of the Day",
+                theme_text_color="Secondary",
+                active=self.app.app_config.getboolean('client', 'show_qotd', fallback=True),
+                on_switch=self.toggle_qotd
+            ))
+
         # Layout section
         layout_section = SettingsSection(name="layout_settings", title="Layout")
         layout_mode = self.app.layout_mode
@@ -1116,6 +1123,14 @@ class InterfaceSettings(SettingsScrollBox):
         except Exception as e:
             logger.error(f"Error in toggle_fullscreen: {e}", exc_info=True)
     
+    def toggle_qotd(self, instance, value):
+        try:
+            self.app.app_config.set('client', 'show_qotd', "1" if value else "0")
+            self.app.app_config.write()
+            self.app.launcher_screen.apply_qotd()
+        except Exception as e:
+            logger.error(f"Error in toggle_qotd: {e}", exc_info=True)
+
     def toggle_compact_mode(self, instance, value):
         try:
             self.app.app_config.set('client', 'compact_mode', "1" if value else "0")

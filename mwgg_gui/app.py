@@ -300,6 +300,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             'font_scale': '1.0',
             'monospace_font': 'Argon',
             'compact_mode': '0',
+            'show_qotd': '1',
             'hint_screen': 'classic',
             'item_tooltips': '1',
             'bottom_nav_style': 'icons',
