@@ -128,6 +128,14 @@ def _needs_game_validation(game_module: str, game_label: str) -> bool:
     return True
 
 
+def _auto_install_pinned_worlds() -> bool:
+    try:
+        from settings import get_settings
+        return bool(get_settings().general_options.auto_install_pinned_worlds)
+    except Exception:
+        return False
+
+
 def _players_dir() -> str:
     """Settings-resolved Players directory (settings.generator.
     player_files_path) -- the dir Generate itself scans. `Utils.players_path`
@@ -1887,10 +1895,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
     def _verify_then_launch(self, game_module: str, game_label: str) -> None:
         """Pre-flight a Connect handshake against the server to confirm it
-        expects `game_label` for the entered slot. On success, hand off to
-        `_spawn_client`. On failure, show a modal error and stay on the
-        launcher -- the user can correct their selection without losing the
-        launcher entirely.
+        expects `game_label` for the entered slot. On success, install the
+        room's pinned world version if it differs (`_offer_pinned_world`),
+        then hand off to `_spawn_client`. On failure, show a modal error and
+        stay on the launcher -- the user can correct their selection without
+        losing the launcher entirely.
 
         The websocket handshake runs on a worker thread (its own asyncio loop)
         so the Kivy main thread stays responsive. The result is delivered
@@ -1943,6 +1952,10 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
         if result.ok:
             logger.info(f"Slot verification passed for {slot_name!r} / {game_label!r}")
+            pin = getattr(result, "world_pin", None)  # absent on cores without room pins
+            if pin is not None and pin.installable:
+                self._offer_pinned_world(pin, game_module, game_label)
+                return
             self._spawn_client(game_module, game_label)
             return
 
@@ -1991,6 +2004,59 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             f"The server refused the connection: {error_summary}",
             is_error=True,
         ).open()
+
+    def _offer_pinned_world(self, pin, game_module: str, game_label: str) -> None:
+        """The room was generated with another version of the game's world:
+        install that version before the client imports the world (a running
+        client holds its modules and native libraries), or launch the installed
+        version if the user keeps it. `auto_install_pinned_worlds` skips the ask.
+        """
+        if _auto_install_pinned_worlds():
+            self._install_pinned_world(pin, game_module, game_label)
+            return
+
+        def _on_choice(confirmed: bool) -> None:
+            if confirmed:
+                self._install_pinned_world(pin, game_module, game_label)
+                return
+            logger.warning(f"Keeping {game_label} {pin.installed or 'none'}; the room expects {pin.want}.")
+            self._spawn_client(game_module, game_label)
+
+        MessageBox(
+            "World Version Mismatch",
+            f"This room was generated with {game_label} apworld {pin.want}, but you have "
+            f"{pin.installed or 'no version'} installed. A game patched with one version "
+            f"usually can't talk to the other. Install {pin.want} before launching?",
+            callback=_on_choice,
+            ok_text=f"Install {pin.want}",
+            cancel_text="Keep current",
+        ).open()
+
+    def _install_pinned_world(self, pin, game_module: str, game_label: str) -> None:
+        """Install the room's world version on a worker thread, then spawn the
+        client; on failure, stay on the launcher with an error."""
+        from frontend_protocol import install_pinned_world
+
+        self.app.loading_layout.show_loading(display_logs=False)
+        self.app.loading_layout.post_status(f"Installing {game_label} {pin.want}...")
+
+        def _after_install(installed: bool) -> None:
+            self.app.loading_layout.hide_loading()
+            if installed:
+                self._spawn_client(game_module, game_label)
+                return
+            MessageBox(
+                "World Install Failed",
+                f"Could not install {game_label} apworld {pin.want}. Close any running "
+                f"{game_label} client and try again; the launcher log has the details.",
+                is_error=True,
+            ).open()
+
+        def _worker():
+            installed = install_pinned_world(pin)
+            Clock.schedule_once(lambda dt: _after_install(installed), 0)
+
+        threading.Thread(target=_worker, name="mwgg-pinned-world-install", daemon=True).start()
 
     def connect(self):
         """Validate the launch settings and spawn the selected game's client
