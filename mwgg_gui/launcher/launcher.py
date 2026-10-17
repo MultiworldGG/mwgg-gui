@@ -246,6 +246,10 @@ class LauncherOptionLabel(MDLabel):
     pass
 
 
+class QotdLabel(MDLabel):
+    pass
+
+
 class LauncherTooltipLabel(MDTooltip, LauncherOptionLabel):
     """Hover-tooltip label. MDTooltip MUST precede MDLabel in the bases:
     StateLayerBehavior.on_enter doesn't call super(), so with the widget
@@ -390,6 +394,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             self._build_compact_content(content_screen)
         else:
             self._build_content(content_screen)
+        self.apply_qotd()
 
         self.nav_drawer = self.launchergrid.ids.launcher_nav_drawer
         self.nav_menu = self.launchergrid.ids.launcher_nav_menu
@@ -429,10 +434,11 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         content_screen.add_widget(self.launcher_view)
 
     def _build_compact_content(self, content_screen):
-        """Search bar pinned over a two-sided flip: the play side (the
-        compact launcher view) and the game list. Enter in the search bar
-        shows the list; picking a game or clearing the search returns to
-        the play side (see apply_game_search / on_game_selected)."""
+        """Quote of the day and search bar pinned over a two-sided flip: the
+        play side (the compact launcher view) and the game list. Enter in
+        the search bar shows the list; picking a game or clearing the search
+        returns to the play side (see apply_game_search / on_game_selected)."""
+        self.qotd_label = QotdLabel()
         self.search_bar = SearchBar()
         self.compact_manager = MDScreenManager(transition=NoTransition())
         play = MDScreen(name="play")
@@ -445,9 +451,20 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.compact_manager.add_widget(play)
         self.compact_manager.add_widget(games)
         column = MDBoxLayout(orientation="vertical")
+        column.add_widget(self.qotd_label)
         column.add_widget(self.search_bar)
         column.add_widget(self.compact_manager)
         content_screen.add_widget(column)
+
+    def apply_qotd(self):
+        """Show or hide the quote of the day (client.show_qotd): in the top
+        bar, or below it in Compact Mode where the bar has no room."""
+        show = self.app.app_config.getboolean("client", "show_qotd", fallback=True)
+        quote = self.app.qotd() if show else ""
+        compact = self.app.layout_mode.compact
+        self.app.top_appbar_layout.top_appbar.server_info_label.text = "" if compact else quote
+        if compact:
+            self.qotd_label.text = quote
 
     def _show_compact_side(self, name: str):
         manager = getattr(self, "compact_manager", None)

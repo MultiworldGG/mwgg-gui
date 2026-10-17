@@ -231,6 +231,17 @@
     theme_text_color: "Custom"
     text_color: app.theme_cls.onSurfaceVariantColor
 
+<QotdLabel>:
+    size_hint_y: None
+    height: self.texture_size[1] if self.text else 0
+    padding: dp(16), dp(6)
+    halign: 'center'
+    theme_font_style: "Custom"
+    font_style: "Body"
+    role: "small"
+    theme_text_color: "Custom"
+    text_color: app.theme_cls.onSurfaceVariantColor
+
 <ClientTypeDivider@MDDivider>:
     orientation: "vertical"
     theme_divider_color: "Custom"

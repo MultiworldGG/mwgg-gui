@@ -56,6 +56,10 @@ Builder.load_string('''
 <EnergyLinkLabel>:
 
 <ClockLabel>:
+    # Width fits the text; MDTopAppBarTitle's text_size: self.size would wrap it.
+    text_size: None, self.height
+    size_hint_x: None
+    width: self.texture_size[0]
 
 <ServerTooltip>:
 
@@ -77,7 +81,6 @@ Builder.load_string('''
         text: "Not Connected"
     ClockLabel:
         id: clock_label
-        size_hint_x: .10
     Timer:
         id: timer
 
@@ -513,7 +516,8 @@ class TopAppBar(MDTopAppBar):
             # ignores a zero size hint.
             drop_titles.append(self.ids.clock_label)
         if self.app.role == ROLE_LAUNCHER:
-            self.server_info_label.text = self.app.qotd()
+            # Title text is the quote of the day, set by LauncherScreen.apply_qotd.
+            self.server_info_label.text = ""
             self.server_info_label.theme_font_style = "Custom"
             self.server_info_label.font_style = "Title"
             self.server_info_label.role = "small"
