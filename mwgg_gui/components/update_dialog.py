@@ -48,7 +48,11 @@ logger = logging.getLogger("Client")
 
 
 def _version_string(version) -> str:
-    """BaseUtils.Version has as_simple_string(); tolerate plain tuples/strings."""
+    """Updater.ReleaseVersion's full tag keeps the b-suffix as_simple_string()
+    drops; tolerate plain BaseUtils.Version, tuples and strings."""
+    tag = getattr(version, "tag", None)
+    if tag:
+        return tag
     as_simple = getattr(version, "as_simple_string", None)
     if as_simple is not None:
         return as_simple()

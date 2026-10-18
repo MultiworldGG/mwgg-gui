@@ -447,7 +447,8 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             def _open_dialog(dt) -> None:
                 from mwgg_gui.components.update_dialog import UpdateDialog
                 UpdateDialog(
-                    current_version=current_version,
+                    # the stamped full tag; version_tuple drops its b-suffix
+                    current_version=BaseUtils.__version__,
                     new_version=new_version,
                     changelog=changelog,
                     download_url=download_url,
