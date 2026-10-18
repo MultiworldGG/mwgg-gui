@@ -43,8 +43,9 @@ from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
 from mwgg_gui.components.admin_commands import (
-    STATUS_TAGS, admin_say_line, enrich_player_rows, format_session_time, option_entries,
-    parse_status_reply, player_display_name, player_state, state_icon, tag_counts, tagged_players)
+    STATUS_TAGS, admin_say_line, check_percent, enrich_player_rows, format_session_time,
+    option_entries, parse_status_reply, player_display_name, player_state, state_icon, tag_counts,
+    tagged_players, team_totals)
 from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.components.client_status import client_status_keys
 from mwgg_gui.console.console import ConsoleLayout
@@ -131,8 +132,7 @@ Builder.load_string('''
 
 # (title, dp width); fixed rather than proportional so the grid's
 # minimum_width is real and the info pane can scroll to it.
-_PLAYER_COLUMNS = (("Name", 170), ("Game", 150), ("Status", 130), ("Checks", 90))
-_STATUS_ICON_WIDTH = 36
+_PLAYER_COLUMNS = (("Name", 170), ("Game", 150), ("Status", 48), ("Checks", 90), ("%", 60))
 _NO_PLAYERS_HINT = "No player data yet. Refresh to fetch /players."
 _STATE_TO_STATUS = {"goal": 30, "ready": 10}
 _OPTION_FIELD_WIDTH = 96
@@ -140,11 +140,10 @@ _PLAYERS_POLL_SECONDS = 15
 
 
 def _status_icon_cell(icon: str) -> AnchorLayout:
-    """Fixed-width cell holding a status MDIcon: MDIcon's own adaptive_size
-    kv rule ignores any width passed to its constructor, so the icon needs
-    a sized wrapper to line up with the header's icon column."""
-    cell = AnchorLayout(size_hint_x=None, width=dp(_STATUS_ICON_WIDTH),
-                        size_hint_y=None, height=dp(24))
+    """Cell holding a status MDIcon: MDIcon's own adaptive_size kv rule
+    ignores any width passed to its constructor, so the icon needs a
+    wrapper the grid can size to the Status column."""
+    cell = AnchorLayout(size_hint_y=None, height=dp(24))
     cell.add_widget(MDIcon(icon=icon))
     return cell
 
@@ -251,7 +250,7 @@ class AdminInfoPane(MDScrollView):
 
         self.players = AdminSection(title="Players", on_refresh=on_refresh_players)
         self.players.size_hint_x = None
-        self.players_grid = MDGridLayout(cols=len(_PLAYER_COLUMNS) + 1, adaptive_height=True,
+        self.players_grid = MDGridLayout(cols=len(_PLAYER_COLUMNS), adaptive_height=True,
                                          adaptive_width=True, spacing=(dp(4), 0))
         self.players_grid.bind(width=lambda *_a: setattr(self.players, "width",
                                                           self.players_grid.width))
@@ -330,16 +329,24 @@ class AdminInfoPane(MDScrollView):
         for title, width in _PLAYER_COLUMNS:
             self.players_grid.add_widget(PlayerCell(text=title, bold=True,
                                                      size_hint_x=None, width=dp(width)))
-        self.players_grid.add_widget(PlayerCell(text="", bold=True,
-                                                 size_hint_x=None, width=dp(_STATUS_ICON_WIDTH)))
         for row in self.rows:
-            state = player_state(row)
-            cells = (player_display_name(row), row.get("game", ""), state.capitalize(),
-                    f"{row.get('checks', 0)}/{row.get('total', 0)}")
-            for (_, width), text in zip(_PLAYER_COLUMNS, cells):
-                self.players_grid.add_widget(PlayerCell(text=text, size_hint_x=None, width=dp(width)))
-            self.players_grid.add_widget(_status_icon_cell(state_icon(state)))
+            checks, total = row.get("checks", 0), row.get("total", 0)
+            self._add_player_row((
+                PlayerCell(text=player_display_name(row)), PlayerCell(text=row.get("game", "")),
+                _status_icon_cell(state_icon(player_state(row))),
+                PlayerCell(text=f"{checks}/{total}"), PlayerCell(text=check_percent(checks, total))))
+        for totals in team_totals(self.rows):
+            self._add_player_row((
+                PlayerCell(text=totals["label"], bold=True), PlayerCell(text="All Games", bold=True),
+                PlayerCell(text=f"{totals['goals']}/{totals['players']}", bold=True, halign="center"),
+                PlayerCell(text=f"{totals['checks']}/{totals['total']}", bold=True),
+                PlayerCell(text=check_percent(totals["checks"], totals["total"]), bold=True)))
         self.refresh_session(ctx)
+
+    def _add_player_row(self, cells) -> None:
+        for (_, width), cell in zip(_PLAYER_COLUMNS, cells):
+            cell.size_hint_x, cell.width = None, dp(width)
+            self.players_grid.add_widget(cell)
 
 
 class AdminOptionsPane(MDScrollView):

@@ -151,6 +151,36 @@ def test_state_icon_covers_every_state(admin_commands):
     assert admin_commands.state_icon("bogus") == "help-circle-outline"
 
 
+@pytest.mark.parametrize("checks, total, expected", [
+    (254, 254, "100.00"),
+    (0, 94, "0.00"),
+    (1, 3, "33.33"),
+    (2, 3, "66.67"),
+    (0, 0, "100.00"),
+])
+def test_check_percent(admin_commands, checks, total, expected):
+    assert admin_commands.check_percent(checks, total) == expected
+
+
+def test_team_totals_single_team(admin_commands):
+    rows = [{"team": 0, "status": 30, "checks": 254, "total": 254},
+            {"team": 0, "status": 20, "connected": True, "checks": 12, "total": 94},
+            {"team": 0, "status": 0, "checks": 0, "total": 0}]
+    assert admin_commands.team_totals(rows) == [
+        {"label": "Total", "goals": 1, "players": 3, "checks": 266, "total": 348}]
+
+
+def test_team_totals_per_team_and_status_fallback_rows(admin_commands):
+    rows = [{"team": 1, "status": 30, "checks": 5, "total": 5},
+            {"team": 0, "status": 10, "checks": 1, "total": 4}]
+    assert admin_commands.team_totals(rows) == [
+        {"label": "Team 0 Total", "goals": 0, "players": 1, "checks": 1, "total": 4},
+        {"label": "Team 1 Total", "goals": 1, "players": 1, "checks": 5, "total": 5}]
+    assert admin_commands.team_totals([{"status": 30, "checks": 2, "total": 2}]) == [
+        {"label": "Total", "goals": 1, "players": 1, "checks": 2, "total": 2}]
+    assert admin_commands.team_totals([]) == []
+
+
 class _Slot:
     def __init__(self, game):
         self.game = game
