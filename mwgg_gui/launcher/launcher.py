@@ -409,6 +409,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         self.available_games = get_available_worlds()
         self.load_favorite_games()
         self.launcher_view.bind(fallback_status=self.on_fallback_status_changed)
+        self._client_reconcile()
         Clock.schedule_once(lambda dt: self.update_connect_button_text(), 0.2)
         #Clock.schedule_once(lambda dt: self.update_selected_game(), 0.2)
         Clock.schedule_once(lambda dt: self.populate_favorites(), 0.2)
@@ -685,9 +686,9 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         game_client.disabled = not self.selected_game
         if not self.selected_game:
             game_client.active = False
-        # Declining the game's client falls back to the plain Text Client;
-        # surface that on its switch.
-        if (self.selected_game and not game_client.active
+        # No game, or its client declined, falls back to the plain Text
+        # Client; surface that on its switch.
+        if (not game_client.active
                 and not any(switch.active for switch in exclusive.values())):
             text.active = True
         self._refresh_client_type()
