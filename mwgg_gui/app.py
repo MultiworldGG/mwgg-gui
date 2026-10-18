@@ -70,6 +70,7 @@ from kivymd.app import MDApp
 from kivy.uix.screenmanager import SwapTransition
 from kivymd.uix.screenmanager import MDScreenManager
 from kivymd.uix.anchorlayout import MDAnchorLayout
+from kivymd.uix.boxlayout import MDBoxLayout
 from kivymd.uix.floatlayout import MDFloatLayout
 from kivymd.uix.menu import MDDropdownMenu
 from kivymd.uix.navigationdrawer import MDNavigationLayout
@@ -797,6 +798,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             manager = manager_cls(ctx)
         finally:
             App._running_app = running
+        manager._attach_legacy_surface(live)
         manager.build()
         live._legacy_kvui_manager = manager
         # The subclass declares the window title (class attr or a build()
@@ -807,6 +809,37 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         if isinstance(title, str) and title and title != default:
             live.base_title = title
         return manager
+
+    def _attach_legacy_surface(self, live: "MultiMDApp") -> None:
+        """Give a phantom the upstream GameManager attributes its build() uses,
+        as kvui.GameManager.build_for_live_app does for kvui subclasses: the
+        live layouts as container/grid, a detached tab-strip stand-in, and the
+        world's own config. Kivy's App.load_config never runs for a phantom,
+        so without an override it keeps the launcher's Config."""
+        self.container = live.root_layout
+        self.grid = live.main_layout
+        self.tabs = MDBoxLayout(size_hint=(None, None), size=(0, 0))
+        cls = type(self)
+        if cls.build_config is MultiMDApp.build_config:
+            return
+        config = ConfigParser()
+        try:
+            cls.build_config(self, config)
+            # a world's super().build_config() lands in the launcher's defaults
+            launcher_defaults = ConfigParser()
+            MultiMDApp.build_config(self, launcher_defaults)
+            for section in launcher_defaults.sections():
+                config.remove_section(section)
+            if cls.get_application_config is not MultiMDApp.get_application_config:
+                filename = self.get_application_config()
+                if os.path.exists(filename):
+                    config.read(filename)
+                else:
+                    config.filename = filename
+                    config.write()
+        except Exception:
+            logging.getLogger("Client").exception("Legacy client config failed; using its defaults")
+        self.config = config
 
     def add_client_tab(self, title: str, content=None, index: int = -1):
         """Per-world hook (kvui.GameManager API): add a tab whose screen
