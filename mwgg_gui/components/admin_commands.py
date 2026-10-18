@@ -8,7 +8,7 @@ from __future__ import annotations
 __all__ = ("ADMIN_COMMANDS", "available_admin_commands", "admin_say_line",
            "complete_admin_command", "QuietAdminPolls", "OPTION_SPECS", "STATUS_TAGS",
            "option_entries", "parse_status_reply", "tagged_players", "tag_counts",
-           "player_display_name", "player_state", "state_icon", "check_percent",
+           "player_display_name", "player_state", "state_icon", "check_percent", "team_totals",
            "enrich_player_rows", "format_session_time")
 
 import re
@@ -277,6 +277,24 @@ def state_icon(state: str) -> str:
 def check_percent(checks: int, total: int) -> str:
     """Two decimals like the web tracker, which counts a slot with no locations as done."""
     return f"{checks / total * 100:.2f}" if total else "100.00"
+
+
+def team_totals(rows) -> list[dict]:
+    """The web tracker's footer, one per team: label, goals, players, checks
+    and total. Rows without a "team" (the /status fallback) count as team 0;
+    a lone team is labelled plain "Total"."""
+    teams = sorted({row.get("team", 0) for row in rows})
+    totals = []
+    for team in teams:
+        team_rows = [row for row in rows if row.get("team", 0) == team]
+        totals.append({
+            "label": f"Team {team} Total" if len(teams) > 1 else "Total",
+            "goals": sum(player_state(row) == "goal" for row in team_rows),
+            "players": len(team_rows),
+            "checks": sum(row.get("checks", 0) for row in team_rows),
+            "total": sum(row.get("total", 0) for row in team_rows),
+        })
+    return totals
 
 
 def enrich_player_rows(rows, slot_info, player_names) -> list[dict]:

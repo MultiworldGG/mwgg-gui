@@ -45,7 +45,7 @@ from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 from mwgg_gui.components.admin_commands import (
     STATUS_TAGS, admin_say_line, check_percent, enrich_player_rows, format_session_time,
     option_entries, parse_status_reply, player_display_name, player_state, state_icon, tag_counts,
-    tagged_players)
+    tagged_players, team_totals)
 from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.components.client_status import client_status_keys
 from mwgg_gui.console.console import ConsoleLayout
@@ -331,13 +331,22 @@ class AdminInfoPane(MDScrollView):
                                                      size_hint_x=None, width=dp(width)))
         for row in self.rows:
             checks, total = row.get("checks", 0), row.get("total", 0)
-            cells = (PlayerCell(text=player_display_name(row)), PlayerCell(text=row.get("game", "")),
-                     _status_icon_cell(state_icon(player_state(row))),
-                     PlayerCell(text=f"{checks}/{total}"), PlayerCell(text=check_percent(checks, total)))
-            for (_, width), cell in zip(_PLAYER_COLUMNS, cells):
-                cell.size_hint_x, cell.width = None, dp(width)
-                self.players_grid.add_widget(cell)
+            self._add_player_row((
+                PlayerCell(text=player_display_name(row)), PlayerCell(text=row.get("game", "")),
+                _status_icon_cell(state_icon(player_state(row))),
+                PlayerCell(text=f"{checks}/{total}"), PlayerCell(text=check_percent(checks, total))))
+        for totals in team_totals(self.rows):
+            self._add_player_row((
+                PlayerCell(text=totals["label"], bold=True), PlayerCell(text="All Games", bold=True),
+                PlayerCell(text=f"{totals['goals']}/{totals['players']}", bold=True, halign="center"),
+                PlayerCell(text=f"{totals['checks']}/{totals['total']}", bold=True),
+                PlayerCell(text=check_percent(totals["checks"], totals["total"]), bold=True)))
         self.refresh_session(ctx)
+
+    def _add_player_row(self, cells) -> None:
+        for (_, width), cell in zip(_PLAYER_COLUMNS, cells):
+            cell.size_hint_x, cell.width = None, dp(width)
+            self.players_grid.add_widget(cell)
 
 
 class AdminOptionsPane(MDScrollView):
