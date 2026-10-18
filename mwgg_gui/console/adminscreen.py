@@ -43,8 +43,9 @@ from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 
 from mwgg_gui.components.admin_commands import (
-    STATUS_TAGS, admin_say_line, enrich_player_rows, format_session_time, option_entries,
-    parse_status_reply, player_display_name, player_state, state_icon, tag_counts, tagged_players)
+    STATUS_TAGS, admin_say_line, check_percent, enrich_player_rows, format_session_time,
+    option_entries, parse_status_reply, player_display_name, player_state, state_icon, tag_counts,
+    tagged_players)
 from mwgg_gui.components.bottomappbar import BottomAppBar
 from mwgg_gui.components.client_status import client_status_keys
 from mwgg_gui.console.console import ConsoleLayout
@@ -131,7 +132,7 @@ Builder.load_string('''
 
 # (title, dp width); fixed rather than proportional so the grid's
 # minimum_width is real and the info pane can scroll to it.
-_PLAYER_COLUMNS = (("Name", 170), ("Game", 150), ("Status", 130), ("Checks", 90))
+_PLAYER_COLUMNS = (("Name", 170), ("Game", 150), ("Status", 130), ("Checks", 90), ("%", 60))
 _STATUS_ICON_WIDTH = 36
 _NO_PLAYERS_HINT = "No player data yet. Refresh to fetch /players."
 _STATE_TO_STATUS = {"goal": 30, "ready": 10}
@@ -334,8 +335,9 @@ class AdminInfoPane(MDScrollView):
                                                  size_hint_x=None, width=dp(_STATUS_ICON_WIDTH)))
         for row in self.rows:
             state = player_state(row)
+            checks, total = row.get("checks", 0), row.get("total", 0)
             cells = (player_display_name(row), row.get("game", ""), state.capitalize(),
-                    f"{row.get('checks', 0)}/{row.get('total', 0)}")
+                     f"{checks}/{total}", check_percent(checks, total))
             for (_, width), text in zip(_PLAYER_COLUMNS, cells):
                 self.players_grid.add_widget(PlayerCell(text=text, size_hint_x=None, width=dp(width)))
             self.players_grid.add_widget(_status_icon_cell(state_icon(state)))

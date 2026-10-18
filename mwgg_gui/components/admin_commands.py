@@ -8,8 +8,8 @@ from __future__ import annotations
 __all__ = ("ADMIN_COMMANDS", "available_admin_commands", "admin_say_line",
            "complete_admin_command", "QuietAdminPolls", "OPTION_SPECS", "STATUS_TAGS",
            "option_entries", "parse_status_reply", "tagged_players", "tag_counts",
-           "player_display_name", "player_state", "state_icon", "enrich_player_rows",
-           "format_session_time")
+           "player_display_name", "player_state", "state_icon", "check_percent",
+           "enrich_player_rows", "format_session_time")
 
 import re
 from collections import Counter
@@ -272,6 +272,11 @@ def player_state(row: dict) -> str:
 
 def state_icon(state: str) -> str:
     return _STATE_ICONS.get(state, "help-circle-outline")
+
+
+def check_percent(checks: int, total: int) -> str:
+    """Two decimals like the web tracker, which counts a slot with no locations as done."""
+    return f"{checks / total * 100:.2f}" if total else "100.00"
 
 
 def enrich_player_rows(rows, slot_info, player_names) -> list[dict]:

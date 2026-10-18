@@ -151,6 +151,17 @@ def test_state_icon_covers_every_state(admin_commands):
     assert admin_commands.state_icon("bogus") == "help-circle-outline"
 
 
+@pytest.mark.parametrize("checks, total, expected", [
+    (254, 254, "100.00"),
+    (0, 94, "0.00"),
+    (1, 3, "33.33"),
+    (2, 3, "66.67"),
+    (0, 0, "100.00"),
+])
+def test_check_percent(admin_commands, checks, total, expected):
+    assert admin_commands.check_percent(checks, total) == expected
+
+
 class _Slot:
     def __init__(self, game):
         self.game = game
