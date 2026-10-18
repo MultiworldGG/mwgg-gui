@@ -5,7 +5,7 @@ TODO: Pull the 4x dialogs in launcher.py into here - needs to be able to handle
 the dialog switches for 'host' which are all hooked into callbacks
 """
 from __future__ import annotations
-__all__ = ("MessageBox", "CodeWarningBox", "ConsoleBox", "confirm_arbitrary_code")
+__all__ = ("MessageBox", "CodeWarningBox", "ConsoleBox", "confirm_arbitrary_code", "dialog_text")
 
 import logging
 
@@ -30,6 +30,34 @@ from asyncio import Queue
 
 logger = logging.getLogger("Client")
 
+MAX_MESSAGE_LINES = 15
+MAX_MESSAGE_CHARS = 1000
+_TRACEBACK_HEADERS = frozenset((
+    "Traceback (most recent call last):",
+    "During handling of the above exception, another exception occurred:",
+    "The above exception was the direct cause of the following exception:",
+))
+
+
+def dialog_text(message: str) -> str:
+    """Drop Python traceback frames (keeping the exception lines) and cap the
+    length: a dialog sized to a long log or traceback grows past the window."""
+    kept: list[str] = []
+    in_frames = False
+    for line in str(message).splitlines():
+        if line.strip() in _TRACEBACK_HEADERS:
+            in_frames = True
+        elif not (in_frames and (line[:1].isspace() or not line.strip())):
+            in_frames = False
+            kept.append(line)
+    if len(kept) > MAX_MESSAGE_LINES:
+        kept = kept[:MAX_MESSAGE_LINES] + ["..."]
+    text = "\n".join(kept).strip()
+    if len(text) > MAX_MESSAGE_CHARS:
+        text = text[:MAX_MESSAGE_CHARS].rstrip() + "..."
+    return text
+
+
 class MessageBox(MDDialog):
     """
     A simple KivyMD dialog class that can be used throughout the codebase.
@@ -48,7 +76,7 @@ class MessageBox(MDDialog):
                  ok_text="OK", cancel_text="Cancel"):
         super().__init__()
         self.title = title
-        self.message = message
+        self.message = dialog_text(message)
         self.callback = callback
         self.is_error = is_error
         self.ok_text = ok_text

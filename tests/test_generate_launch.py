@@ -87,9 +87,20 @@ def test_tree_cpu_counts_a_working_child_of_an_idle_parent(generate_launch):
     assert generate_launch.tree_cpu_seconds(2 ** 22 + 12345) is None
 
 
-def test_error_message_prefers_stderr_then_the_tail(generate_launch):
-    result = generate_launch.GenerateResult(returncode=1, stderr="boom\n", tail=["ignored"])
-    assert result.error_message() == "Generation failed with code 1:\nboom"
-    result = generate_launch.GenerateResult(returncode=1, tail=["Generation failed: FillError: No more spots"])
-    assert result.error_message().endswith("Generation failed: FillError: No more spots")
+def test_error_message_is_the_summary_line_not_the_log(generate_launch):
+    summary = "KeyError: 'The Grid Secret Portal [Sora]' (full traceback in Generate_1.txt)"
+    tail = ["Executing subprocess command: ['uv', 'pip', 'list']", "Calculating Access Rules.",
+            f"Generation failed: {summary}"]
+    assert generate_launch.GenerateResult(returncode=1, tail=tail).error_message() == summary
+    stamped = [f"[2026-10-18 18:07:33] Generation failed: {summary}"]
+    assert generate_launch.GenerateResult(returncode=1, tail=stamped).error_message() == summary
+
+
+def test_error_message_without_a_summary_keeps_only_the_last_line(generate_launch):
+    crash = ('Traceback (most recent call last):\n  File "Generate.py", line 1, in <module>\n'
+             '    main()\nValueError: bad yaml\n')
+    result = generate_launch.GenerateResult(returncode=1, stderr=crash, tail=["P1 Weights: a.yaml"])
+    assert result.error_message() == "Generation failed with code 1:\nValueError: bad yaml"
+    result = generate_launch.GenerateResult(returncode=1, stderr="\n", tail=["Creating Items.", "last words", ""])
+    assert result.error_message() == "Generation failed with code 1:\nlast words"
     assert generate_launch.GenerateResult(returncode=2).error_message().endswith("Unknown error")
