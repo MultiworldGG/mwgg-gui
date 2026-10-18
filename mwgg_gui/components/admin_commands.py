@@ -190,7 +190,7 @@ _STATUS_STATES = {"has finished": "goal", "is ready": "ready"}
 _GOAL_STATUS = 30
 _READY_STATUS = 10
 _STATE_ICONS = {"goal": "flag-checkered", "ready": "account-check",
-                "connected": "check-circle", "disconnected": "lan-disconnect"}
+                "connected": "play", "disconnected": "lan-disconnect"}
 
 
 def option_entries(payload=None, *, hint_cost=None, check_points=None,
