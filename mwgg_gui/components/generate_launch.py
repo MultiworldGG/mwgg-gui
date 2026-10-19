@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 # interpreter; uv installs a world), so quiet means the whole tree is quiet.
 IDLE_TIMEOUT = 300.0
 _WINDOWS = sys.platform in ("win32", "cygwin", "msys")
+# the line Generate.py's _report_generation_failure ends a failure with
+_FAILURE_SUMMARY = "Generation failed: "
 
 
 def generate_env(frozen: bool) -> dict[str, str]:
@@ -53,7 +55,13 @@ class GenerateResult:
         if self.killed:
             return (f"Generate stopped responding: no output and no CPU use for {int(self.idle_seconds)} seconds,"
                     " so it was killed. See the logs folder.")
-        detail = self.stderr.strip() or "\n".join(self.tail).strip() or "Unknown error"
+        # Generate's own one-line summary; everything else on the streams is log and traceback
+        for line in reversed(self.tail):
+            if _FAILURE_SUMMARY in line:
+                return line.split(_FAILURE_SUMMARY, 1)[1].strip()
+        last_words = ([line.strip() for line in self.stderr.splitlines() if line.strip()]
+                      or [line.strip() for line in self.tail if line.strip()])
+        detail = last_words[-1] if last_words else "Unknown error"
         return f"Generation failed with code {self.returncode}:\n{detail}"
 
 
