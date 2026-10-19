@@ -131,6 +131,9 @@ class Timer(FittedTitle):
     elapsed_time = NumericProperty(0)
     is_running = BooleanProperty(False)
     has_been_started = BooleanProperty(False)  # Track if timer has ever been started
+    # Press time shown until the server's start arrives. Kept off ctx.timer:
+    # the core only publishes a shared start while ctx.timer is 0.
+    local_start = NumericProperty(0)
     ctx = ObjectProperty(None)
     _update_event = ObjectProperty(None)  # Store the scheduled event
 
@@ -161,22 +164,15 @@ class Timer(FittedTitle):
         self.text_color = self.theme_cls.primaryColor if self.is_running else self.theme_cls.onSurfaceVariantColor
     
     def start_running_timer(self):
-        """Start or resume the timer from the session start time the server holds."""
-        if self.ctx.timer:
-            self.start()
+        """Run from the session start the server holds, dropping any press-time start."""
+        self.local_start = 0
+        self.start()
 
     def start(self):
         """Start the timer (initial start or resume from pause)"""
         if not self.is_running:
-            if self.ctx.timer:
-                if self.ctx.timer < 1:
-                    self.start_time = time()
-                    self.ctx.timer = self.start_time
-                else:
-                    self.start_time = self.ctx.timer
-            else:
-                self.start_time = time()
-                self.ctx.timer = self.start_time
+            if not self.ctx.timer and not self.local_start:
+                self.local_start = time()
             self.has_been_started = True
             self.is_running = True
             Clock.schedule_interval(self._update_timer_wrapper, 0.1)
@@ -193,6 +189,7 @@ class Timer(FittedTitle):
         self.text = "00:00:00"
         self.has_been_started = False
         self.start_time = 0
+        self.local_start = 0
 
     def _update_timer_wrapper(self, dt):
         """Non-blocking wrapper for timer updates"""
@@ -205,13 +202,14 @@ class Timer(FittedTitle):
         """Update the elapsed time and stop on disconnect or once the whole team has goaled"""
         if not self.is_running:
             return
-        if not self.ctx.timer:
+        start = self.ctx.timer or self.local_start
+        if not start:
             # reset_server_state() zeroes ctx.timer on disconnect; adopting it
             # would date the start to the epoch.
             self.stop()
             return
-        self.start_time = self.ctx.timer
-        self.elapsed_time = time() - self.start_time
+        self.start_time = start
+        self.elapsed_time = time() - start
         if team_goaled(self.ctx.stored_data, self.ctx.team, self.ctx.player_names):
             self.stop()
 

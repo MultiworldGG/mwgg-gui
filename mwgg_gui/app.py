@@ -1437,26 +1437,14 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
 
     def update_timer(self, value):
         '''
-        This is called when a "break" is added from the server. It will add the break time to the start
-        time of the timer, reducing the elapsed time to the correct value.
+        Adopt the session start the server holds (the first entry of the "timer"
+        data storage list). It replaces any start this client counted from.
         '''
-        # timer = self.ctx.stored_data.get(f"timer", [time.time()])
-        timer = value
-        if not timer or timer == [] or timer == [0.0] or timer == 0.0:
+        start = value[0] if isinstance(value, list) and value else value
+        if not start:
             return
-        if isinstance(timer, list):
-            start_timer = timer[0]
-            if self.ctx.timer == 0.0:
-                self.ctx.timer = start_timer
-            # Sum all values in the list (breaks + start time)
-            timer_sum = sum(float(time) for time in timer)
-            self.top_appbar_layout.top_appbar.timer.start_time = self.ctx.timer - timer_sum
-        else:
-            start_timer = timer
-            # When timer is a float, use it directly as the start time
-            self.top_appbar_layout.top_appbar.timer.start_time = start_timer
-        if not self.top_appbar_layout.top_appbar.timer.is_running:
-            self.top_appbar_layout.top_appbar.timer.start_running_timer()
+        self.ctx.timer = start
+        self.top_appbar_layout.top_appbar.timer.start_running_timer()
 
     def _client_status_tick(self, dt):
         try:
