@@ -26,6 +26,8 @@ from kivy.properties import (ObjectProperty,
 from .progress_overlay import ProgressOverlay
 from .profile import show_profile
 from kivy.clock import Clock
+from kivy.core.text import Label as CoreLabel
+from math import ceil
 from time import time, strftime, gmtime, localtime
 from kivy.metrics import dp
 import logging
@@ -55,18 +57,23 @@ Builder.load_string('''
 
 <EnergyLinkLabel>:
 
-<ClockLabel>:
-    # Width fits the text; MDTopAppBarTitle's text_size: self.size would wrap it.
-    text_size: None, self.height
+<FittedTitle>:
+    padding: "16dp", "5dp", 0, 0
     size_hint_x: None
-    width: self.texture_size[0]
+    # Set size, not width: a width-only change lets <MDLabel>'s adaptive
+    # text_size (None, None) win over <MDTopAppBarTitle>'s self.size.
+    size: self.fit_width(self.text, self.width_template, self.font_name, self.font_size, self.padding), self.height
+
+<ClockLabel>:
+    width_template: "00:00"
 
 <ServerTooltip>:
 
 <TopAppBarLayout>:
 
 <Timer>:
-    size_hint_x: .2
+    width_template: "-00:00:00"
+    halign: "right"
     text: "00:00:00"
 
 <TopAppBar>:
@@ -88,7 +95,21 @@ Builder.load_string('''
         id: trailing_container
 ''')
 
-class ClockLabel(MDTopAppBarTitle):
+class FittedTitle(MDTopAppBarTitle):
+    """One-line title as wide as the wider of its text and width_template.
+
+    Keeps MDTopAppBarTitle's text_size: self.size; an unconstrained text width
+    skips line_height and lifts the text off the other titles' baseline.
+    """
+    width_template = StringProperty("")
+
+    def fit_width(self, *_):
+        measure = CoreLabel(font_name=self.font_name, font_size=self.font_size)
+        text_width = max(measure.get_extents(text)[0] for text in (self.width_template, self.text))
+        return ceil(text_width + self.padding[0] + self.padding[2])
+
+
+class ClockLabel(FittedTitle):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.ctx = MDApp.get_running_app().ctx
@@ -104,7 +125,7 @@ class ClockLabel(MDTopAppBarTitle):
             await asyncio.sleep(60)
 
 
-class Timer(MDTopAppBarTitle):
+class Timer(FittedTitle):
     # Properly declare properties
     start_time = NumericProperty(0)
     elapsed_time = NumericProperty(0)

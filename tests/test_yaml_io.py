@@ -1,7 +1,8 @@
 """Round-trip tests for mwgg_gui/yaml_creator/yaml_io.py (loaded by file
 path -- see conftest.py), including unknown-key (extras) preservation, the
 sanctioned interim path for hand-written `triggers:` blocks. `description`
-is form-owned and auto-generated: never an input, never an extra.
+is form-owned and auto-generated: never an input, never an extra. Also the
+Save As file-type rules.
 """
 from __future__ import annotations
 
@@ -141,3 +142,27 @@ def test_parse_error_on_missing_game_key(yaml_io):
 def test_parse_error_on_non_mapping_game_section(yaml_io):
     with pytest.raises(yaml_io.ParseError):
         yaml_io.yaml_to_form_state(f"{GAME}: 3\n", GAME)
+
+
+# ----- Save As file-type rules ---------------------------------------------
+
+
+@pytest.mark.parametrize("typed, expected", [
+    ("Alice", "Alice.yaml"),
+    ("Players/Alice_game", "Players/Alice_game.yaml"),
+    ("J.D._game", "J.D._game.yaml"),
+    ("Alice.yaml", "Alice.yaml"),
+    ("Alice.yml", "Alice.yml"),
+    ("Alice.YAML", "Alice.YAML"),
+])
+def test_with_yaml_extension(yaml_io, typed, expected):
+    assert yaml_io.with_yaml_extension(typed) == expected
+
+
+def test_yaml_filetypes_are_bare_dotted_extensions(yaml_io):
+    # FileUtils backends prefix `*` themselves; tk/kdialog/zenity would double a pre-starred entry.
+    assert yaml_io.YAML_FILETYPES
+    for _label, extensions in yaml_io.YAML_FILETYPES:
+        assert ".yaml" in extensions
+        for ext in extensions:
+            assert ext.startswith(".") and "*" not in ext

@@ -179,6 +179,21 @@ class LauncherConnectField(LauncherAuthTextField):
     icon = StringProperty("")
     hint_text = StringProperty("")
 
+class LauncherDirectoryPicker(MDBoxLayout):
+    """Folder picker button for dialog forms; `path` stays "" (the caller's
+    default) until a folder is chosen, and the clear button resets it."""
+    label = StringProperty("Output Directory")
+    title = StringProperty("Select Output Directory")
+    path = StringProperty("")
+
+    def pick(self):
+        chosen = FileUtils.open_directory(self.title, suggest=self.path or user_path("output"))
+        if chosen:
+            self.path = chosen
+
+    def clear(self):
+        self.path = ""
+
 class LauncherGenerateContent(MDBoxLayout):
     pass
 
@@ -963,7 +978,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             
         # Blank output -> omit --outputpath so Generate's settings-backed
         # default applies instead of an `output` dir under the launcher's cwd.
-        output_path = output_field.text.strip()
+        output_path = output_field.path
 
         self._generation_result = {
             'seed': seed_value,
@@ -1286,7 +1301,7 @@ class LauncherScreen(MDScreen, ThemableBehavior):
 
     def _on_patch_options_confirm(self, dialog, output_field):
         """Handle patch options confirmation"""
-        output_path = output_field.text.strip()
+        output_path = output_field.path
         if not output_path:
             output_path = os.path.join(os.getcwd(), 'output')
         

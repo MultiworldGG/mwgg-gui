@@ -388,7 +388,7 @@ class BottomAppBar(MDBottomAppBar):
             layout.full_bar = self.docked or not self._connect_layout_fits(layout)
             if layout.full_bar:
                 layout.pos_hint = {"x": 0}
-                layout.y = self.top
+                layout.y = self.y + self.height
             else:
                 layout.pos_hint = {"center_y": 0.5}
                 layout.right = self.ids.console_text_input_fab.x - dp(8)
@@ -403,9 +403,11 @@ class BottomAppBar(MDBottomAppBar):
     def _place_text_input(self, *_args) -> None:
         """Compact: beside the nav buttons. Standard: the middle
         TEXT_INPUT_WIDTH of the bar, up to an inline connect layout."""
+        # x + width, not right/top: inside size and pos callbacks those
+        # cached aliases can still hold the previous geometry.
         if self.docked:
-            left = self.nav_box.right + dp(8)
-            right = self.right - dp(16)
+            left = self.nav_box.x + self.nav_box.width + dp(8)
+            right = self.x + self.width - dp(16)
         else:
             left = self.x + self.width * (0.5 - TEXT_INPUT_WIDTH / 2)
             right = self.x + self.width * (0.5 + TEXT_INPUT_WIDTH / 2)

@@ -3,7 +3,8 @@ YAML serialization for the YAML creator screen.
 
 Pure functions: no kivy imports, no widget references. The screen owns
 the widget tree; this module owns the conversion between a dict of
-option values and the YAML text in the live preview pane.
+option values and the YAML text in the live preview pane, plus the
+Save As file-type rules.
 
 The shape we read/write is the same shape Generate.py consumes:
 
@@ -27,9 +28,14 @@ import yaml
 __all__ = (
     "FormState",
     "ParseError",
+    "YAML_FILETYPES",
     "form_state_to_yaml",
+    "with_yaml_extension",
     "yaml_to_form_state",
 )
+
+# FileUtils dialog filetypes: bare dotted extensions, each backend adds its own `*`.
+YAML_FILETYPES = (("YAML Files", (".yaml", ".yml")),)
 
 
 class ParseError(Exception):
@@ -132,6 +138,14 @@ def yaml_to_form_state(text: str, game_name: str, known_options=None) -> FormSta
         if k not in _RESERVED_TOP_LEVEL and k != game_name
     }
     return state
+
+
+def with_yaml_extension(path: str) -> str:
+    """`path` with `.yaml` appended unless it already ends in .yaml/.yml
+    (not splitext: a dotted name like `J.D._Game` has no real extension)."""
+    if path.lower().endswith((".yaml", ".yml")):
+        return path
+    return path + ".yaml"
 
 
 def _to_yaml_value(value):

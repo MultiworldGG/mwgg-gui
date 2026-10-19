@@ -1,4 +1,5 @@
 #:import sys sys
+#:import os os
 <LauncherScreen>:
     size_hint: 1,1
     pos_hint: {"center_x": 0.5, "center_y": 0.5}
@@ -435,17 +436,8 @@
             icon_color_focus: self.parent.icon_color_focus
             icon_color_normal: self.parent.icon_color_normal
             icon: 'seed'
-    LauncherAuthTextField:
+    LauncherDirectoryPicker:
         id: output
-        size_hint_x: 0.8
-        pos_hint: {"center_x": 0.5}
-        MDTextFieldHintText:
-            text: "Output Directory"
-        MDTextFieldLeadingIcon:
-            theme_icon_color: "Custom"
-            icon_color_focus: self.parent.icon_color_focus
-            icon_color_normal: self.parent.icon_color_normal
-            icon: 'folder'
 
 <LauncherHostContent>:
     orientation: 'vertical'
@@ -498,17 +490,43 @@
     orientation: 'vertical'
     spacing: dp(15)
     adaptive_height: True
-    LauncherAuthTextField:
+    LauncherDirectoryPicker:
         id: output
-        size_hint_x: 0.8
-        pos_hint: {"center_x": 0.5}
-        MDTextFieldHintText:
-            text: "Output Directory (optional)"
-        MDTextFieldLeadingIcon:
-            theme_icon_color: "Custom"
-            icon_color_focus: self.parent.icon_color_focus
-            icon_color_normal: self.parent.icon_color_normal
-            icon: 'folder'
+
+<LauncherDirectoryPicker>:
+    size_hint: 0.8, None
+    height: dp(56)
+    pos_hint: {"center_x": 0.5}
+    spacing: dp(4)
+    MDButton:
+        id: pick_button
+        style: "outlined"
+        theme_width: "Custom"
+        size_hint_x: 1
+        height: root.height
+        radius: dp(10)
+        on_release: root.pick()
+        MDButtonIcon:
+            icon: "folder-open"
+        MDButtonText:
+            id: pick_text
+            text: root.path or root.label + " (default)"
+            # MDButtonText is adaptive_size: its size follows the texture, so
+            # the width cap goes on text_size, replacing MDLabel's binding.
+            -text_size: max(0, pick_button.width - self.x - dp(16)), None
+            shorten: True
+            shorten_from: "center"
+            split_str: os.sep
+    MDIconButton:
+        id: clear_button
+        icon: "close"
+        pos_hint: {"center_y": 0.5}
+        # Disable, never shrink: a ripple widget resized to zero mid-ripple
+        # fails its FBO.
+        disabled: not root.path
+        theme_icon_color: "Custom"
+        icon_color: app.theme_cls.onSurfaceVariantColor
+        on_release: root.clear()
 
 <TagChip>:
     type: "filter"

@@ -8,18 +8,14 @@ bottom-right, with the admin command input on the bar's FAB.
 Data arrives through app.on_admin_command_result: the `players` and
 `options` payloads MultiServer attaches to /players, /options and /option
 replies, and the `/status <tag>` replies, parsed from their text so they
-work against any server. MultiServer echoes an !admin line only to its
-caller and answers it privately, so the screen polls by itself: /players
-on entry, whenever the player state the client already mirrors changes
-(client status keys, aliases, BK flags) and every _PLAYERS_POLL_SECONDS
-while shown; /status per tag and /options once the first `players`
-payload arrives, /options again when a RoomUpdate moves hint_cost or a
-permission. app.admin_polls keeps those polls' echo and replies out of
-the console; the section buttons refresh loudly on demand. An upstream
-Archipelago room broadcasts every !admin line and never sends
-AdminCommandResult, so a poll left unanswered suspends polling until the
-next entry (which also quiets a login another admin displaced). Opt-in
-via client.admin_console; app.change_screen gates it behind
+work against any server. The screen never polls: the section buttons
+refresh loudly on demand, and the only automatic traffic is one quiet
+fetch per connection, the first time the screen is shown with the host
+logged in: /players, then /status per tag and /options once its
+`players` payload arrives (an upstream Archipelago room broadcasts every
+!admin line and never sends AdminCommandResult, so it stops at /players).
+app.admin_polls keeps that fetch's echo and replies out of the console.
+Opt-in via client.admin_console; app.change_screen gates it behind
 AdminLoginDialog until the server confirms the host login.
 """
 __all__ = ("AdminScreen", "AdminHeader", "AdminInfoPane", "AdminOptionsPane")
@@ -47,7 +43,6 @@ from mwgg_gui.components.admin_commands import (
     option_entries, parse_status_reply, player_display_name, player_state, state_icon, tag_counts,
     tagged_players, team_totals)
 from mwgg_gui.components.bottomappbar import BottomAppBar
-from mwgg_gui.components.client_status import client_status_keys
 from mwgg_gui.console.console import ConsoleLayout
 from mwgg_gui.console.textconsole import ConsoleView
 from mwgg_gui.settings.settings_components import LabeledDropdown, LabeledSwitch
@@ -136,7 +131,6 @@ _PLAYER_COLUMNS = (("Name", 170), ("Game", 150), ("Status", 48), ("Checks", 90),
 _NO_PLAYERS_HINT = "No player data yet. Refresh to fetch /players."
 _STATE_TO_STATUS = {"goal": 30, "ready": 10}
 _OPTION_FIELD_WIDTH = 96
-_PLAYERS_POLL_SECONDS = 15
 
 
 def _status_icon_cell(icon: str) -> AnchorLayout:
@@ -396,11 +390,10 @@ class AdminScreen(MDScreen, ThemableBehavior):
         self.pos_hint = {"center_x": 0.5, "center_y": 0.5}
         super().__init__(**kwargs)
         self._status_event = None
-        self._fetched = False
-        self._poll_answered = True
-        self._last_poll = 0.0
-        self._room_seen = None
-        self._options_seen = None
+        # The ctx.server the initial fetch went to, held rather than id()'d:
+        # Endpoint takes no weakref and a freed id can come back.
+        self._fetched_on = None
+        self._follow_up = False
         # (tag, quiet) of the /status requests this screen sent and has not
         # yet seen answered, for replies whose text names no tag; per-team
         # player lists from the latest replies feed the fallback players table.
@@ -443,7 +436,6 @@ class AdminScreen(MDScreen, ThemableBehavior):
         self._show_payloads(snapshot)
         if "options" not in snapshot:
             self.options_pane.set_entries(self._local_option_entries())
-        self._options_seen = self._option_mirror()
         self.info_pane.refresh_session(self.app.ctx)
 
     def _local_option_entries(self, payload=None) -> list[dict]:
@@ -468,9 +460,8 @@ class AdminScreen(MDScreen, ThemableBehavior):
         text = "".join(part.get("text", "") for part in args.get("data", []))
         quiet = polls.hide_options_reply(text)
         if "players" in args:
-            self._poll_answered = True
-            if not self._fetched:
-                self._fetched = True
+            if self._follow_up:
+                self._follow_up = False
                 self.refresh_tags(quiet=True)
                 self.refresh_options(quiet=True)
             quiet = polls.hide_players_reply() or quiet
@@ -529,45 +520,17 @@ class AdminScreen(MDScreen, ThemableBehavior):
     def apply_option(self, name: str, value: str) -> None:
         self.send_admin(f"/option {name} {value}")
 
-    def _option_mirror(self) -> tuple:
-        """The options RoomInfo and RoomUpdate keep current on the client."""
-        ctx = self.app.ctx
-        permissions = getattr(ctx, "permissions", None) or {}
-        return getattr(ctx, "hint_cost", None), tuple(sorted(permissions.items()))
-
-    def _room_signature(self) -> tuple:
-        """Player state the client already mirrors: aliases, the client
-        status keys app.on_connect subscribed to, and the BK flags."""
-        ctx = self.app.ctx
-        names = getattr(ctx, "player_names", None) or {}
-        stored = getattr(ctx, "stored_data", None) or {}
-        players = getattr(self.app, "ui_player_data", None) or {}
-        return (tuple(sorted(names.items())),
-                tuple(stored.get(key) for key in client_status_keys(getattr(ctx, "team", 0) or 0, names)),
-                tuple(getattr(player, "bk_mode", None) for _, player in sorted(players.items())))
-
     def _tick(self, dt) -> None:
         ctx = self.app.ctx
         self.header.refresh(ctx)
         self.info_pane.refresh_session(ctx)
-        if not getattr(ctx, "admin", False):
-            return
-        options = self._option_mirror()
-        if options != self._options_seen:
-            self._options_seen = options
-            self.refresh_options(quiet=True)
-        room = self._room_signature()
-        due = time() - self._last_poll >= _PLAYERS_POLL_SECONDS
-        # An unanswered poll suspends the next: an upstream room (every
-        # !admin line broadcast) or a displaced login would get one per poll.
-        if (room != self._room_seen or due) and self._poll_answered:
-            self._room_seen = room
-            self._poll_answered = False
-            self._last_poll = time()
+        server = getattr(ctx, "server", None)
+        if getattr(ctx, "admin", False) and server is not self._fetched_on:
+            self._fetched_on = server
+            self._follow_up = True
             self.refresh_players(quiet=True)
 
     def on_pre_enter(self, *args):
-        self._poll_answered, self._last_poll = True, 0.0
         self._tick(0)
         if self._status_event is None:
             self._status_event = Clock.schedule_interval(self._tick, 1)
