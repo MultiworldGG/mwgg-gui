@@ -1,7 +1,7 @@
 """
 LAUNCHER FAVORITE BAR
 
-FavoritesScroll - horizontal scroller for favorite games
+FavoritesScroll - horizontal scroller for favorite games, whole tiles only
 FavoriteToggleButton - button for toggling a favorite game
 Favorite - widget for displaying a favorite game
 """
@@ -13,7 +13,9 @@ __all__ = ('FavoritesScroll',
 
 import logging
 
+from kivy.animation import Animation
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.lang import Builder
 from kivy.metrics import dp
 from kivy.properties import ColorProperty, ListProperty, ObjectProperty, StringProperty
@@ -106,13 +108,78 @@ Builder.load_string('''
 
 
 class FavoritesScroll(MDScrollView):
+    """The view is a whole number of tiles wide and a resting scroll glides
+    onto a tile edge, so no tile shows cut off. Dragging a tile up pulls it
+    out of the bar."""
     favorites: ObjectProperty
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.scroll_type = ["content"]
         self.bar_width = dp(1)
-        self.favorites = MDBoxLayout(orientation='horizontal', spacing=dp(10), size_hint_x=None, size_hint_y=None, height=dp(128), width=dp(1000), pos_hint={"center_x": 0.5, "center_y": 0.5})
+        self.size_hint_x = None
+        self.do_scroll_y = False
+        # Tiles only see a still touch after this long, so a hesitant drag can still scroll or pull.
+        self.scroll_timeout = 1000
+        self.favorites = MDBoxLayout(orientation='horizontal', spacing=dp(10), adaptive_width=True, size_hint_y=None, height=dp(128))
         self.add_widget(self.favorites)
+        self._pulled = None
+        self._settle = Clock.create_trigger(self._settle_row)
+        self.favorites.bind(width=self._settle)
+        self.effect_x.bind(velocity=self._settle, is_manual=self._settle)
+
+    def on_parent(self, _, parent):
+        if parent:
+            parent.bind(width=self._settle)
+
+    def _settle_row(self, *_):
+        if not self.favorites.children or not self.parent:
+            return
+        spacing = self.favorites.spacing
+        pitch = self.favorites.children[0].width + spacing
+        self.width = max(1, (self.parent.width + spacing) // pitch) * pitch - spacing
+        span = self.favorites.width - self.width
+        if span <= 0 or self.effect_x.is_manual or self.effect_x.velocity:
+            return
+        target = min(round(self.scroll_x * span / pitch) * pitch, span) / span
+        if abs(target - self.scroll_x) > 1e-6:
+            Animation.cancel_all(self, 'scroll_x')
+            Animation(scroll_x=target, d=.15, t='out_quad').start(self)
+
+    def on_scroll_start(self, touch, check_children=True):
+        if not self._touch:
+            # ScrollView's hand-off timer reads self._touch, so one left over from an earlier touch would fire on this one.
+            Clock.unschedule(self._change_touch_mode)
+        return super().on_scroll_start(touch, check_children)
+
+    def on_scroll_move(self, touch):
+        # 'pull' is a mode ScrollView does not know, so it neither scrolls nor clicks for this touch.
+        state = touch.ud.get(self._get_uid())
+        if state and state['mode'] == 'unknown' and self._start_pull(touch):
+            state['mode'] = 'pull'
+        if state and state['mode'] == 'pull':
+            self._pulled.pull(touch.y - touch.oy)
+            return True
+        return super().on_scroll_move(touch)
+
+    def on_scroll_stop(self, touch, check_children=True):
+        state = touch.ud.get(self._get_uid())
+        if not (state and state['mode'] == 'pull'):
+            return super().on_scroll_stop(touch, check_children)
+        self._touch = None
+        self._pulled.release(touch.y - touch.oy)
+        self._pulled = None
+        return True
+
+    def _start_pull(self, touch) -> bool:
+        rise = touch.y - touch.oy
+        if rise <= self.scroll_distance or rise <= abs(touch.x - touch.ox):
+            return False
+        x, y = self.to_local(touch.ox, touch.oy)
+        self._pulled = next((tile for tile in self.favorites.children if tile.collide_point(x, y)), None)
+        if self._pulled is None:
+            return False
+        self.effect_x.cancel()
+        return True
 
 class FavoriteImage(MDSmartTileImage):
     pass
@@ -144,6 +211,7 @@ class Favorite(MDSmartTile):
         super().__init__(**kwargs)
         self.app = App.get_running_app()
         self.favorite_state = "normal"
+        self._slot_y = None
     @property
     def game_cover_url(self):
         """Get the cover URL for the game"""
@@ -173,6 +241,25 @@ class Favorite(MDSmartTile):
 
     def toggle_favorite(self):
         self.app.launcher_screen.toggle_favorite(self.game_module)
+
+    def pull(self, rise):
+        """Lift the tile `rise` px above its slot, fading as it goes."""
+        if self._slot_y is None:
+            self._slot_y = self.y
+        rise = max(rise, 0)
+        self.y = self._slot_y + rise
+        self.opacity = 1 - min(rise / self.height, 1)
+
+    def release(self, rise):
+        """Pulled past a third of its height the tile leaves the bar (the
+        favorite stays saved); otherwise it drops back into its slot."""
+        slot_y, self._slot_y = self._slot_y, None
+        if rise > self.height / 3:
+            anim = Animation(y=slot_y + self.height, opacity=0, d=.12)
+            anim.bind(on_complete=lambda *_: self.app.launcher_screen.remove_from_favorite_bar(self.game_module))
+        else:
+            anim = Animation(y=slot_y, opacity=1, d=.15, t='out_quad')
+        anim.start(self)
 
     def highlight(self):
         #self.img_pos = self.favorite_image.pos
