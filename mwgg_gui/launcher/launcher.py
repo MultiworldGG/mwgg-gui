@@ -1034,7 +1034,8 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             """Run generation in background thread and stream output to logger"""
             try:
                 result = generate_launch.run_generate(
-                    cmd, cwd=cwd, env=env, on_line=lambda line: logger.info(f"[Generate] {line}"))
+                    cmd, cwd=cwd, env=env, on_line=lambda line: logger.info(f"[Generate] {line}"),
+                    on_partial=lambda text: self.app.loading_layout.log_box.show_partial(f"[Generate] {text}"))
             except Exception as e:
                 logger.exception(f"Failed to execute generation: {e}")
                 finish("Generation Error", f"Failed to execute generation: {str(e)}")
