@@ -47,6 +47,18 @@ def test_stdout_lines_reach_on_line_and_the_tail(generate_launch):
     assert result.tail == ["one", "two"]
 
 
+def test_an_unfinished_line_reaches_on_partial_until_its_newline(generate_launch):
+    code = ("import sys, time\n"
+            "for text in ('\\u25b3', '\\u25b2', '\\n', 'done'):\n"
+            "    sys.stdout.write(text); sys.stdout.flush(); time.sleep(0.3)")
+    partials = []
+    result, lines = _run(generate_launch, code, on_partial=partials.append)
+    assert result.returncode == 0
+    assert partials == ["△", "△▲", "done"]
+    assert lines == ["△▲", "done"]
+    assert result.tail == lines
+
+
 def test_a_prompt_gets_eof_instead_of_a_hidden_console(generate_launch):
     result, _ = _run(generate_launch, "input('Press enter to close.')", idle_timeout=30)
     assert (result.returncode, result.killed) == (1, False)

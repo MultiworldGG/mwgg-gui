@@ -106,6 +106,14 @@ class LoadingLogBox(TextInput):
         # Records arrive on worker threads; the widget is only touched on the Kivy thread.
         Clock.schedule_once(lambda dt: self._append(text), 0)
 
+    def show_partial(self, message: str):
+        """Show an unfinished child line, prefixed like a record, under the tail until
+        the finished line replaces it; any thread."""
+        text = display_text(message)
+        if text is None:
+            return
+        Clock.schedule_once(lambda dt: self._show(text), 0)
+
     def clear(self):
         self._tail.clear()
         self.text = ""
@@ -117,7 +125,10 @@ class LoadingLogBox(TextInput):
     def _append(self, message):
         self._tail.append(message)
         del self._tail[:-LOG_TAIL_LINES]
-        self.text = "\n".join(self._tail)
+        self._show()
+
+    def _show(self, partial: str = ""):
+        self.text = "\n".join([*self._tail, partial] if partial else self._tail)
         self.cursor = self.get_cursor_from_index(len(self.text))
 
 

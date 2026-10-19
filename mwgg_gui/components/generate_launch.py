@@ -16,7 +16,9 @@ __all__ = (
     "tree_cpu_seconds",
 )
 
+import codecs
 import functools
+import io
 import subprocess
 import sys
 import threading
@@ -169,14 +171,19 @@ def tree_cpu_seconds(pid: int) -> float | None:
 
 
 def run_generate(cmd: list[str], *, cwd: str, env: dict[str, str], on_line: Callable[[str], None],
+                 on_partial: Callable[[str], None] | None = None,
                  idle_timeout: float = IDLE_TIMEOUT, poll: float = 1.0, tail_lines: int = 20,
                  tree_cpu: Callable[[int], float | None] = tree_cpu_seconds,
                  clock: Callable[[], float] = time.monotonic,
                  sleep: Callable[[float], None] = time.sleep) -> GenerateResult:
     """Run Generate to completion, feeding each stdout line to `on_line`.
 
+    A line left unfinished when output pauses, such as Generate's progress
+    glyphs, goes to `on_partial` as it grows, then to `on_line` once its
+    newline arrives.
+
     Blocking; run it on a worker thread. The process is killed once it has gone
-    `idle_timeout` seconds without writing a line or using CPU time anywhere in
+    `idle_timeout` seconds without writing output or using CPU time anywhere in
     its tree, the shape of a process waiting on input nobody will give it.
     """
     kwargs: dict = {"stdin": subprocess.DEVNULL, "stdout": subprocess.PIPE, "stderr": subprocess.PIPE,
@@ -187,18 +194,34 @@ def run_generate(cmd: list[str], *, cwd: str, env: dict[str, str], on_line: Call
     process = subprocess.Popen(cmd, **kwargs)
     tail: deque[str] = deque(maxlen=tail_lines)
     stderr_lines: list[str] = []
-    lines_seen = [0]
+    output_seen = [0]
 
     def pump(stream, sink: Callable[[str], None]) -> None:
         for line in stream:
             sink(line.rstrip("\r\n"))
-            lines_seen[0] += 1
+            output_seen[0] += 1
 
     def on_stdout(line: str) -> None:
         tail.append(line)
         on_line(line)
 
-    pumps = [threading.Thread(target=pump, args=(process.stdout, on_stdout), name="GenerateStdout", daemon=True),
+    def pump_stdout(stream) -> None:
+        # chunks, not lines: a progress line grows without a newline
+        decoder = io.IncrementalNewlineDecoder(codecs.getincrementaldecoder("utf-8")(errors="replace"),
+                                               translate=True)
+        pending = ""
+        while chunk := stream.buffer.read1(65536):
+            *lines, pending = (pending + decoder.decode(chunk)).split("\n")
+            for line in lines:
+                on_stdout(line)
+            if pending and on_partial:
+                on_partial(pending)
+            output_seen[0] += 1
+        pending += decoder.decode(b"", final=True)
+        if pending:
+            on_stdout(pending)
+
+    pumps = [threading.Thread(target=pump_stdout, args=(process.stdout,), name="GenerateStdout", daemon=True),
              threading.Thread(target=pump, args=(process.stderr, stderr_lines.append), name="GenerateStderr",
                               daemon=True)]
     for thread in pumps:
@@ -207,13 +230,13 @@ def run_generate(cmd: list[str], *, cwd: str, env: dict[str, str], on_line: Call
     result = GenerateResult(returncode=None)
     quiet_since = clock()
     last_cpu = tree_cpu(process.pid)
-    seen = lines_seen[0]
+    seen = output_seen[0]
     while process.poll() is None:
         sleep(poll)
         now = clock()
         cpu = tree_cpu(process.pid)
-        if cpu is None or cpu != last_cpu or lines_seen[0] != seen:
-            quiet_since, last_cpu, seen = now, cpu, lines_seen[0]
+        if cpu is None or cpu != last_cpu or output_seen[0] != seen:
+            quiet_since, last_cpu, seen = now, cpu, output_seen[0]
         elif now - quiet_since >= idle_timeout:
             process.kill()
             result.killed = True

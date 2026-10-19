@@ -7,6 +7,7 @@ tests drive directly, at the tick rates different displays produce.
 from __future__ import annotations
 
 import importlib.util
+import logging
 import os
 import sys
 import types
@@ -35,6 +36,9 @@ class _FakeClock:
 
     def schedule_interval(self, callback, timeout):
         return types.SimpleNamespace(cancel=lambda: None)
+
+    def schedule_once(self, callback, timeout=0):
+        callback(0)
 
 
 class _ImageBox:
@@ -158,3 +162,19 @@ def test_hidden_layout_stops_the_callback(layout):
     layout.loading = False
     assert layout.update_frame(0) is False
     assert layout.img_box.added == []
+
+
+def test_a_partial_line_shows_until_the_finished_line_replaces_it(loadanim):
+    box = loadanim.LoadingLogBox.__new__(loadanim.LoadingLogBox)
+    box._tail, box.text = [], ""
+    box.get_cursor_from_index = lambda index: (index, 0)
+    box.post("Filling the multiworld")
+    for partial in ("[Generate] △", "[Generate] △▲", f"[Generate] {loadanim.tempfile.gettempdir()}"):
+        box.show_partial(partial)
+    assert box.text == "Filling the multiworld\n△▲"
+    box._on_record(logging.makeLogRecord({"msg": "[Generate] △▲"}))
+    box._on_record(logging.makeLogRecord({"msg": "[Generate] Done."}))
+    assert box.text == "Filling the multiworld\n△▲\nDone."
+    box.show_partial("[Generate] △")
+    box.post("Generation completed")
+    assert box.text == "Filling the multiworld\n△▲\nDone.\nGeneration completed"
