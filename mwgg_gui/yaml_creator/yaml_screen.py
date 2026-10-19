@@ -9,7 +9,7 @@ auxiliary view). Here:
     | options form       | (CodeInput)        |
     |                    |                    |
     +--------------------+--------------------+
-    | BottomAppBar (Save / Cancel / Mode)     |
+    | action bar (Cancel / Save As / Save)    |
     +-----------------------------------------+
 
 Compact Mode keeps only the left pane: the form takes the full width and
@@ -43,6 +43,7 @@ from kivymd.uix.textfield import MDTextField, MDTextFieldHintText
 import yaml
 
 import Utils
+from FileUtils import FileUtils
 
 from mwgg_gui.components.dialog import MessageBox
 from mwgg_gui.overrides.innermdscreen import InnerMDScreen
@@ -50,7 +51,7 @@ from mwgg_gui.overrides.innermdscreen import InnerMDScreen
 from .options_form import PlayerOptionsForm
 from .weighted_form import WeightedOptionsForm
 from .world_data import WorldDataError, load_world_data
-from .yaml_io import form_state_to_yaml
+from .yaml_io import YAML_FILETYPES, form_state_to_yaml, with_yaml_extension
 from .yaml_view import YamlPreview
 
 logger = logging.getLogger("Client")
@@ -138,6 +139,10 @@ class YamlScreen(InnerMDScreen):
         # held across form rebuilds and re-emitted on every push.
         self._yaml_extras: dict = {}
         self._game_extras: dict = {}
+        # Save As target; Save writes back here once set.
+        self._current_path: Optional[str] = None
+        # A repeat Save to the same Players path skips the overwrite prompt.
+        self._last_written: Optional[str] = None
 
         # Defer build to next frame so geometry is settled.
         Clock.schedule_once(lambda dt: self._build(), 0)
@@ -220,24 +225,28 @@ class YamlScreen(InnerMDScreen):
             )
             self._grid.add_widget(self._preview)
 
-        # Bottom action bar (plain Save / Cancel).
         self._bar = bar = MDBoxLayout(
             orientation="horizontal",
+            adaptive_width=True,
             size_hint_y=None,
             height=dp(56),
             padding=[dp(12), dp(8)],
             spacing=dp(8),
+            # Right-anchored so a too-narrow pane overflows into the margin, not over the preview.
+            pos_hint={"right": 1},
         )
-        bar.add_widget(MDLabel(size_hint_x=1))  # spacer
         cancel_btn = MDButton(MDButtonText(text="Cancel"), style="tonal")
         cancel_btn.bind(on_release=lambda *_: self.cancel())
+        save_as_btn = MDButton(MDButtonText(text="Save As"), style="outlined")
+        save_as_btn.bind(on_release=lambda *_: self.save_as())
         save_btn = MDButton(
             MDButtonIcon(icon="content-save"),
-            MDButtonText(text="Save YAML"),
+            MDButtonText(text="Save"),
             style="filled",
         )
         save_btn.bind(on_release=lambda *_: self.save())
         bar.add_widget(cancel_btn)
+        bar.add_widget(save_as_btn)
         bar.add_widget(save_btn)
         self._left.add_widget(bar)
         # One vertical container: two-pane grid + action bar.
@@ -489,25 +498,21 @@ class YamlScreen(InnerMDScreen):
     # ----- save / cancel --------------------------------------------------
 
     def save(self):
+        """Write to the Save As file once one was picked, otherwise to
+        Players/<name>_<module>.yaml."""
+        self._save_validated(self._save_to_current)
+
+    def save_as(self):
+        """Write to a file picked in the OS save dialog, which becomes the
+        current file."""
+        self._save_validated(self._save_to_chosen)
+
+    def _save_validated(self, write):
         try:
             text = self._yaml_text()
             # Parse once to validate before writing.
             yaml.safe_load(text)
-
-            player_name = (self._header.ids.player_name.text or "Player").strip()
-            players_dir = _players_dir()
-            os.makedirs(players_dir, exist_ok=True)
-            filename = f"{player_name}_{self.module_name}.yaml"
-            filepath = os.path.join(players_dir, filename)
-            if os.path.exists(filepath):
-                # Players/ may hold hand-maintained YAMLs; never clobber without asking.
-                MessageBox(
-                    "Overwrite YAML?",
-                    f"{filename} already exists in your Players folder. Overwrite it?",
-                    callback=lambda ok: self._write_yaml(filepath, text) if ok else None,
-                ).open()
-                return
-            self._write_yaml(filepath, text)
+            write(text)
         except yaml.YAMLError as e:
             MessageBox(
                 "YAML Error",
@@ -522,10 +527,56 @@ class YamlScreen(InnerMDScreen):
                 is_error=True,
             ).open()
 
-    def _write_yaml(self, filepath, text):
+    def _default_path(self) -> str:
+        player_name = (self._header.ids.player_name.text or "Player").strip()
+        players_dir = _players_dir()
+        os.makedirs(players_dir, exist_ok=True)
+        return os.path.join(players_dir, f"{player_name}_{self.module_name}.yaml")
+
+    def _save_to_current(self, text):
+        if self._current_path is not None:
+            self._write_yaml(self._current_path, text)
+            return
+        filepath = self._default_path()
+        if os.path.exists(filepath) and filepath != self._last_written:
+            # Players/ may hold hand-maintained YAMLs; never clobber without asking.
+            self._confirm_overwrite(
+                filepath, text,
+                f"{os.path.basename(filepath)} already exists in your Players folder. Overwrite it?",
+            )
+            return
+        self._write_yaml(filepath, text)
+
+    def _save_to_chosen(self, text):
+        chosen = FileUtils.save_file_input_dialog(
+            "Save YAML As", YAML_FILETYPES, suggest=self._current_path or self._default_path()
+        )
+        if not chosen:
+            return
+        filepath = with_yaml_extension(chosen)
+        # The dialog's overwrite prompt only covered the name as typed.
+        if filepath != chosen and os.path.exists(filepath):
+            self._confirm_overwrite(
+                filepath, text, f"{os.path.basename(filepath)} already exists. Overwrite it?",
+                chosen=True,
+            )
+            return
+        self._write_yaml(filepath, text, chosen=True)
+
+    def _confirm_overwrite(self, filepath, text, message, chosen=False):
+        MessageBox(
+            "Overwrite YAML?",
+            message,
+            callback=lambda ok: self._write_yaml(filepath, text, chosen) if ok else None,
+        ).open()
+
+    def _write_yaml(self, filepath, text, chosen=False):
         try:
             with open(filepath, "w", encoding="utf-8") as f:
                 f.write(text)
+            self._last_written = filepath
+            if chosen:
+                self._current_path = filepath
             MessageBox(
                 "YAML saved",
                 f"Wrote {filepath}",
