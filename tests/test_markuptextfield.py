@@ -1,4 +1,4 @@
-"""Empty-text refresh in the console text field (overrides/markuptextfield.py).
+"""Empty-text refresh and scrollback trimming in the console text field (overrides/markuptextfield.py).
 
 markuptextfield.py imports Kivy and KivyMD at module level, so it is loaded by
 file path with those imports stubbed; properties collapse to their defaults and
@@ -116,3 +116,52 @@ def test_empty_text_reaches_kivy_refresh(field):
     # Skipping it leaves _lines empty, and TextInput.get_cursor_from_xy raises IndexError on the next click.
     field._refresh_text("")
     assert field.refreshed == ("", ())
+
+
+@pytest.fixture
+def recording_field(markuptextfield):
+    class Field(markuptextfield.MarkupTextField):
+        text = property(lambda self: self.assigned[-1], lambda self, value: self.assigned.append(value))
+        on_focus = lambda self, instance, focus: None  # noqa: E731
+
+    field = object.__new__(Field)
+    field.assigned = [""]
+    field.ignore_patterns = None
+    field.multiline = True
+    field.focus = False
+    return field
+
+
+def _numbered(prefix, count):
+    return "\n".join(f"{prefix} {i}" for i in range(count))
+
+
+def test_set_texts_trims_scrollback_in_the_same_assignment(recording_field):
+    # Each text assignment re-lays out the whole field; trimming per refresh cost one re-layout per dropped line.
+    limit = recording_field.scrollback_lines
+    recording_field.assigned = [_numbered("old", limit)]
+    recording_field.plaintext = _numbered("old", limit)
+    recording_field.set_texts(_numbered("new", 50), _numbered("new", 50))
+    assert len(recording_field.assigned) == 2
+    for text in (recording_field.assigned[-1], recording_field.plaintext):
+        lines = text.split("\n")
+        assert len(lines) == limit
+        assert lines[0] == "old 50"
+        assert lines[-1] == "new 49"
+
+
+def test_set_texts_keeps_the_newest_lines_of_an_oversized_append(recording_field):
+    # TextConsole.recolor drains the whole queue in one append.
+    limit = recording_field.scrollback_lines
+    recording_field.set_texts(_numbered("new", limit * 3), _numbered("new", limit * 3))
+    lines = recording_field.assigned[-1].split("\n")
+    assert len(lines) == limit
+    assert lines[0] == f"new {limit * 2}"
+
+
+def test_text_change_handler_leaves_a_full_field_alone(recording_field):
+    # It runs inside Kivy's _refresh_text; trimming there recursed until RecursionError.
+    recording_field._lines = ["line"] * (recording_field.scrollback_lines * 2)
+    text = _numbered("line", recording_field.scrollback_lines * 2)
+    recording_field.set_text(None, text)
+    assert recording_field.assigned[-1] == text

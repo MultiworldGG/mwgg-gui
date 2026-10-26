@@ -332,6 +332,8 @@ class MarkupTextField(MarkupTextFieldHoverBehavior, TextInput, ThemableBehavior)
     _unclamped_scroll_y = None  # Track unclamped scroll position for velocity calculation
     scroll_velocity = NumericProperty(0.5)  # Scale factor to slow down scrolling
     _manually_scrolled = BooleanProperty(False)
+    # Logical lines set_texts keeps.
+    scrollback_lines = 1000
 
     def __init__(self, bottom_scroll_button=None, ignore_patterns: Pattern = None, **kwargs):
         self.bottom_scroll_button = bottom_scroll_button
@@ -366,11 +368,17 @@ class MarkupTextField(MarkupTextFieldHoverBehavior, TextInput, ThemableBehavior)
             self.bottom_scroll_button.bind(on_release=self.scroll_to_bottom)
 
     def set_texts(self, text, plaintext):
-         # Set texts in a function to pass everything through
-         self.plaintext = self.plaintext + u"\n" + plaintext if self.plaintext else plaintext
-         self.text = self.text + u"\n" + text if self.text else text
-         self._update_plaintext_lines()
-        
+        """Append to both texts, trimming to scrollback_lines in the same assignment:
+        every text assignment re-lays out the whole field."""
+        self.plaintext = self._append_scrollback(self.plaintext, plaintext)
+        self.text = self._append_scrollback(self.text, text)
+        self._update_plaintext_lines()
+
+    def _append_scrollback(self, old: str, new: str) -> str:
+        combined = old + u"\n" + new if old else new
+        lines = combined.rsplit(u"\n", self.scrollback_lines)
+        return u"\n".join(lines[1:]) if len(lines) > self.scrollback_lines else combined
+
     @property
     def line_count(self) -> int:
         return len(self._lines)
@@ -1096,8 +1104,8 @@ class MarkupTextField(MarkupTextFieldHoverBehavior, TextInput, ThemableBehavior)
         """Fired when text is entered into a text field."""
 
         def set_text(*args):
-            ntext = text.split('\n', 1)[1] if self.line_count > 1000 else text
-            self.text = re.sub("\n", " ", ntext) if not self.multiline else ntext
+            # Never trim here: Kivy fires this from inside _refresh_text, so each trimmed line re-enters a full re-layout.
+            self.text = re.sub("\n", " ", text) if not self.multiline else text
             self.set_max_text_length()
 
             if self.text and self._get_has_error() or self._get_has_error():

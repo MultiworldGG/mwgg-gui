@@ -249,7 +249,8 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
 
         self.theme_mw = DefaultTheme(self.app_config, self.game_module)
 
-        self.text_buffer = Queue(maxsize=1000)
+        # Unbounded: one server frame can carry thousands of lines, and put_nowait raising Full kills the server loop.
+        self.text_buffer = Queue()
         self.ui_hint_data = {}
         self.ui_player_data = {}
         self._hint_render_signature = None
