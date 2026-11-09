@@ -110,7 +110,7 @@ Builder.load_string('''
 class FavoritesScroll(MDScrollView):
     """The view is a whole number of tiles wide and a resting scroll glides
     onto a tile edge, so no tile shows cut off. Dragging a tile up pulls it
-    out of the bar."""
+    out of the bar; right-clicking a tile un-favorites the game."""
     favorites: ObjectProperty
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -149,10 +149,16 @@ class FavoritesScroll(MDScrollView):
         if not self._touch:
             # ScrollView's hand-off timer reads self._touch, so one left over from an earlier touch would fire on this one.
             Clock.unschedule(self._change_touch_mode)
+        if 'button' in touch.profile and touch.button == 'right' and self.collide_point(*touch.pos):
+            touch.ud[self._get_uid()] = {'mode': 'unfavorite'}
+            tile = self._tile_at(touch.pos)
+            if tile is not None:
+                tile.unfavorite()
+            return True
         return super().on_scroll_start(touch, check_children)
 
     def on_scroll_move(self, touch):
-        # 'pull' is a mode ScrollView does not know, so it neither scrolls nor clicks for this touch.
+        # 'pull' and 'unfavorite' are modes ScrollView does not know, so it neither scrolls nor clicks for those touches.
         state = touch.ud.get(self._get_uid())
         if state and state['mode'] == 'unknown' and self._start_pull(touch):
             state['mode'] = 'pull'
@@ -163,19 +169,23 @@ class FavoritesScroll(MDScrollView):
 
     def on_scroll_stop(self, touch, check_children=True):
         state = touch.ud.get(self._get_uid())
-        if not (state and state['mode'] == 'pull'):
+        if not (state and state['mode'] in ('pull', 'unfavorite')):
             return super().on_scroll_stop(touch, check_children)
         self._touch = None
-        self._pulled.release(touch.y - touch.oy)
-        self._pulled = None
+        if state['mode'] == 'pull':
+            self._pulled.release(touch.y - touch.oy)
+            self._pulled = None
         return True
+
+    def _tile_at(self, pos):
+        x, y = self.to_local(*pos)
+        return next((tile for tile in self.favorites.children if tile.collide_point(x, y)), None)
 
     def _start_pull(self, touch) -> bool:
         rise = touch.y - touch.oy
         if rise <= self.scroll_distance or rise <= abs(touch.x - touch.ox):
             return False
-        x, y = self.to_local(touch.ox, touch.oy)
-        self._pulled = next((tile for tile in self.favorites.children if tile.collide_point(x, y)), None)
+        self._pulled = self._tile_at((touch.ox, touch.oy))
         if self._pulled is None:
             return False
         self.effect_x.cancel()
@@ -241,6 +251,9 @@ class Favorite(MDSmartTile):
 
     def toggle_favorite(self):
         self.app.launcher_screen.toggle_favorite(self.game_module)
+
+    def unfavorite(self):
+        self.app.launcher_screen.unfavorite(self.game_module)
 
     def pull(self, rise):
         """Lift the tile `rise` px above its slot, fading as it goes."""

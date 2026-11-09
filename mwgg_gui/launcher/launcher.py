@@ -768,8 +768,13 @@ class LauncherScreen(MDScreen, ThemableBehavior):
         if module_name in self.saved_games:
             self.saved_games.remove(module_name)
             self.save_favorite_games()
-            self.populate_favorites()
+            self.populate_favorites(self.launcher_view.module_name)
             logger.info(f"Removed {module_name} from favorites")
+
+    def unfavorite(self, module_name: str):
+        """Take a game's tile off the bar and un-heart it."""
+        self.remove_from_favorite_bar(module_name)
+        self.remove_from_favorites(module_name)
 
     def toggle_favorite(self, module_name: str):
         """Toggle favorite status for a game"""

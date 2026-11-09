@@ -1,4 +1,4 @@
-"""Favorites row geometry and pull-out gesture (launcher/launcher_favorite_bar.py).
+"""Favorites row geometry, pull-out gesture and right-click un-favorite (launcher/launcher_favorite_bar.py).
 
 The module is loaded by file path with Kivy, KivyMD and mwgg_igdb stubbed;
 widget bases are plain classes, so instances are built with object.__new__
@@ -34,6 +34,17 @@ class _Animation:
         pass
 
 
+class _ScrollView:
+    def _get_uid(self, prefix="sv"):
+        return f"{prefix}.row"
+
+    def on_scroll_start(self, touch, check_children=True):
+        return "scrollview"
+
+    def on_scroll_stop(self, touch, check_children=True):
+        return "scrollview"
+
+
 def _stub(name, **attrs):
     module = types.ModuleType(name)
     for key, value in attrs.items():
@@ -52,7 +63,7 @@ def favorite_bar():
         "kivy": _stub("kivy"),
         "kivy.animation": _stub("kivy.animation", Animation=_Animation),
         "kivy.app": _stub("kivy.app", App=_base("App")),
-        "kivy.clock": _stub("kivy.clock", Clock=types.SimpleNamespace()),
+        "kivy.clock": _stub("kivy.clock", Clock=types.SimpleNamespace(unschedule=prop)),
         "kivy.lang": _stub("kivy.lang", Builder=types.SimpleNamespace(load_string=prop)),
         "kivy.metrics": _stub("kivy.metrics", dp=lambda value: value),
         "kivy.properties": _stub("kivy.properties", **dict.fromkeys(
@@ -63,7 +74,7 @@ def favorite_bar():
         "kivymd.uix.button": _stub("kivymd.uix.button", MDIconButton=_base("MDIconButton")),
         "kivymd.uix.imagelist": _stub("kivymd.uix.imagelist", MDSmartTile=_base("MDSmartTile"),
                                       MDSmartTileImage=_base("MDSmartTileImage")),
-        "kivymd.uix.scrollview": _stub("kivymd.uix.scrollview", MDScrollView=_base("MDScrollView")),
+        "kivymd.uix.scrollview": _stub("kivymd.uix.scrollview", MDScrollView=_ScrollView),
         "mwgg_igdb": _stub("mwgg_igdb", GameIndex=None),
     }
     saved = {name: sys.modules.get(name) for name in stubs}
@@ -89,9 +100,13 @@ def _clear_animations():
 class _Tile:
     def __init__(self, x, module="game"):
         self.x, self.y, self.width, self.height, self.game_module = x, 0, 85, 128, module
+        self.unfavorited = False
 
     def collide_point(self, x, y):
         return self.x <= x <= self.x + self.width and self.y <= y <= self.y + self.height
+
+    def unfavorite(self):
+        self.unfavorited = True
 
 
 def _row(favorite_bar, tiles=14, parent_width=690, scroll_x=0.0, is_manual=False, velocity=0):
@@ -104,6 +119,8 @@ def _row(favorite_bar, tiles=14, parent_width=690, scroll_x=0.0, is_manual=False
     row.scroll_x = scroll_x
     row.scroll_distance = 20
     row.to_local = lambda x, y: (x, y)
+    row.collide_point = lambda x, y: 0 <= x <= 690 and 0 <= y <= 128
+    row._touch = row._change_touch_mode = None
     return row
 
 
@@ -148,6 +165,39 @@ def test_pull_needs_a_mostly_upward_drag_that_starts_on_a_tile(favorite_bar):
     assert row._start_pull(_touch((100, 60), (110, 100)))
     assert row._pulled.game_module == "game01"
     assert row.effect_x.cancelled
+
+
+def _press(pos, button):
+    return types.SimpleNamespace(pos=pos, ud={}, profile=["pos", "button"], button=button)
+
+
+def _unfavorited(row):
+    return [tile.game_module for tile in row.favorites.children if tile.unfavorited]
+
+
+def test_right_click_unfavorites_the_tile_and_claims_the_touch(favorite_bar):
+    row = _row(favorite_bar)
+    touch = _press((100, 60), "right")
+    assert row.on_scroll_start(touch) is True
+    assert _unfavorited(row) == ["game01"]
+    assert row.on_scroll_stop(touch) is True
+
+
+def test_right_click_between_tiles_unfavorites_nothing(favorite_bar):
+    row = _row(favorite_bar)
+    touch = _press((90, 60), "right")
+    assert row.on_scroll_start(touch) is True
+    assert _unfavorited(row) == []
+    assert row.on_scroll_stop(touch) is True
+
+
+@pytest.mark.parametrize("pos, button", [((100, 60), "left"), ((100, 200), "right")])
+def test_other_clicks_are_left_to_the_scrollview(favorite_bar, pos, button):
+    row = _row(favorite_bar)
+    touch = _press(pos, button)
+    assert row.on_scroll_start(touch) == "scrollview"
+    assert row.on_scroll_stop(touch) == "scrollview"
+    assert _unfavorited(row) == []
 
 
 def _tile(favorite_bar):
