@@ -119,7 +119,7 @@ from .overrides import *
 
 from .loadanimlayout import MWGGLoadingLayout
 
-# Side-effect import: patches Kivy's ImageLoader to recognize the `ap:` and
+# Patches Kivy's ImageLoader to recognize the `ap:` and
 # `ap:zip:` URL prefixes used by world client kvs.
 from .overrides.imageloader import ApAsyncImage, register_url_scheme  # noqa: F401
 
