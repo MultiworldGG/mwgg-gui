@@ -90,7 +90,7 @@ from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
 from mwgg_gui.components.layout_mode import get_layout_mode, read_compact_mode
 from mwgg_gui.components.flip_sync import install_flip_sync
 from mwgg_gui.components.frame_pacing import schedule_frame_pacing_log
-from mwgg_gui.components.live_forwarding import LiveForwarding
+from mwgg_gui.components.live_forwarding import LiveForwarding, prefer_manager_override
 from mwgg_gui.components.admin_commands import QuietAdminPolls
 from mwgg_gui.components.client_status import client_status_keys, apply_client_status
 
@@ -1616,6 +1616,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
                     if hasattr(self.ui_player_data[slot], item):
                         setattr(self.ui_player_data[slot], item, data)
 
+    @prefer_manager_override("energy_link_label")
     def enable_energy_link(self) -> None:
         """Per-world hook (kvui.GameManager API): an EnergyLink label in the
         connect bar. Worlds may retitle it through `energy_link_label`."""
@@ -1625,6 +1626,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
                                              width=150, halign="center")
             live.connect_layout.add_widget(live.energy_link_label)
 
+    @prefer_manager_override()
     def set_new_energy_link_value(self) -> None:
         """FrontendProtocol: show the pool CommonClient stored from the EnergyLink SetReply."""
         live = self._resolve_live_app()
