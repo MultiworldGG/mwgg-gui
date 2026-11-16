@@ -812,13 +812,30 @@ class LauncherScreen(MDScreen, ThemableBehavior):
             self.favorite_games.append(module_name)
             self.populate_favorites(module_name)
 
+    def remove_from_favorite_bar(self, module_name: str):
+        """Drop a game's tile from this session's bar; a saved favorite stays
+        saved and is back on the next launch."""
+        if module_name in self.favorite_games:
+            self.favorite_games.remove(module_name)
+        for widget in self.favorites_layout.children[:]:
+            if isinstance(widget, Favorite) and widget.game_module == module_name:
+                if widget is self.highlighted_favorite:
+                    self.highlighted_favorite = None
+                self.favorites_layout.remove_widget(widget)
+        self.launcher_view.has_favorites = bool(self.favorites_layout.children)
+
     def remove_from_favorites(self, module_name: str):
         """Remove a game from favorites"""
         if module_name in self.saved_games:
             self.saved_games.remove(module_name)
             self.save_favorite_games()
-            self.populate_favorites()
+            self.populate_favorites(self.launcher_view.module_name)
             logger.info(f"Removed {module_name} from favorites")
+
+    def unfavorite(self, module_name: str):
+        """Take a game's tile off the bar and un-heart it."""
+        self.remove_from_favorite_bar(module_name)
+        self.remove_from_favorites(module_name)
 
     def toggle_favorite(self, module_name: str):
         """Toggle favorite status for a game"""
