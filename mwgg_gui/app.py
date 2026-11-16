@@ -90,6 +90,7 @@ from mwgg_gui.components.mw_theme import RegisterFonts, DefaultTheme
 from mwgg_gui.components.layout_mode import get_layout_mode, read_compact_mode
 from mwgg_gui.components.flip_sync import install_flip_sync
 from mwgg_gui.components.frame_pacing import schedule_frame_pacing_log
+from mwgg_gui.components.legacy_manager import build_legacy_manager, take_over_live_app
 from mwgg_gui.components.live_forwarding import LiveForwarding
 from mwgg_gui.components.admin_commands import QuietAdminPolls
 from mwgg_gui.components.client_status import client_status_keys, apply_client_status
@@ -197,6 +198,7 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
     _active_instance: "typing.ClassVar[typing.Optional[MultiMDApp]]" = None
 
     def __init__(self, ctx: context_type, role: typing.Optional[str] = None, **kwargs):
+        running = App._running_app
         super().__init__(**kwargs)
         # Explicit kwarg wins; else the MWGG_ROLE env var Launcher.py/
         # MultiWorld.py assign (never setdefault) before spawning this process.
@@ -220,9 +222,12 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
                 if cover_url:
                     self.logo_png = cover_url
         # Phantom subclass instances built post-takeover must not clobber the
-        # live launcher's singleton slot.
+        # live launcher's singleton slot, nor get_running_app (every kv ``app``),
+        # which App.__init__ repoints at them.
         if type(self)._active_instance is None:
             type(self)._active_instance = self
+        else:
+            App._running_app = running
         self.config = MWKVConfig
         try:
             self.app_config = ConfigParser(name='app')
@@ -375,6 +380,8 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
     def on_start(self):
         """Set up additional build necessities that
         cannot be done in the constructor"""
+        if self._resolve_live_app() is not self:
+            return  # a world subclass's super().on_start(); the live app started already
         # Windows-only: the Titlebar widget isn't rendered elsewhere (see build()).
         if sys.platform == "win32":
             Window.bind(on_restore=self.title_bar.tb_onres)
@@ -459,6 +466,12 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
             Clock.schedule_once(_open_dialog)
 
         threading.Thread(target=_check, name="UpdateCheck", daemon=True).start()
+
+    async def async_run(self, async_lib=None):
+        if self._resolve_live_app() is self:
+            return await super().async_run(async_lib=async_lib)
+        # a world's run_gui starting its make_gui() subclass as a standalone app
+        await take_over_live_app(self.ctx)
 
     def build(self):
         '''
@@ -780,43 +793,24 @@ class MultiMDApp(LiveForwarding, MDApp, metaclass=LiveTitleMeta):
         live = type(self)._active_instance
         return live if live is not None else self
 
-    def build_legacy_kvui(self, ctx, manager_cls):
+    def build_legacy_kvui(self, ctx, manager):
         """Run an old kvui/GameManager build against the live frontend.
 
         The builder owns when this compatibility phase happens; the app owns
         how legacy widget mutations land on the visible screen manager.
-        """
-        live = self._resolve_live_app()
-        build_for_live_app = getattr(manager_cls, "build_for_live_app", None)
-        if build_for_live_app is not None:
-            return build_for_live_app(ctx, live)
 
-        # A world's make_gui() subclass of this app builds as a phantom
-        # instance; App.__init__ repoints get_running_app (and every kv
-        # ``app``) at it, so the live app has to be put back.
-        running = App.get_running_app()
-        try:
-            manager = manager_cls(ctx)
-        finally:
-            App._running_app = running
-        manager._attach_legacy_surface(live)
-        manager.build()
-        live._legacy_kvui_manager = manager
-        # The subclass declares the window title (class attr or a build()
-        # write); the live app owns the property.
-        default = (manager.property("base_title").defaultvalue
-                   if isinstance(manager, MultiMDApp) else "")
-        title = getattr(manager, "base_title", default)
-        if isinstance(title, str) and title and title != default:
-            live.base_title = title
-        return manager
+        See components/legacy_manager.build_legacy_manager for `manager`.
+        """
+        return build_legacy_manager(self._resolve_live_app(), ctx, manager)
 
     def _attach_legacy_surface(self, live: "MultiMDApp") -> None:
         """Give a phantom the upstream GameManager attributes its build() uses,
         as kvui.GameManager.build_for_live_app does for kvui subclasses: the
-        live layouts as container/grid, a detached tab-strip stand-in, and the
-        world's own config. Kivy's App.load_config never runs for a phantom,
-        so without an override it keeps the launcher's Config."""
+        live layouts as container/grid, a detached tab-strip stand-in, the
+        live window as root_window, and the world's own config. Kivy's
+        App.load_config never runs for a phantom, so without an override it
+        keeps the launcher's Config."""
+        self._app_window = live.root_window
         self.container = live.root_layout
         self.grid = live.main_layout
         self.tabs = MDBoxLayout(size_hint=(None, None), size=(0, 0))
