@@ -19,6 +19,7 @@ __all__ = (
 import codecs
 import functools
 import io
+import os
 import subprocess
 import sys
 import threading
@@ -136,13 +137,30 @@ def _ps_seconds(clock: str) -> float:
     return seconds + float(days or 0) * 86_400
 
 
-def _posix_table() -> dict[int, tuple[int, float]]:
+def _ps_table() -> dict[int, tuple[int, float]]:
     out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,time="], capture_output=True, text=True,
                          check=True).stdout
     table = {}
     for line in out.splitlines():
         pid, ppid, clock = line.split()
         table[int(pid)] = (int(ppid), _ps_seconds(clock))
+    return table
+
+
+def _proc_table() -> dict[int, tuple[int, float]]:
+    # procps ps truncates CPU time to whole seconds
+    ticks = os.sysconf("SC_CLK_TCK")
+    table = {}
+    for name in os.listdir("/proc"):
+        if not name.isdigit():
+            continue
+        try:
+            with open(f"/proc/{name}/stat", "rb") as stat:
+                # comm can hold spaces and parens; the fields after its last paren are fixed
+                fields = stat.read().rpartition(b")")[2].split()
+        except OSError:
+            continue  # exited since the listing
+        table[int(name)] = (int(fields[1]), (int(fields[11]) + int(fields[12])) / ticks)
     return table
 
 
@@ -169,7 +187,10 @@ def tree_cpu_seconds(pid: int) -> float | None:
                 return None
             # a child that cannot be opened counts for nothing rather than blocking the reading
             return root + sum(_windows_cpu_seconds(child) or 0.0 for child in _descendants(pid, parents)[1:])
-        table = _posix_table()
+        try:
+            table = _proc_table()
+        except FileNotFoundError:  # no procfs (macOS)
+            table = _ps_table()
         if pid not in table:
             return None
         parents = {child: parent for child, (parent, _) in table.items()}
